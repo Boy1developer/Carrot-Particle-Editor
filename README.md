@@ -30,6 +30,8 @@ rebuild_app.py                  # One-command build pipeline
 CarrotParticleEditor.spec       # PyInstaller spec (icon, datas, hidden imports)
 AdvancedParticleEmitter.json    # GDevelop extension (2D/3D particle system)
 sample_effect.json              # Example export
+carrots-runtime/                # Typed TS loader for the effect JSON (Carrots Engine)
+.gitignore / .gitattributes     # node_modules, dist, binaries out of git; generated preview excluded from stats
 
 core/
 ├── particle_core.cpp           # C++ simulation core (mirrors Python logic)
@@ -83,6 +85,29 @@ Launch via **Carrot Particle Editor.lnk**, or run `dist/CarrotParticleEditor.exe
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
 | `preview/test_engine*.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
+
+## Carrots Engine integration
+
+`carrots-runtime/` is the typed TypeScript ingestion path for the exported
+effect JSON (v1.0) — Carrots GDJS runtime is TypeScript (PixiJS 2D / Three.js
+3D, JSON-based particle resources since engine `1.0.3`).
+
+```ts
+import { loadCarrotEffectFromJsonText, normalizeEffect } from "@carrot-studio/particle-runtime";
+const effect = loadCarrotEffectFromJsonText(await res.text());
+const runtime = normalizeEffect(effect); // 2d: needShape / 3d: mesh swap
+```
+
+```bash
+node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json --noEmit
+node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json
+node carrots-runtime/test_loader.mjs
+```
+
+Generated preview artefacts (`preview/live_bundle.js`, `preview/live_effect.html`,
+compiled `preview/*.js`) are marked `linguist-generated` in `.gitattributes`
+so GitHub stats reflect real source; `node_modules/`, `dist/` and binaries
+stay out of git (see `.gitignore`).
 
 ## Shared contracts
 

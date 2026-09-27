@@ -1,2 +1,23 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Third-party / build output — hide from GitHub language stats
+node_modules/** linguist-vendored
+dist/** linguist-vendored
+**/*.map linguist-generated linguist-vendored
+
+# Generated preview artefacts (rebuilt via esbuild/tsc) — hide from stats,
+# source of truth stays in preview/*.ts
+preview/live_bundle.js linguist-generated linguist-vendored
+preview/live_effect.html linguist-generated linguist-vendored
+preview/*.js linguist-generated linguist-vendored
+package-lock.json linguist-generated
+
+# Binaries / local-only files
+*.exe binary linguist-vendored
+*.pyd binary linguist-vendored
+*.pdb binary linguist-vendored
+*.lib binary linguist-vendored
+*.lnk binary linguist-vendored
+*.pyc binary linguist-vendored
+carrot_debug.log linguist-vendored
