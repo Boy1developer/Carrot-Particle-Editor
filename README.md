@@ -1,6 +1,8 @@
 # 🥕 Carrot Particle Editor
 
-**Advanced Particle Emitter** — a 2D/3D particle system extension for [GDevelop](https://gdevelop.io) and [Carrots game engine](https://carrots-studio.itch.io/carrots-game-engine), paired with **Carrot Particle Editor**, a standalone desktop tool for authoring particle effects visually with real-time GPU preview.
+**Advanced Particle Emitter** — a 2D/3D particle system extension for [GDevelop](https://gdevelop.io), paired with **Carrot Particle Editor**, a standalone desktop tool for authoring particle effects visually with real-time GPU preview.
+
+> Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem — the "Advanced particle editor for stunning VFX" referenced in the main engine's feature list is this project.
 
 ---
 
@@ -12,6 +14,8 @@ This repository is a two-part toolkit:
 2. **Carrot Particle Editor** — a Python/Tkinter desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, before exporting them to the extension's JSON format.
 
 The two share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts) below.
+
+Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a closed-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
 
 ## Features
 
@@ -97,10 +101,14 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 - Evaluating integration with a dedicated C++ particle library (Effekseer or SPARK) as a possible complement to the current custom core.
 
+## Related projects
+
+- **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — the 2D/3D game engine this extension is built for, extending GDevelop Core with Blueprint scripting, PBR materials, advanced animation, and this particle system among its VFX tools.
+
 ## Author
 
-**Carrot Studio** — Mostafa Fathy Thabet
+**Carrot Studio** — Mostafa Fathy Thabet ([@Boy1developer](https://github.com/Boy1developer)) — contributor to [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine).
 
 ## License
 
-_Add a license before publishing publicly (e.g. MIT, Apache-2.0) — none specified yet._
+Carrots Engine's own code is distributed under a proprietary license (its GDevelop-derived core remains MIT — see its [LICENSE.md](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)). Align this project's license with that choice, or pick your own if it's meant to stand alone — none specified yet.
