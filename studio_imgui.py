@@ -792,11 +792,11 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff):
     dpg.draw_rectangle([0, 0], [t, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
     dpg.draw_rectangle([W - t, 0], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
     dpg.draw_arrow([ex, ey], [ex + 95, ey], color=[255, 59, 59, 255],
-                   thickness=3, parent=dl)
+                   thickness=6, parent=dl)
     dpg.draw_arrow([ex, ey], [ex, ey - 95], color=[47, 107, 255, 255],
-                   thickness=3, parent=dl)
-    dpg.draw_circle([ex, ey], 8, color=[123, 97, 255, 255],
-                    fill=[255, 255, 255, 255], thickness=2, parent=dl,
+                   thickness=6, parent=dl)
+    dpg.draw_circle([ex, ey], 10, color=[123, 97, 255, 255],
+                    fill=[255, 255, 255, 255], thickness=3, parent=dl,
                     segments=20)
 
 
@@ -900,9 +900,9 @@ def draw_view_3d(app, dl, W, H, cx, cy, em):
     for (ax, ay, az, col) in [(70, 0, 0, "#ff3b3b"), (0, 70, 0, "#3ddc84"),
                               (0, 0, 70, "#2f6bff")]:
         tx, ty, _, _ = P(EX + ax, EY + ay, EZ + az)
-        dpg.draw_arrow([ox, oy], [tx, ty], color=_c(col), thickness=3,
+        dpg.draw_arrow([ox, oy], [tx, ty], color=_c(col), thickness=5,
                        parent=dl)
-    dpg.draw_circle([ox, oy], 6, color=[0, 0, 0, 0], fill=[255, 255, 255, 255],
+    dpg.draw_circle([ox, oy], 8, color=[0, 0, 0, 0], fill=[255, 255, 255, 255],
                     parent=dl, segments=16)
 
 
@@ -964,6 +964,9 @@ APP = App()
 APP._f_was_down = False
 APP._edge = {}
 APP._drag_kind = None
+APP.side_w = 300
+APP._split = None
+APP._split_hover = False
 
 
 def show_msg(title, text):
@@ -1646,7 +1649,8 @@ def build_ui():
         build_topbar()
         dpg.add_separator()
         with dpg.group(horizontal=True):
-            with dpg.child_window(tag="side_child", width=300, height=-1):
+            with dpg.child_window(tag="side_child", width=APP.side_w,
+                                  height=-1):
                 build_sidebar()
             build_viewport()
     dpg.set_primary_window("primary", True)
@@ -2102,6 +2106,26 @@ def handle_nav_keys(dt, W, H, cx, cy):
         APP.history_commit()
 
 
+def handle_splitter(lx, hover):
+    if APP._split is not None:
+        if dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
+            ax, aw = APP._split
+            APP.side_w = max(200, min(520, aw + (lx - ax)))
+            try:
+                dpg.configure_item("side_child", width=int(APP.side_w))
+            except Exception:
+                pass
+            return True
+        APP._split = None
+        return False
+    if hover and 0 <= lx <= 6 and \
+            dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
+        APP._split = (lx, APP.side_w)
+        return True
+    APP._split_hover = bool(hover and 0 <= lx <= 6)
+    return False
+
+
 def handle_mouse(lx, ly, hover, W, H, cx, cy):
     if APP._dblclick:
         APP._dblclick = False
@@ -2302,7 +2326,14 @@ def frame():
         except Exception:
             lx = ly = 0
             hover = False
-        handle_mouse(lx, ly, hover, W, H, cx, cy)
+        split_busy = False
+        try:
+            split_busy = handle_splitter(lx, hover)
+        except Exception:
+            PS.debug_log("IMG-SPLIT-EXC",
+                         traceback.format_exc().replace("\n", " | ")[:500])
+        if not split_busy:
+            handle_mouse(lx, ly, hover, W, H, cx, cy)
         try:
             handle_nav_keys(dt, W, H, cx, cy)
         except Exception:
@@ -2316,6 +2347,9 @@ def frame():
                 draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"])
             else:
                 draw_view_2d(APP, "vp_draw", W, H, cx, cy, eff)
+            if APP._split is not None or APP._split_hover:
+                dpg.draw_line([2, 0], [2, H], color=[123, 97, 255, 255],
+                              thickness=3, parent="vp_draw")
             n_show = cpp_n if cpp_active else len(APP.sim.parts)
             APP._n_show = n_show
             APP._cpp_active = cpp_active

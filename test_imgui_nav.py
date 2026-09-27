@@ -41,6 +41,12 @@ try:
     eff2 = app.current_effect()
     assert "direction" in eff2["emitter"]["propagationCone"]
     assert "directionZ" not in eff2["emitter"]["propagationCone"]
+    # splitter hover math (drag needs a real pressed button)
+    assert S.handle_splitter(3.0, True) is False
+    assert app._split_hover is True
+    assert S.handle_splitter(500.0, False) is False
+    assert app._split_hover is False
+    assert app.side_w == 300
     print("NAV-OK")
 finally:
     dpg.destroy_context()
