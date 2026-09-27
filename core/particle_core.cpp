@@ -1,0 +1,544 @@
+// particle_core — C++ simulation core for Particle Studio.
+// Mirrors particle_studio.py semantics EXACTLY (extension semantics):
+//  life excludes the death duration, shape flips at raw>=0.5, per-particle
+//  jitter/sizeRatio/speedRatio, gravity accumulators, reverse spawn.
+// Raw CPython API, no third-party deps. Build: python core/build_core.py
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace {
+constexpr double PI = 3.14159265358979323846;
+
+inline double clamp01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
+inline std::string lower_str(const std::string &s) {
+    std::string o = s;
+    for (char &c : o) c = (char)tolower((unsigned char)c);
+    return o;
+}
+
+// Canonical shape order shared with particle_studio.SHAPE_ORDER.
+int shape_index(const std::string &s) {
+    static const char *names[] = {"circle", "square", "triangle", "star", "diamond",
+                                  "line", "custom", "sphere", "cube", "pyramid",
+                                  "torus", "billboard"};
+    std::string l = lower_str(s);
+    for (int i = 0; i < 12; i++)
+        if (l == names[i]) return i;
+    return 0;
+}
+
+double ease_fn(double t, const std::string &name) {
+    t = clamp01(t);
+    if (name == "ease-in") return t * t;
+    if (name == "ease-out") return t * (2 - t);
+    if (name == "ease-in-out") return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    return t;
+}
+
+struct RGB { int r = 255, g = 255, b = 255; };
+RGB parse_hex(const std::string &c) {
+    std::string h = c;
+    if (!h.empty() && h[0] == '#') h = h.substr(1);
+    if (h.size() == 3) {
+        std::string e;
+        for (char ch : h) { e += ch; e += ch; }
+        h = e;
+    }
+    if (h.size() < 6) return RGB{};
+    try {
+        return {(int)std::stoul(h.substr(0, 2), nullptr, 16),
+                (int)std::stoul(h.substr(2, 2), nullptr, 16),
+                (int)std::stoul(h.substr(4, 2), nullptr, 16)};
+    } catch (...) { return RGB{}; }
+}
+
+struct Keyframe {
+    double dur = 0.5, size = 8, sizeMax = 8, opacity = 255, minSpd = 0, maxSpd = 0;
+    std::string shape = "circle", color = "#ffffff", easing = "linear";
+};
+
+struct Emitter {
+    double flow = 40, maxParticles = 300, reservoir = 50;
+    bool burst = false, reverse = false;
+    // zone
+    std::string zshape = "circle", zmode = "surface";
+    double radius = 10, width = 100, height = 60, length = 100, depth = 60, rot = 0;
+    // cone
+    double direction = 0, directionY = 0, spread = 90;
+};
+
+// ---- Python dict helpers (borrowed refs, defaults on missing) ----
+double dget(PyObject *d, const char *k, double fb) {
+    if (!d || !PyDict_Check(d)) return fb;
+    PyObject *v = PyDict_GetItemString(d, k);
+    if (!v || v == Py_None) return fb;
+    double x = PyFloat_AsDouble(v);
+    return PyErr_Occurred() ? (PyErr_Clear(), fb) : x;
+}
+long lget(PyObject *d, const char *k, long fb) {
+    if (!d || !PyDict_Check(d)) return fb;
+    PyObject *v = PyDict_GetItemString(d, k);
+    if (!v || v == Py_None) return fb;
+    long x = PyLong_AsLong(v);
+    return PyErr_Occurred() ? (PyErr_Clear(), fb) : x;
+}
+bool bget(PyObject *d, const char *k, bool fb) {
+    if (!d || !PyDict_Check(d)) return fb;
+    PyObject *v = PyDict_GetItemString(d, k);
+    if (!v || v == Py_None) return fb;
+    int x = PyObject_IsTrue(v);
+    return x < 0 ? (PyErr_Clear(), fb) : (bool)x;
+}
+std::string sget(PyObject *d, const char *k, const std::string &fb) {
+    if (!d || !PyDict_Check(d)) return fb;
+    PyObject *v = PyDict_GetItemString(d, k);
+    if (!v || v == Py_None) return fb;
+    if (PyUnicode_Check(v)) {
+        const char *s = PyUnicode_AsUTF8(v);
+        return s ? s : fb;
+    }
+    return fb;
+}
+}  // namespace
+
+struct Engine {
+    Emitter em;
+    std::vector<Keyframe> kf;
+    bool is3d = false;
+    std::mt19937 rng{std::random_device{}()};
+    // SoA pool
+    std::vector<double> x, y, vx, vy, z, vz, dx, dy, dz, gx, gy, gz;
+    std::vector<double> age, life, sizeRatio, spdRatio, jitter;
+    double accum = 0.0;
+    bool bursted = false;
+
+    double frand() {
+        static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
+        return dist(rng);
+    }
+    size_t count() const { return x.size(); }
+
+    void clear() {
+        x.clear(); y.clear(); vx.clear(); vy.clear(); z.clear(); vz.clear();
+        dx.clear(); dy.clear(); dz.clear(); gx.clear(); gy.clear(); gz.clear();
+        age.clear(); life.clear(); sizeRatio.clear(); spdRatio.clear(); jitter.clear();
+        accum = 0.0; bursted = false;
+    }
+
+    void kill(size_t i) {
+        size_t l = count() - 1;
+        if (i != l) {
+            x[i] = x[l]; y[i] = y[l]; vx[i] = vx[l]; vy[i] = vy[l];
+            z[i] = z[l]; vz[i] = vz[l]; dx[i] = dx[l]; dy[i] = dy[l]; dz[i] = dz[l];
+            gx[i] = gx[l]; gy[i] = gy[l]; gz[i] = gz[l]; age[i] = age[l];
+            life[i] = life[l]; sizeRatio[i] = sizeRatio[l];
+            spdRatio[i] = spdRatio[l]; jitter[i] = jitter[l];
+        }
+        x.pop_back(); y.pop_back(); vx.pop_back(); vy.pop_back();
+        z.pop_back(); vz.pop_back(); dx.pop_back(); dy.pop_back(); dz.pop_back();
+        gx.pop_back(); gy.pop_back(); gz.pop_back(); age.pop_back();
+        life.pop_back(); sizeRatio.pop_back(); spdRatio.pop_back(); jitter.pop_back();
+    }
+
+    // locate interval (extension semantics, per-particle jitter scale)
+    void locate(double pjit, double ageV, int &k, double &e, double &raw) const {
+        int segs = kf.empty() ? 1 : (int)kf.size() - 1;
+        if (segs < 1) segs = 1;
+        double total = 0;
+        for (int i = 0; i < segs && i < (int)kf.size(); i++) total += kf[i].dur * pjit;
+        double t = total > 0 ? std::max(0.0, std::min(ageV, total)) : 0.0;
+        double acc = 0;
+        for (int i = 0; i < segs; i++) {
+            double d = (i < (int)kf.size() ? kf[i].dur : 0.5) * pjit;
+            if (t < acc + d || i == segs - 1) {
+                raw = d <= 0 ? 0.0 : clamp01((t - acc) / d);
+                e = ease_fn(raw, i < (int)kf.size() ? kf[i].easing : "linear");
+                k = i;
+                return;
+            }
+            acc += d;
+        }
+        k = segs - 1; e = 1.0; raw = 1.0;
+    }
+
+    double sample_speed(double pjit, double ageV, double sr) const {
+        int k; double e, raw;
+        locate(pjit, ageV, k, e, raw);
+        int n = (int)kf.size();
+        const Keyframe &a = kf[std::min(k, n - 1)];
+        const Keyframe &b = kf[std::min(k + 1, n - 1)];
+        double mn = a.minSpd + (b.minSpd - a.minSpd) * e;
+        double mx = a.maxSpd + (b.maxSpd - a.maxSpd) * e;
+        return mn + (mx - mn) * sr;
+    }
+
+    void cone_dir3(double bx, double by, double bz, double spread,
+                   double &ox, double &oy, double &oz) {
+        double n = sqrt(bx * bx + by * by + bz * bz);
+        if (n < 1e-12) n = 1.0;
+        bx /= n; by /= n; bz /= n;
+        double ux = 0, uy = 1, uz = 0;
+        if (fabs(by) >= 0.95) { ux = 1; uy = 0; }
+        double c1x = by * uz - bz * uy, c1y = bz * ux - bx * uz, c1z = bx * uy - by * ux;
+        double n1 = sqrt(c1x * c1x + c1y * c1y + c1z * c1z);
+        if (n1 < 1e-12) n1 = 1.0;
+        ux = c1x / n1; uy = c1y / n1; uz = c1z / n1;
+        double vx2 = by * uz - bz * uy, vy2 = bz * ux - bx * uz, vz2 = bx * uy - by * ux;
+        double a = frand() * 2 * PI;
+        double r = tan(spread * PI / 360.0) * sqrt(frand());
+        double ca = cos(a) * r, sa = sin(a) * r;
+        ox = bx + ux * ca + vx2 * sa;
+        oy = by + uy * ca + vy2 * sa;
+        oz = bz + uz * ca + vz2 * sa;
+        double n2 = sqrt(ox * ox + oy * oy + oz * oz);
+        if (n2 < 1e-12) n2 = 1.0;
+        ox /= n2; oy /= n2; oz /= n2;
+    }
+
+    void spawn(double cx, double cy, double ex, double ey, double ez) {
+        double jit = 0.9 + frand() * 0.2;
+        double lifeV = 0.1;
+        if (!kf.empty()) {
+            double tot = 0;
+            for (size_t i = 0; i + 1 < kf.size(); i++) tot += kf[i].dur * jit;
+            lifeV = std::max(0.1, tot);
+        }
+        double sr = frand(), spr = frand();
+        double spd0 = kf.empty() ? 0.0 : sample_speed(jit, 0.0, spr);
+        double dxv = 0, dyv = 0, dzv = 0, px = 0, py = 0, pzv = 0;
+        if (is3d) {
+            double sx = 0, sy = 0, sz = 0;
+            double rot = em.rot * PI / 180.0, cr = cos(rot), sr2 = sin(rot);
+            if (em.zshape == "sphere" || em.zshape == "circle") {
+                double th = frand() * 2 * PI, ph = acos(2 * frand() - 1);
+                double rr = em.radius * cbrt(frand());
+                sx = rr * sin(ph) * cos(th); sy = rr * cos(ph); sz = rr * sin(ph) * sin(th);
+            } else if (em.zshape == "box" || em.zshape == "rectangle") {
+                sx = (frand() - 0.5) * em.width;
+                sy = (frand() - 0.5) * em.height;
+                sz = (frand() - 0.5) * em.depth;
+                double rx = sx * cr - sy * sr2; sy = sx * sr2 + sy * cr; sx = rx;
+            } else if (em.zshape == "line") {
+                sx = (frand() - 0.5) * em.length;
+                double rx = sx * cr; sy = sx * sr2; sx = rx; sz = 0;
+            }
+            double az = em.direction * PI / 180.0, el = em.directionY * PI / 180.0;
+            double bx = cos(el) * cos(az), by = sin(el), bz = cos(el) * sin(az);
+            cone_dir3(bx, by, bz, em.spread, dxv, dyv, dzv);
+            if (em.reverse) {
+                double dist = spd0 * lifeV;
+                px = ex + sx + dxv * dist; py = ey + sy + dyv * dist; pzv = ez + sz + dzv * dist;
+                dxv = -dxv; dyv = -dyv; dzv = -dzv;
+            } else {
+                px = ex + sx; py = ey + sy; pzv = ez + sz;
+            }
+        } else {
+            double ang = (em.direction + (frand() * 2 - 1) * em.spread / 2) * PI / 180.0;
+            double rot = em.rot * PI / 180.0, cr = cos(rot), sr2 = sin(rot);
+            double lx = 0, ly = 0;
+            if (em.zshape == "circle" || em.zshape == "sphere") {
+                double a = frand() * 2 * PI;
+                if (em.zmode == "edge") { lx = cos(a) * em.radius; ly = sin(a) * em.radius; }
+                else { double r = sqrt(frand()) * em.radius; lx = cos(a) * r; ly = sin(a) * r; }
+            } else if (em.zshape == "rectangle" || em.zshape == "box") {
+                if (em.zmode == "edge") {
+                    double per = 2 * (em.width + em.height), d = frand() * per;
+                    if (d < em.width) { lx = d - em.width / 2; ly = -em.height / 2; }
+                    else if (d < em.width + em.height) { lx = em.width / 2; ly = (d - em.width) - em.height / 2; }
+                    else if (d < 2 * em.width + em.height) { lx = em.width / 2 - (d - em.width - em.height); ly = em.height / 2; }
+                    else { lx = -em.width / 2; ly = em.height / 2 - (d - 2 * em.width - em.height); }
+                } else { lx = (frand() - 0.5) * em.width; ly = (frand() - 0.5) * em.height; }
+            } else if (em.zshape == "line") {
+                lx = (frand() - 0.5) * em.length;
+            }
+            double ox = lx * cr - ly * sr2, oy = lx * sr2 + ly * cr;
+            dxv = cos(ang); dyv = sin(ang);
+            if (em.reverse) {
+                double dist = spd0 * lifeV;
+                px = cx + ox + dxv * dist; py = cy + oy + dyv * dist;
+                dxv = -dxv; dyv = -dyv;
+            } else {
+                px = cx + ox; py = cy + oy;
+            }
+        }
+        x.push_back(px); y.push_back(py); vx.push_back(dxv * spd0); vy.push_back(dyv * spd0);
+        z.push_back(pzv); vz.push_back(dzv * spd0);
+        dx.push_back(dxv); dy.push_back(dyv); dz.push_back(dzv);
+        gx.push_back(0); gy.push_back(0); gz.push_back(0);
+        age.push_back(0); life.push_back(lifeV);
+        sizeRatio.push_back(sr); spdRatio.push_back(spr); jitter.push_back(jit);
+    }
+};
+
+// ---------------- CPython wrapper ----------------
+struct PyEngine {
+    PyObject_HEAD;
+    Engine eng;
+};
+
+static void PyEngine_dealloc(PyEngine *self) {
+    self->eng.~Engine();
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+static PyObject *PyEngine_new(PyTypeObject *type, PyObject *, PyObject *) {
+    PyEngine *self = (PyEngine *)type->tp_alloc(type, 0);
+    if (self) new (&self->eng) Engine();
+    return (PyObject *)self;
+}
+
+static bool parse_emitter(PyObject *em, bool is3d, Emitter &out) {
+    out.flow = dget(em, "flow", 40);
+    out.maxParticles = (double)lget(em, "maxParticles", 300);
+    out.reservoir = (double)lget(em, "reservoir", 50);
+    out.burst = sget(em, "mode", "Infinite") == "Burst";
+    out.reverse = bget(em, "reverse", false);
+    PyObject *zone = PyDict_GetItemString(em, "emissionZone");
+    PyObject *cone = PyDict_GetItemString(em, "propagationCone");
+    // zone shape: strict editor separation like _read_emitter
+    std::string zr = sget(zone, "shape", is3d ? "sphere" : "Circle");
+    std::string zl = lower_str(zr);
+    if (is3d) {
+        out.zshape = (zl == "sphere" || zl == "box" || zl == "point" || zl == "line") ? zl : "sphere";
+        out.rot = dget(zone, "rotationZ", dget(zone, "rotation", 0));
+        out.direction = dget(cone, "directionZ", dget(cone, "direction", 0));
+        out.directionY = dget(cone, "directionY", 0);
+    } else {
+        if (zr == "Circle") out.zshape = "circle";
+        else if (zr == "Rectangle") out.zshape = "rectangle";
+        else if (zr == "Line") out.zshape = "line";
+        else if (zr == "Point") out.zshape = "point";
+        else out.zshape = "circle";
+        out.rot = dget(zone, "rotation", 0);
+        out.direction = dget(cone, "direction", dget(cone, "directionZ", 0));
+        out.directionY = 0;
+    }
+    out.radius = dget(zone, "radius", 10);
+    out.width = dget(zone, "width", 100);
+    out.height = dget(zone, "height", 60);
+    out.length = dget(zone, "length", 100);
+    out.depth = dget(zone, "depth", 60);
+    out.zmode = lower_str(sget(zone, "mode", "Surface"));
+    out.spread = dget(cone, "spread", 90);
+    return true;
+}
+
+static PyObject *py_configure(PyEngine *self, PyObject *args) {
+    PyObject *em, *tracks;
+    int is3d;
+    if (!PyArg_ParseTuple(args, "OO!p", &em, &PyList_Type, &tracks, &is3d)) return nullptr;
+    self->eng.is3d = (bool)is3d;
+    parse_emitter(em, self->eng.is3d, self->eng.em);
+    self->eng.kf.clear();
+    Py_ssize_t n = PyList_Size(tracks);
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *t = PyList_GetItem(tracks, i);  // borrowed
+        if (!PyDict_Check(t)) continue;
+        Keyframe k;
+        k.dur = std::max(1e-6, dget(t, "dur", 0.5));
+        k.shape = sget(t, "shape", self->eng.is3d ? "sphere" : "circle");
+        k.size = dget(t, "size", 8);
+        k.sizeMax = dget(t, "sizeMax", k.size);
+        k.color = sget(t, "color", "#ffffff");
+        k.opacity = dget(t, "opacity", 255);
+        k.minSpd = dget(t, "minSpeed", dget(t, "minSpd", 0));
+        k.maxSpd = dget(t, "maxSpeed", dget(t, "maxSpd", k.minSpd));
+        k.easing = sget(t, "easing", "linear");
+        self->eng.kf.push_back(k);
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *py_set_seed(PyEngine *self, PyObject *args) {
+    unsigned long s;
+    if (!PyArg_ParseTuple(args, "k", &s)) return nullptr;
+    self->eng.rng.seed((std::mt19937::result_type)s);
+    Py_RETURN_NONE;
+}
+static PyObject *py_reset(PyEngine *self, PyObject *) {
+    self->eng.clear();
+    Py_RETURN_NONE;
+}
+static PyObject *py_count(PyEngine *self, PyObject *) {
+    return PyLong_FromSize_t(self->eng.count());
+}
+
+// sample(age, sizeRatio, speedRatio) -> dict{size,color(0xRRGGBB),opacity,speed,shape(int)}
+static PyObject *py_sample(PyEngine *self, PyObject *args) {
+    double ageV, sr, spr;
+    if (!PyArg_ParseTuple(args, "ddd", &ageV, &sr, &spr)) return nullptr;
+    const Engine &e = self->eng;
+    if (e.kf.empty()) Py_RETURN_NONE;
+    int k; double ev, raw;
+    e.locate(1.0, ageV, k, ev, raw);
+    int n = (int)e.kf.size();
+    const Keyframe &a = e.kf[std::min(k, n - 1)];
+    const Keyframe &b = e.kf[std::min(k + 1, n - 1)];
+    double smin = a.size + (b.size - a.size) * ev;
+    double smax = a.sizeMax + (b.sizeMax - a.sizeMax) * ev;
+    RGB c0 = parse_hex(a.color), c1 = parse_hex(b.color);
+    // NOTE: Python round() = banker's rounding == std::nearbyint (FE_TONEAREST)
+    int r = (int)std::nearbyint(c0.r + (c1.r - c0.r) * ev);
+    int g = (int)std::nearbyint(c0.g + (c1.g - c0.g) * ev);
+    int bl = (int)std::nearbyint(c0.b + (c1.b - c0.b) * ev);
+    double mn = a.minSpd + (b.minSpd - a.minSpd) * ev;
+    double mx = a.maxSpd + (b.maxSpd - a.maxSpd) * ev;
+    int shp = shape_index(raw >= 0.5 ? b.shape : a.shape);
+    return Py_BuildValue("{s:d,s:i,s:d,s:d,s:i}",
+                         "size", smin + (smax - smin) * sr,
+                         "color", (r << 16) | (g << 8) | bl,
+                         "opacity", a.opacity + (b.opacity - a.opacity) * ev,
+                         "speed", mn + (mx - mn) * spr,
+                         "shape", shp);
+}
+
+// step(dt, cx, cy, ex, ey, ez, gx, gy, gz, maxp, yaw, pitch, zoom, ox, oy, focal, vcx, vcy)
+// returns {x:[],y:[],z:[],r:[],color:[],shape:[],depth:[]}
+static PyObject *py_step(PyEngine *self, PyObject *args) {
+    double dt, cx, cy, ex, ey, ez, gxv, gyv, gzv;
+    long maxp;
+    double yaw, pitch, zoom, ox, oy, focal, vcx, vcy;
+    if (!PyArg_ParseTuple(args, "dddddddddkdddddddd", &dt, &cx, &cy, &ex, &ey, &ez,
+                          &gxv, &gyv, &gzv, &maxp, &yaw, &pitch, &zoom,
+                          &ox, &oy, &focal, &vcx, &vcy))
+        return nullptr;
+    Engine &e = self->eng;
+    if (dt < 0) dt = 0;
+    if (dt > 0.05) dt = 0.05;
+    if (!e.kf.empty()) {
+        if (e.em.burst) {
+            if (!e.bursted) {
+                e.bursted = true;
+                long nb = std::min<long>(maxp, 150);
+                for (long i = 0; i < nb; i++) e.spawn(cx, cy, ex, ey, ez);
+            }
+        } else {
+            e.accum += e.em.flow * dt;
+            while (e.accum >= 1 && (long)e.count() < maxp) {
+                e.accum -= 1;
+                e.spawn(cx, cy, ex, ey, ez);
+            }
+        }
+        for (long i = (long)e.count() - 1; i >= 0; i--) {
+            size_t u = (size_t)i;
+            e.gx[u] += gxv; e.gy[u] += gyv; e.gz[u] += gzv;
+            double spd = e.sample_speed(e.jitter[u], e.age[u], e.spdRatio[u]);
+            e.vx[u] = e.dx[u] * spd + e.gx[u];
+            e.vy[u] = e.dy[u] * spd + e.gy[u];
+            e.vz[u] = e.dz[u] * spd + e.gz[u];
+            e.x[u] += e.vx[u] * dt; e.y[u] += e.vy[u] * dt; e.z[u] += e.vz[u] * dt;
+            e.age[u] += dt;
+            if (e.age[u] >= e.life[u]) e.kill(u);
+        }
+        if ((long)e.count() > maxp) {  // trim oldest (keep newest), like [-maxp:]
+            size_t drop = e.count() - (size_t)maxp;
+            // swap-remove from front 'drop' times
+            for (size_t d = 0; d < drop && !e.x.empty(); d++) e.kill(0);
+        }
+    }
+    // project + sample draw arrays
+    size_t n = e.count();
+    bool is3d = e.is3d;
+    double syaw = sin(yaw), cyaw = cos(yaw), spit = sin(pitch), cpit = cos(pitch);
+    PyObject *lx = PyList_New(n), *ly = PyList_New(n), *lz = PyList_New(n);
+    PyObject *lr = PyList_New(n), *lc = PyList_New(n), *ls = PyList_New(n), *ld = PyList_New(n);
+    PyObject *la = PyList_New(n), *lwx = PyList_New(n), *lwy = PyList_New(n);
+    if (!lx || !ly || !lz || !lr || !lc || !ls || !ld || !la || !lwx || !lwy) return nullptr;
+    int nk = (int)e.kf.size();
+    for (size_t i = 0; i < n; i++) {
+        int k; double ev, raw;
+        e.locate(e.jitter[i], e.age[i], k, ev, raw);
+        const Keyframe &a = e.kf[std::min(k, nk - 1)];
+        const Keyframe &b = e.kf[std::min(k + 1, nk - 1)];
+        double smin = a.size + (b.size - a.size) * ev;
+        double smax = a.sizeMax + (b.sizeMax - a.sizeMax) * ev;
+        double size = smin + (smax - smin) * e.sizeRatio[i];
+        RGB c0 = parse_hex(a.color), c1 = parse_hex(b.color);
+        int r = (int)std::nearbyint(c0.r + (c1.r - c0.r) * ev);
+        int g = (int)std::nearbyint(c0.g + (c1.g - c0.g) * ev);
+        int bl = (int)std::nearbyint(c0.b + (c1.b - c0.b) * ev);
+        double alpha = (a.opacity + (b.opacity - a.opacity) * ev) / 255.0;
+        int shp = shape_index(raw >= 0.5 ? b.shape : a.shape);
+        double rad = std::max(1.5, size * 0.45);
+        double sx = e.x[i], syv = e.y[i], rad2 = rad, depth = 0;
+        if (is3d) {
+            double x1 = e.x[i] * cyaw + e.z[i] * syaw;
+            double z1 = -e.x[i] * syaw + e.z[i] * cyaw;
+            double y2 = e.y[i] * cpit - z1 * spit;
+            double z2 = e.y[i] * spit + z1 * cpit;
+            double sc = zoom * focal / (focal + z2);
+            sx = vcx + ox + x1 * sc;
+            syv = vcy + oy - y2 * sc;
+            rad2 = std::max(1.0, rad * sc);
+            depth = z2;
+        }
+        PyList_SET_ITEM(lx, i, PyFloat_FromDouble(sx));
+        PyList_SET_ITEM(ly, i, PyFloat_FromDouble(syv));
+        PyList_SET_ITEM(lz, i, PyFloat_FromDouble(e.z[i]));
+        PyList_SET_ITEM(lr, i, PyFloat_FromDouble(rad2));
+        PyList_SET_ITEM(lc, i, PyLong_FromLong((r << 16) | (g << 8) | bl));
+        PyList_SET_ITEM(ls, i, PyLong_FromLong(shp));
+        PyList_SET_ITEM(ld, i, PyFloat_FromDouble(depth));
+        PyList_SET_ITEM(la, i, PyFloat_FromDouble(alpha < 0 ? 0 : (alpha > 1 ? 1 : alpha)));
+        PyList_SET_ITEM(lwx, i, PyFloat_FromDouble(e.x[i]));
+        PyList_SET_ITEM(lwy, i, PyFloat_FromDouble(e.y[i]));
+    }
+    PyObject *d = PyDict_New();
+    PyDict_SetItemString(d, "x", lx); PyDict_SetItemString(d, "y", ly);
+    PyDict_SetItemString(d, "z", lz); PyDict_SetItemString(d, "r", lr);
+    PyDict_SetItemString(d, "color", lc); PyDict_SetItemString(d, "shape", ls);
+    PyDict_SetItemString(d, "depth", ld);
+    PyDict_SetItemString(d, "alpha", la);
+    PyDict_SetItemString(d, "wx", lwx); PyDict_SetItemString(d, "wy", lwy);
+    Py_DECREF(lx); Py_DECREF(ly); Py_DECREF(lz); Py_DECREF(lr);
+    Py_DECREF(lc); Py_DECREF(ls); Py_DECREF(ld);
+    Py_DECREF(la); Py_DECREF(lwx); Py_DECREF(lwy);
+    return d;
+}
+
+static PyMethodDef engine_methods[] = {
+    {"configure", (PyCFunction)py_configure, METH_VARARGS, "configure(emitter, tracks, is3d)"},
+    {"set_seed", (PyCFunction)py_set_seed, METH_VARARGS, "set_seed(seed)"},
+    {"reset", (PyCFunction)py_reset, METH_NOARGS, "clear particles/state"},
+    {"count", (PyCFunction)py_count, METH_NOARGS, "active particles"},
+    {"sample", (PyCFunction)py_sample, METH_VARARGS, "sample(age,sizeRatio,speedRatio)"},
+    {"step", (PyCFunction)py_step, METH_VARARGS, "advance + fetch draw arrays"},
+    {nullptr, nullptr, 0, nullptr},
+};
+
+static PyTypeObject PyEngineType = {
+    PyVarObject_HEAD_INIT(nullptr, 0)
+};
+
+static PyModuleDef coremod = {PyModuleDef_HEAD_INIT, "particle_core",
+                              "C++ simulation core for Particle Studio.", -1, nullptr};
+
+PyMODINIT_FUNC PyInit_particle_core(void) {
+    PyEngineType.tp_name = "particle_core.Engine";
+    PyEngineType.tp_basicsize = (Py_ssize_t)sizeof(PyEngine);
+    PyEngineType.tp_dealloc = (destructor)PyEngine_dealloc;
+    PyEngineType.tp_flags = Py_TPFLAGS_DEFAULT;
+    PyEngineType.tp_doc = "C++ particle engine (mirrors particle_studio semantics)";
+    PyEngineType.tp_methods = engine_methods;
+    PyEngineType.tp_new = PyEngine_new;
+    if (PyType_Ready(&PyEngineType) < 0) return nullptr;
+    PyObject *m = PyModule_Create(&coremod);
+    if (!m) return nullptr;
+    Py_INCREF(&PyEngineType);
+    PyModule_AddObject(m, "Engine", (PyObject *)&PyEngineType);
+    PyModule_AddStringConstant(m, "__version__", "1.0");
+    // canonical shape order shared with Python
+    const char *names[] = {"circle", "square", "triangle", "star", "diamond", "line",
+                           "custom", "sphere", "cube", "pyramid", "torus", "billboard"};
+    PyObject *lst = PyList_New(12);
+    if (!lst) { Py_DECREF(m); return nullptr; }
+    for (int i = 0; i < 12; i++) PyList_SET_ITEM(lst, i, PyUnicode_FromString(names[i]));
+    PyModule_AddObject(m, "SHAPE_ORDER", lst);
+    return m;
+}
