@@ -15,7 +15,7 @@ This repository is a two-part toolkit:
 
 The two share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts) below.
 
-Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a closed-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
+Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a open-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
 
 ## Features
 
@@ -26,9 +26,15 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
 
+## Screenshots / Preview
+
+<!-- TODO: add a screenshot or short GIF of the editor UI and the live GPU preview here.
+     A visual tool like this benefits a lot from being shown, not just described. -->
+
 ## Project structure
 
 ```
+<<<<<<< HEAD
 particle_studio.py              # Main app: UI, simulation fallback, C++ binding, GPU frames, preview server, export
 rebuild_app.py                  # One-command build pipeline
 CarrotParticleEditor.spec       # PyInstaller spec (icon, datas, hidden imports)
@@ -57,6 +63,20 @@ preview/
 
 assets/                          # App/window icons
 dist/CarrotParticleEditor.exe    # Packaged app (regenerated on every rebuild)
+=======
+Carrot-Particle-Editor/
+├── assets/                        # Editor UI assets / icons
+├── core/                          # Python simulation reference + C++ core + parity/behavior tests
+├── dist/                          # PyInstaller build output (generated, not hand-edited)
+├── preview/                       # Browser preview engine (Three.js / PixiJS) + its tests
+├── render/                        # OpenGL preview renderer (GL init, projection, cost profiling)
+├── AdvancedParticleEmitter.json   # GDevelop extension (2D/3D particle runtime)
+├── particle_studio.py             # Desktop editor entry point (Tkinter app)
+├── rebuild_app.py                 # Full build pipeline script
+├── CarrotParticleEditor.spec      # PyInstaller spec
+├── APP_STRUCTURE.md               # Detailed internal architecture notes
+└── README.md
+>>>>>>> 251dc65920a9ca995c779c3d64ee0d10f3b2fdbe
 ```
 
 ## Getting started
@@ -69,7 +89,7 @@ dist/CarrotParticleEditor.exe    # Packaged app (regenerated on every rebuild)
 
 ### Build
 
-```bash
+```
 python rebuild_app.py
 ```
 
@@ -82,7 +102,7 @@ Launch via **Carrot Particle Editor.lnk**, or run `dist/CarrotParticleEditor.exe
 ## Testing
 
 | Test | Covers |
-|---|---|
+| --- | --- |
 | `core/test_parity.py` | Python vs C++ simulation output — 99/99 passing |
 | `core/test_behavior.py` | Simulation behavior and performance (~4ms @ 2,000 particles) |
 | `render/test_gl.py` | OpenGL context initialization |
@@ -125,6 +145,11 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 ## Roadmap
 
 - Evaluating integration with a dedicated C++ particle library (Effekseer or SPARK) as a possible complement to the current custom core.
+- Additional particle shapes / emitter presets.
+- Packaged builds for macOS/Linux in addition to the current Windows `.exe` pipeline.
+- More export/import interoperability with other particle formats.
+
+*(This list reflects current thinking — update it as priorities firm up.)*
 
 ## Related projects
 
@@ -136,4 +161,4 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 ## License
 
-Carrots Engine's own code is distributed under a proprietary license (its GDevelop-derived core remains MIT — see its [LICENSE.md](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)). Align this project's license with that choice, or pick your own if it's meant to stand alone — none specified yet.
+This project (the GDevelop extension and the standalone Carrot Particle Editor) is released under the **MIT License** — see [LICENSE](LICENSE). This is independent of Carrots Engine's own proprietary license; only its GDevelop-derived core remains MIT (see its [LICENSE.md](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)).
