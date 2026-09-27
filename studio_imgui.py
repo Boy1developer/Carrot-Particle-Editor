@@ -1,0 +1,2121 @@
+# -*- coding: utf-8 -*-
+"""
+Carrot Particle Editor — Dear ImGui edition (via Dear PyGui).
+Same v1.0 effect format as particle_studio.py (Tk edition): 2D/3D editors,
+sim core (pure-Python + optional C++ particle_core), undo/redo, JSON export,
+live browser preview server.
+
+Logic reused from particle_studio (defaults / validation / templates /
+sim math); only the UI layer is ImGui: sidebar form, drawlist viewport
+(replaces tkinter Canvas), file/color dialogs, modal chooser.
+
+Run: python studio_imgui.py
+"""
+import copy
+import json
+import math
+import os
+import random
+import sys
+import threading
+import time
+import traceback
+import webbrowser
+from functools import partial
+
+import dearpygui.dearpygui as dpg
+
+import particle_studio as PS
+
+try:
+    import particle_core as _CPP_MOD
+    HAS_CPP_CORE = True
+except Exception:
+    _CPP_MOD = None
+    HAS_CPP_CORE = False
+
+BUILD_ID = getattr(PS, "BUILD_ID", "b-imgui") + "-imgui"
+
+# ---------- ImGui dark theme (matches Tk palette) ----------
+BG = (26, 27, 34)
+SIDEBAR = (34, 35, 46)
+CARD = (38, 39, 51)
+INPUT = (20, 21, 28)
+TEXT = (232, 232, 238)
+MUTED = (154, 154, 173)
+ACCENT = (123, 97, 255)
+OK = (61, 220, 132)
+WARN = (255, 92, 92)
+YELLOW = (232, 212, 77)
+BLUE = (77, 159, 255)
+
+
+def hex_to_rgb(col, default=(255, 255, 255)):
+    h = (col or "").lstrip("#")
+    if len(h) == 3:
+        h = h[0] * 2 + h[1] * 2 + h[2] * 2
+    try:
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except ValueError:
+        return default
+
+
+def rgba(col, a=255):
+    r, g, b = hex_to_rgb(col)
+    return (r, g, b, a)
+
+
+# ================= framework-free simulation =================
+class SimEngine:
+    """Particle sim ported from StudioApp (no Tkinter): pure-Python tracks
+    morph + optional C++ core. Particle layout identical to the Tk edition:
+    [x,y,vx,vy,age,c0,c1,s0,s1,life,z,vz,shape,tracks,dx,dy,dz,gx,gy,gz,
+     sizeRatio,speedRatio]."""
+
+    TK_MAX_DOTS = 800
+
+    def __init__(self):
+        self.parts = []
+        self.accum = 0.0
+        self.bursted = False
+        self.last_t = time.time()
+        self._cpp_eng = None
+        self._cpp_key = None
+        self._cpp_out = None
+        self._last_sim_mode = None
+
+    def reset(self):
+        self.parts = []
+        self.accum = 0.0
+        self.bursted = False
+        self.last_t = time.time()
+        if self._cpp_eng is not None:
+            try:
+                self._cpp_eng.reset()
+            except Exception:
+                pass
+        self._cpp_key = None
+        self._cpp_out = None
+        self._last_sim_mode = None
+
+    # ---- keyframe tracks (identical semantics to particle_studio) ----
+    @staticmethod
+    def _ease_fn(t, name):
+        t = max(0.0, min(1.0, t))
+        if name == "ease-in":
+            return t * t
+        if name == "ease-out":
+            return t * (2 - t)
+        if name == "ease-in-out":
+            return 2 * t * t if t < 0.5 else -1 + (4 - 2 * t) * t
+        return t
+
+    @staticmethod
+    def _build_tracks(states, ptype):
+        tracks = []
+        prev_shape = None
+        ok_shapes = PS.SHAPES_3D if ptype == "3d" else PS.SHAPES_2D
+        fallback = "sphere" if ptype == "3d" else "circle"
+        for s in states:
+            ap = s.get("appearance", {})
+            mv = s.get("movement", {})
+            shp = str(s.get("shape", "") or "").lower() or prev_shape
+            shp = shp if shp in ok_shapes else fallback
+            prev_shape = shp or fallback
+            tracks.append({
+                "dur": max(1e-6, float(s.get("duration", 0.5) or 0.5)),
+                "shape": prev_shape,
+                "size": float(ap.get("size", 8) or 0),
+                "sizeMax": float(ap.get("sizeMax", ap.get("size", 8)) or 0),
+                "color": ap.get("color", "#ffffff") or "#ffffff",
+                "opacity": float(ap.get("opacity", 255)
+                                 if ap.get("opacity") is not None else 255),
+                "minSpd": float(mv.get("minSpeed", 0) or 0),
+                "maxSpd": float(mv.get("maxSpeed", mv.get("minSpeed", 0)) or 0),
+                "easing": s.get("easing", "linear") or "linear",
+            })
+        return tracks
+
+    @classmethod
+    def _locate(cls, tracks, age):
+        segs = max(1, len(tracks) - 1)
+        total = sum(tracks[k]["dur"] for k in range(segs))
+        t = max(0.0, min(age, total)) if total > 0 else 0.0
+        acc = 0.0
+        for k in range(segs):
+            d = tracks[k]["dur"]
+            if t < acc + d or k == segs - 1:
+                raw = 0.0 if d <= 0 else max(0.0, min(1.0, (t - acc) / d))
+                return k, cls._ease_fn(raw, tracks[k]["easing"]), raw
+            acc += d
+        return segs - 1, 1.0, 1.0
+
+    @staticmethod
+    def _lerp_color(c0, c1, t):
+        a, b = hex_to_rgb(c0), hex_to_rgb(c1)
+        return "#%02x%02x%02x" % (round(a[0] + (b[0] - a[0]) * t),
+                                  round(a[1] + (b[1] - a[1]) * t),
+                                  round(a[2] + (b[2] - a[2]) * t))
+
+    @classmethod
+    def sample_tracks(cls, tracks, age, sizeRatio, speedRatio):
+        k, e, raw = cls._locate(tracks, age)
+        a, b = tracks[k], tracks[min(k + 1, len(tracks) - 1)]
+        smin = a["size"] + (b["size"] - a["size"]) * e
+        smax = a["sizeMax"] + (b["sizeMax"] - a["sizeMax"]) * e
+        mn = a["minSpd"] + (b["minSpd"] - a["minSpd"]) * e
+        mx = a["maxSpd"] + (b["maxSpd"] - a["maxSpd"]) * e
+        return {
+            "size": smin + (smax - smin) * sizeRatio,
+            "color": cls._lerp_color(a["color"], b["color"], e),
+            "opacity": a["opacity"] + (b["opacity"] - a["opacity"]) * e,
+            "speed": mn + (mx - mn) * speedRatio,
+            "shape": b["shape"] if raw >= 0.5 else a["shape"],
+        }
+
+    @staticmethod
+    def _cone_dir3(bx, by, bz, spread_deg):
+        n = math.sqrt(bx * bx + by * by + bz * bz) or 1.0
+        bx, by, bz = bx / n, by / n, bz / n
+        ux, uy, uz = (0.0, 1.0, 0.0) if abs(by) < 0.95 else (1.0, 0.0, 0.0)
+        cx1, cy1, cz1 = (by * uz - bz * uy, bz * ux - bx * uz, bx * uy - by * ux)
+        n1 = math.sqrt(cx1 * cx1 + cy1 * cy1 + cz1 * cz1) or 1.0
+        ux, uy, uz = cx1 / n1, cy1 / n1, cz1 / n1
+        vx, vy, vz = by * uz - bz * uy, bz * ux - bx * uz, bx * uy - by * ux
+        a = random.random() * math.pi * 2
+        r = math.tan(math.radians(spread_deg / 2)) * math.sqrt(random.random())
+        dx = bx + (ux * math.cos(a) + vx * math.sin(a)) * r
+        dy = by + (uy * math.cos(a) + vy * math.sin(a)) * r
+        dz = bz + (uz * math.cos(a) + vz * math.sin(a)) * r
+        n2 = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+        return (dx / n2, dy / n2, dz / n2)
+
+    def spawn(self, em, ptype, cx, cy, emitter_pos, tracks):
+        cone = em.get("propagationCone", {})
+        zone = em.get("emissionZone", {})
+        is3d = "directionZ" in cone
+        spread = cone.get("spread", 90)
+        jitter = 0.9 + random.random() * 0.2
+        for tr in tracks:
+            tr["dur"] *= jitter
+        life = max(0.1, sum(tr["dur"] for tr in tracks[:-1]))
+        sizeRatio, speedRatio = random.random(), random.random()
+        head = self.sample_tracks(tracks, 0.0, sizeRatio, speedRatio)
+        spd0 = head["speed"]
+        if is3d:
+            zshape = str(zone.get("shape", "sphere"))
+            rot3 = math.radians(zone.get("rotationZ", zone.get("rotation", 0)) or 0)
+            cr3, sr3 = math.cos(rot3), math.sin(rot3)
+            if zshape == "sphere":
+                th = random.random() * math.pi * 2
+                ph = math.acos(2 * random.random() - 1)
+                rr = (zone.get("radius", 10) or 10) * (random.random() ** (1 / 3))
+                sx = rr * math.sin(ph) * math.cos(th)
+                sy = rr * math.cos(ph)
+                sz = rr * math.sin(ph) * math.sin(th)
+            elif zshape == "box":
+                sx = (random.random() - 0.5) * (zone.get("width", 100) or 100)
+                sy = (random.random() - 0.5) * (zone.get("height", 60) or 60)
+                sz = (random.random() - 0.5) * (zone.get("depth", 60) or 60)
+                sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
+            elif zshape == "line":
+                sx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+                sy, sz = 0.0, 0.0
+                sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
+            else:
+                sx, sy, sz = 0.0, 0.0, 0.0
+            az = math.radians(cone.get("directionZ", 0))
+            el = math.radians(cone.get("directionY", 0))
+            base = (math.cos(el) * math.cos(az), math.sin(el),
+                    math.cos(el) * math.sin(az))
+            dx, dy, dz = self._cone_dir3(base[0], base[1], base[2], spread)
+            ex, ey, ez = emitter_pos
+            if em.get("reverse"):
+                dist = spd0 * life
+                return [ex + sx + dx * dist, ey + sy + dy * dist,
+                        -dx * spd0, -dy * spd0, 0.0, "", "", 0, 0, life,
+                        ez + sz + dz * dist, -dz * spd0, head["shape"],
+                        tracks, -dx, -dy, -dz, 0.0, 0.0, 0.0,
+                        sizeRatio, speedRatio]
+            return [ex + sx, ey + sy, dx * spd0, dy * spd0, 0.0, "", "", 0, 0,
+                    life, ez + sz, dz * spd0, head["shape"],
+                    tracks, dx, dy, dz, 0.0, 0.0, 0.0, sizeRatio, speedRatio]
+        ang = math.radians(cone.get("direction", 0) +
+                           random.uniform(-spread / 2, spread / 2))
+        zshape = str(zone.get("shape", "Circle")).lower()
+        rot = math.radians(zone.get("rotation", 0) or 0)
+        zmode = str(zone.get("mode", "Surface")).lower()
+        lx, ly = 0.0, 0.0
+        if zshape == "circle":
+            rr = zone.get("radius", 50) or 50
+            a = random.random() * math.pi * 2
+            if zmode == "edge":
+                lx, ly = math.cos(a) * rr, math.sin(a) * rr
+            else:
+                r = math.sqrt(random.random()) * rr
+                lx, ly = math.cos(a) * r, math.sin(a) * r
+        elif zshape == "rectangle":
+            w, h = (zone.get("width", 100) or 100), (zone.get("height", 60) or 60)
+            if zmode == "edge":
+                per = 2 * (w + h)
+                d = random.random() * per
+                if d < w:
+                    lx, ly = d - w / 2, -h / 2
+                elif d < w + h:
+                    lx, ly = w / 2, (d - w) - h / 2
+                elif d < 2 * w + h:
+                    lx, ly = w / 2 - (d - w - h), h / 2
+                else:
+                    lx, ly = -w / 2, h / 2 - (d - 2 * w - h)
+            else:
+                lx, ly = (random.random() - 0.5) * w, (random.random() - 0.5) * h
+        elif zshape == "line":
+            lx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+        ox = lx * math.cos(rot) - ly * math.sin(rot)
+        oy = lx * math.sin(rot) + ly * math.cos(rot)
+        dx, dy = math.cos(ang), math.sin(ang)
+        if em.get("reverse"):
+            dist = spd0 * life
+            return [cx + ox + dx * dist, cy + oy + dy * dist,
+                    -dx * spd0, -dy * spd0, 0.0, "", "", 0, 0, life,
+                    0.0, 0.0, head["shape"],
+                    tracks, -dx, -dy, 0.0, 0.0, 0.0, 0.0,
+                    sizeRatio, speedRatio]
+        return [cx + ox, cy + oy, dx * spd0, dy * spd0, 0.0, "", "", 0, 0,
+                life, 0.0, 0.0, head["shape"],
+                tracks, dx, dy, 0.0, 0.0, 0.0, 0.0, sizeRatio, speedRatio]
+
+    def step_py(self, em, ptype, cx, cy, emitter_pos, cam, tracks, dt, maxp):
+        g = em.get("gravity", {})
+        gx = g.get("y", 0) * dt * 0.4
+        gy = g.get("x", 0) * dt * 0.4
+        gz = g.get("z", 0) * dt * 0.4
+        mode = em.get("mode", "Infinite")
+        if mode != self._last_sim_mode:
+            self._last_sim_mode = mode
+            self.parts = []
+            self.accum = 0.0
+            self.bursted = False
+        if mode == "Burst":
+            if not self.bursted:
+                for _ in range(min(maxp, 150)):
+                    self.parts.append(
+                        self.spawn(em, ptype, cx, cy, emitter_pos,
+                                   copy.deepcopy(tracks)))
+                self.bursted = True
+        else:
+            flow = float(em.get("flow", 40) or 40)
+            self.accum += flow * dt
+            while self.accum >= 1 and len(self.parts) < maxp:
+                self.accum -= 1
+                self.parts.append(
+                    self.spawn(em, ptype, cx, cy, emitter_pos,
+                               copy.deepcopy(tracks)))
+        for p in self.parts:
+            p[17] += gx
+            p[18] += gy
+            p[19] += gz
+            smp = self.sample_tracks(p[13], p[4], p[20], p[21])
+            p[2] = p[14] * smp["speed"] + p[17]
+            p[3] = p[15] * smp["speed"] + p[18]
+            p[11] = p[16] * smp["speed"] + p[19]
+            p[0] += p[2] * dt
+            p[1] += p[3] * dt
+            p[10] += p[11] * dt
+            p[4] += dt
+        if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
+            self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
+        return len(self.parts)
+
+    def step_cpp(self, eff, em, ptype, tracks, is3d, dt, scx, scy,
+                 emitter_pos, cam, focal, cx, cy, gx, gy, gz, maxp, cache_key):
+        """Advance the optional C++ core. Returns count or raises (caller
+        falls back to pure-Python)."""
+        if self._cpp_eng is None:
+            self._cpp_eng = _CPP_MOD.Engine()
+            self._cpp_eng.set_seed(random.randrange(1 << 30))
+            self._cpp_key = None
+        if cache_key != self._cpp_key:
+            self._cpp_eng.configure(eff["emitter"], tracks, is3d)
+            self._cpp_key = cache_key
+        ex, ey, ez = emitter_pos
+        out = self._cpp_eng.step(dt, scx, scy, ex, ey, ez, gx, gy, gz, maxp,
+                                 cam["yaw"], cam["pitch"], cam["zoom"],
+                                 cam["ox"], cam["oy"], focal, cx, cy)
+        self._cpp_out = out
+        return len(out["x"])
+
+# ================= application state =================
+class App:
+    def __init__(self):
+        self.ptype = "2d"
+        self.filename = "Default"
+        self.filepath = None
+        self.states = [PS.default_state("birth", 0), PS.default_state("death", 1)]
+        self.sel_state = 0
+        self.em = PS.default_emitter("2d")
+        self.cam = {"yaw": 0.7, "pitch": 0.42, "zoom": 1.0,
+                    "ox": 0.0, "oy": 0.0, "focal": 620.0}
+        self.emitter_pos = [0.0, 0.0, 0.0]
+        self.emitter2d = [0.0, 0.0]
+        self.fov = 60.0
+        self.sens = 1.0
+        self.glow = True
+        self.colormode = "gradient"  # or "selected"
+        self.sim = SimEngine()
+        self._history = []
+        self._hidx = -1
+        self._restoring = False
+        self._dirty = True
+        self._cache_t = 0.0
+        self._cached_eff = None
+        self._last_edit = 0.0
+        self._live_push_on = False
+        self._last_push = 0.0
+        self._status = "Ready"
+        self._status_col = OK
+        self._fps = 60
+        self._n_show = 0
+        self._cpp_active = False
+        self._gizmo = None
+        self._drag = None
+        self._wheel = 0
+        self._dblclick = False
+        self._custom_nodes = []
+        self._editor_open = False
+
+    # ---------- projection / camera (same math as Tk edition) ----------
+    def proj(self, x, y, z, cx, cy):
+        syaw, cyaw = math.sin(self.cam["yaw"]), math.cos(self.cam["yaw"])
+        spit, cpit = math.sin(self.cam["pitch"]), math.cos(self.cam["pitch"])
+        x1 = x * cyaw + z * syaw
+        z1 = -x * syaw + z * cyaw
+        y2 = y * cpit - z1 * spit
+        z2 = y * spit + z1 * cpit
+        f = self.cam.get("focal", 620.0)
+        scale = self.cam["zoom"] * f / (f + z2)
+        return (cx + self.cam["ox"] + x1 * scale,
+                cy + self.cam["oy"] - y2 * scale, scale, z2)
+
+    # ---------- effect assembly (mirrors StudioApp.current_effect) ----------
+    def read_emitter(self):
+        return copy.deepcopy(self.em)
+
+    def current_effect(self):
+        em = self.read_emitter()
+        states = []
+        for s in self.states:
+            ns = json.loads(json.dumps(s))
+            shp = str(ns.get("shape", "") or "").lower()
+            if self.ptype == "3d":
+                ns["shape"] = shp if shp in PS.SHAPES_3D else "sphere"
+                mv = ns.get("movement", {})
+                zmin = mv.get("minRot", mv.get("minRotZ", 0))
+                zmax = mv.get("maxRot", mv.get("maxRotZ", 0))
+                mv.update({"minRotX": 0, "maxRotX": 0, "minRotY": 0,
+                           "maxRotY": 0, "minRotZ": zmin, "maxRotZ": zmax})
+                mv.pop("minRot", None)
+                mv.pop("maxRot", None)
+                ns["movement"] = mv
+            else:
+                ns["shape"] = shp if shp in PS.SHAPES_2D else "circle"
+            ns.pop("customModel", None)
+            states.append(ns)
+        eff = PS.build_effect(self.ptype, em, states)
+        if self.ptype == "3d":
+            for src, st in zip(self.states, states):
+                cm = src.get("customModel") or {}
+                if cm.get("file"):
+                    ref = (st.get("modelRefs") or [""])[0] or cm.get("node") or ""
+                    node = cm.get("node") or ref
+                    eff["models"] = {"file": cm["file"],
+                                     "nodes": list(cm.get("nodes") or []),
+                                     "map": {ref: node} if ref else {}}
+                    break
+        return eff
+
+    def cached_effect(self):
+        now = time.time()
+        if self._cached_eff is None or self._dirty or now - self._cache_t > 0.15:
+            try:
+                self._cached_eff = self.current_effect()
+            except Exception:
+                self._cached_eff = None
+            self._cache_t = now
+            self._dirty = False
+        return self._cached_eff
+
+    def mark_dirty(self):
+        self._dirty = True
+        self._last_edit = time.time()
+
+    # ---------- undo / redo ----------
+    def snapshot(self):
+        return {"ptype": self.ptype, "filename": self.filename,
+                "emitter": copy.deepcopy(self.em),
+                "states": copy.deepcopy(self.states),
+                "sel": self.sel_state,
+                "cam": {k: self.cam[k] for k in ("yaw", "pitch", "zoom", "ox", "oy")},
+                "emitter_pos": list(self.emitter_pos),
+                "emitter2d": list(self.emitter2d),
+                "fov": self.fov}
+
+    def history_commit(self):
+        if self._restoring:
+            return
+        snap = self.snapshot()
+        key = json.dumps(snap, sort_keys=True, ensure_ascii=False)
+        if self._history and self._history[self._hidx][0] == key:
+            return
+        del self._history[self._hidx + 1:]
+        self._history.append((key, snap))
+        if len(self._history) > 100:
+            self._history.pop(0)
+        self._hidx = len(self._history) - 1
+
+    def history_restore(self, snap):
+        self._restoring = True
+        try:
+            self.ptype = snap["ptype"]
+            self.filename = snap.get("filename", "Default")
+            self.em = copy.deepcopy(snap["emitter"])
+            self.states = copy.deepcopy(snap["states"])
+            self.sel_state = max(0, min(snap.get("sel", 0), len(self.states) - 1))
+            self.cam.update(snap.get("cam", {}))
+            self.emitter_pos = list(snap.get("emitter_pos", (0.0, 0.0, 0.0)))
+            self.emitter2d = list(snap.get("emitter2d", (0.0, 0.0)))
+            self.fov = snap.get("fov", 60.0)
+            self.sync_state_form()
+            self.sim.reset()
+        finally:
+            self._restoring = False
+
+    def undo(self):
+        self.history_commit()
+        if self._hidx > 0:
+            self._hidx -= 1
+            self.history_restore(self._history[self._hidx][1])
+            self.set_status("Undo", MUTED)
+
+    def redo(self):
+        if self._hidx < len(self._history) - 1:
+            self._hidx += 1
+            self.history_restore(self._history[self._hidx][1])
+            self.set_status("Redo", MUTED)
+
+    def set_status(self, text, col=OK):
+        self._status = text
+        self._status_col = col
+        try:
+            dpg.set_value("status_text", text)
+            dpg.configure_item("status_text", color=list(col) + [255])
+        except Exception:
+            pass
+
+
+# ================= viewport (drawlist replaces tkinter Canvas) =================
+def _c(col, a=255):
+    r, g, b = hex_to_rgb(col)
+    return [r, g, b, a]
+
+
+def _poly_points(shape, x, y, r):
+    kind, pay = PS.StudioApp._poly_2d(shape, x, y, r)
+    if kind == "rect":
+        x0, y0, x1, y1 = pay
+        return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    if kind == "poly":
+        return [(pay[i], pay[i + 1]) for i in range(0, len(pay), 2)]
+    if kind == "line":
+        return None
+    x0, y0, x1, y1 = pay
+    return ("oval", (x0, y0, x1, y1))
+
+
+def draw_shape_2d(dl, x, y, r, shape, col, glow_col=None, thick=1):
+    pts = _poly_points(shape, x, y, r)
+    if glow_col is not None:
+        hr = r * 2.2
+        dpg.draw_circle([x, y], hr, color=[0, 0, 0, 0], fill=glow_col,
+                        parent=dl, segments=20)
+    if pts is None:  # line
+        dpg.draw_line([x - r * 1.6, y], [x + r * 1.6, y], color=col,
+                      thickness=max(2, int(r * 0.5)), parent=dl)
+    elif isinstance(pts, tuple):  # oval / hollow
+        kind, (x0, y0, x1, y1) = pts
+        cx, cy, rr = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2
+        if shape == "custom":
+            dpg.draw_circle([cx, cy], rr, color=col, thickness=2, parent=dl,
+                            segments=24)
+        else:
+            dpg.draw_circle([cx, cy], rr, color=[0, 0, 0, 0], fill=col,
+                            parent=dl, segments=24)
+    else:
+        dpg.draw_polygon(pts, color=[0, 0, 0, 0], fill=col, parent=dl)
+
+
+def draw_shape_3d(dl, sx, sy, r, shape, col):
+    dark = list(hex_to_rgb(PS.StudioApp._lerp_color(
+        "#%02x%02x%02x" % tuple(col[:3]), "#000000", 0.35))) + [255]
+    if shape == "cube":
+        h = r * 0.9
+        o = h * 0.45
+        dpg.draw_polygon([[sx - h + o, sy - h - o], [sx + h + o, sy - h - o],
+                          [sx + h, sy - h], [sx - h, sy - h]],
+                         color=[0, 0, 0, 0], fill=dark, parent=dl)
+        dpg.draw_rectangle([sx - h, sy - h], [sx + h, sy + h],
+                           color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape == "pyramid":
+        dpg.draw_polygon([[sx - r, sy + r * 0.7], [sx + r, sy + r * 0.7],
+                          [sx + r * 0.5, sy + r * 0.2],
+                          [sx - r * 0.5, sy + r * 0.2]],
+                         color=[0, 0, 0, 0], fill=dark, parent=dl)
+        dpg.draw_polygon([[sx, sy - r], [sx + r, sy + r * 0.7],
+                          [sx - r, sy + r * 0.7]],
+                         color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape == "torus":
+        dpg.draw_circle([sx, sy], r, color=[0, 0, 0, 0], fill=col, parent=dl,
+                        segments=24)
+        dpg.draw_circle([sx, sy], r * 0.45, color=[0, 0, 0, 0],
+                        fill=[20, 21, 28, 255], parent=dl, segments=20)
+    elif shape == "diamond":
+        dpg.draw_polygon([[sx, sy - r], [sx + r * 0.7, sy], [sx, sy + r],
+                          [sx - r * 0.7, sy]],
+                         color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape in ("square", "billboard"):
+        dpg.draw_rectangle([sx - r, sy - r], [sx + r, sy + r],
+                           color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape == "triangle":
+        dpg.draw_polygon([[sx, sy - r], [sx + r, sy + r * 0.8],
+                          [sx - r, sy + r * 0.8]],
+                         color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape == "star":
+        _, pay = PS.StudioApp._poly_2d("star", sx, sy, r)
+        pts = [(pay[i], pay[i + 1]) for i in range(0, len(pay), 2)]
+        dpg.draw_polygon(pts, color=[0, 0, 0, 0], fill=col, parent=dl)
+    elif shape == "line":
+        dpg.draw_line([sx - r * 1.6, sy], [sx + r * 1.6, sy], color=col,
+                      thickness=max(2, int(r * 0.5)), parent=dl)
+    elif shape == "custom":
+        dpg.draw_rectangle([sx - r, sy - r], [sx + r, sy + r], color=col,
+                           thickness=2, parent=dl)
+    else:
+        dpg.draw_circle([sx, sy], r, color=[0, 0, 0, 0], fill=col, parent=dl,
+                        segments=24)
+
+
+def dot_style(app, p):
+    """(fill_rgba, radius, shape) shared by 2D/3D drawing."""
+    if app.colormode == "gradient":
+        smp = SimEngine.sample_tracks(p[13], p[4], p[20], p[21])
+        return (_c(smp["color"]), max(1.5, smp["size"] * 0.45), smp["shape"])
+    import re as _re
+    st = app.states[app.sel_state] if 0 <= app.sel_state < len(app.states) else None
+    col = ((st.get("appearance", {}) if st else {}).get("color") or "#ffffff")
+    try:
+        r0 = max(1.5, float(app.sf_size()) * 0.45)
+    except (ValueError, TypeError):
+        r0 = 4.0
+    shp = (app.sf_shape() or "").lower()
+    ok = PS.SHAPES_3D if app.ptype == "3d" else PS.SHAPES_2D
+    if not _re.fullmatch(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", col or ""):
+        col = "#ffffff"
+    return (_c(col), r0, shp if shp in ok else ok[0])
+
+
+def draw_view_2d(app, dl, W, H, cx, cy, eff):
+    dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
+                       fill=[22, 23, 31, 255], parent=dl)
+    gx, gy = cx + app.cam["ox"], cy + app.cam["oy"]
+    ex, ey = gx + app.emitter2d[0], gy + app.emitter2d[1]
+    horizon = H * 0.42 + app.cam["oy"]
+    dpg.draw_line([0, horizon], [W, horizon], color=[58, 61, 85, 255], parent=dl)
+    for i in range(1, 9):
+        y = horizon + (H - horizon) * (i / 9) ** 1.6
+        dpg.draw_line([0, y], [W, y], color=[44, 46, 68, 255], parent=dl)
+    step = max(1, W / 14)
+    for i in range(-10, 11):
+        dpg.draw_line([gx, horizon], [gx + i * step, H],
+                      color=[44, 46, 68, 255], parent=dl)
+    if eff is not None:
+        em = eff["emitter"]
+        if bool(em.get("emissionZone", {}).get("showZone", True)):
+            z = em.get("emissionZone", {})
+            zs = str(z.get("shape", "Circle")).lower()
+            rot = math.radians(float(z.get("rotation", 0) or 0))
+            cr, sr = math.cos(rot), math.sin(rot)
+            blue = [77, 159, 255, 255]
+            if zs == "rectangle":
+                w = (z.get("width", 100) or 100) / 2
+                h = (z.get("height", 60) or 60) / 2
+                q = [(-w, -h), (w, -h), (w, h), (-w, h)]
+                q = [[ex + x * cr - y * sr, ey + x * sr + y * cr] for x, y in q]
+                dpg.draw_polygon(q, color=blue, parent=dl)
+            elif zs == "line":
+                ln = (z.get("length", 100) or 100) / 2
+                a = [ex - ln * cr, ey - ln * sr]
+                b = [ex + ln * cr, ey + ln * sr]
+                dpg.draw_line(a, b, color=blue, parent=dl)
+            elif zs != "point":
+                r = max(4.0, float(z.get("radius", 10) or 10))
+                dpg.draw_circle([ex, ey], r, color=blue, parent=dl, segments=40)
+        cone = em.get("propagationCone", {})
+        if bool(cone.get("showCone", True)):
+            base = float(cone.get("direction", 0))
+            spread = float(cone.get("spread", 90))
+            if spread < 360:
+                L = 110
+                a1 = math.radians(base - spread / 2)
+                a2 = math.radians(base + spread / 2)
+                dpg.draw_line([ex, ey],
+                              [ex + math.cos(a1) * L, ey + math.sin(a1) * L],
+                              color=list(YELLOW) + [255], parent=dl)
+                dpg.draw_line([ex, ey],
+                              [ex + math.cos(a2) * L, ey + math.sin(a2) * L],
+                              color=list(YELLOW) + [255], parent=dl)
+                arc = [[ex + math.cos(math.radians(base - spread / 2 + spread * k / 16)) * L,
+                        ey + math.sin(math.radians(base - spread / 2 + spread * k / 16)) * L]
+                       for k in range(17)]
+                dpg.draw_polyline(arc, color=list(YELLOW) + [255], parent=dl)
+    out = app.sim._cpp_out
+    if out is not None:
+        xs, ys, rs, cs, ss = out["x"], out["y"], out["r"], out["color"], out["shape"]
+        n = len(xs)
+        glow = app.glow and n <= 450
+        for i in range(n):
+            col = _c("#%06x" % cs[i])
+            if glow:
+                hr = rs[i] * 2.2
+                dpg.draw_circle([xs[i], ys[i]], hr,
+                                color=[0, 0, 0, 0],
+                                fill=[col[0] * 35 // 100, col[1] * 35 // 100,
+                                      col[2] * 35 // 100, 255], parent=dl,
+                                segments=16)
+        for i in range(n):
+            draw_shape_2d(dl, xs[i], ys[i], rs[i],
+                          PS.SHAPE_ORDER[ss[i]], _c("#%06x" % cs[i]))
+    else:
+        dots = []
+        for p in app.sim.parts:
+            fill, r, shape = dot_style(app, p)
+            dots.append((p[0], p[1], r, shape, fill))
+        glow = app.glow and len(dots) <= 450
+        for x, y, r, shape, fill in dots:
+            gc = None
+            if glow:
+                gc = [fill[0] * 35 // 100, fill[1] * 35 // 100,
+                      fill[2] * 35 // 100, 255]
+            draw_shape_2d(dl, x, y, r, shape, fill, gc)
+    # vignette strips + gizmo
+    m = min(W, H)
+    t = max(14, m * 0.07)
+    vc = [14, 16, 22, 255]
+    dpg.draw_rectangle([0, 0], [W, t], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([0, H - t], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([0, 0], [t, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([W - t, 0], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_arrow([ex, ey], [ex + 95, ey], color=[255, 59, 59, 255],
+                   thickness=3, parent=dl)
+    dpg.draw_arrow([ex, ey], [ex, ey - 95], color=[47, 107, 255, 255],
+                   thickness=3, parent=dl)
+    dpg.draw_circle([ex, ey], 8, color=[123, 97, 255, 255],
+                    fill=[255, 255, 255, 255], thickness=2, parent=dl,
+                    segments=20)
+
+
+def draw_view_3d(app, dl, W, H, cx, cy, em):
+    dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
+                       fill=[20, 21, 28, 255], parent=dl)
+    app.cam["focal"] = ((max(100, H) * 0.5) /
+                        max(0.05, math.tan(math.radians(app.fov / 2))))
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
+    R, STEP = 260, 52
+    for k in range(-R // STEP, R // STEP + 1):
+        d = k * STEP
+        x1, y1, _, _ = P(-R, 0, d)
+        x2, y2, _, _ = P(R, 0, d)
+        dpg.draw_line([x1, y1], [x2, y2], color=[44, 46, 68, 255], parent=dl)
+        x1, y1, _, _ = P(d, 0, -R)
+        x2, y2, _, _ = P(d, 0, R)
+        dpg.draw_line([x1, y1], [x2, y2], color=[44, 46, 68, 255], parent=dl)
+    zone = em.get("emissionZone", {})
+    EX, EY, EZ = app.emitter_pos
+    blue = [77, 159, 255, 255]
+    if bool(zone.get("showZone", True)):
+        zs = str(zone.get("shape", "sphere"))
+        if zs == "sphere":
+            r = max(4.0, float(zone.get("radius", 10) or 10))
+            sx, sy, sc, _ = P(EX, EY, EZ)
+            dpg.draw_circle([sx, sy], r * sc, color=blue, parent=dl, segments=40)
+        elif zs == "box":
+            w = float(zone.get("width", 100) or 100) / 2
+            h = float(zone.get("height", 60) or 60) / 2
+            d = float(zone.get("depth", 60) or 60) / 2
+            rz = math.radians(float(zone.get("rotationZ", 0) or 0))
+            crz, srz = math.cos(rz), math.sin(rz)
+            v = [(-w, -h, -d), (w, -h, -d), (w, h, -d), (-w, h, -d),
+                 (-w, -h, d), (w, -h, d), (w, h, d), (-w, h, d)]
+            v = [(EX + x * crz - y * srz, EY + x * srz + y * crz, EZ + z)
+                 for (x, y, z) in v]
+            q = [P(*p)[:2] for p in v]
+            for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6),
+                         (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]:
+                dpg.draw_line(list(q[a]), list(q[b]), color=blue, parent=dl)
+        elif zs == "line":
+            ln = (zone.get("length", 100) or 100) / 2
+            rz = math.radians(float(zone.get("rotationZ", 0) or 0))
+            crz, srz = math.cos(rz), math.sin(rz)
+            a = P(EX - ln * crz, EY - ln * srz, EZ)[:2]
+            b = P(EX + ln * crz, EY + ln * srz, EZ)[:2]
+            dpg.draw_line(list(a), list(b), color=blue, parent=dl)
+    cone = em.get("propagationCone", {})
+    if bool(cone.get("showCone", True)):
+        spread = float(cone.get("spread", 90))
+        az = math.radians(float(cone.get("directionZ", 0)))
+        el = math.radians(float(cone.get("directionY", 0)))
+        if spread < 360:
+            bx, by, bz = (math.cos(el) * math.cos(az), math.sin(el),
+                          math.cos(el) * math.sin(az))
+            ux, uy, uz = (0.0, 1.0, 0.0) if abs(by) < 0.95 else (1.0, 0.0, 0.0)
+            ex_, ey_, ez_ = (by * uz - bz * uy, bz * ux - bx * uz,
+                             bx * uy - by * ux)
+            n = math.sqrt(ex_ ** 2 + ey_ ** 2 + ez_ ** 2) or 1.0
+            ex_, ey_, ez_ = ex_ / n, ey_ / n, ez_ / n
+            off = math.tan(math.radians(spread / 2))
+            L = 110.0
+            x1, y1, _, _ = P(EX, EY, EZ)
+            for sgn in (1.0, -1.0):
+                dx, dy, dz = (bx + ex_ * off * sgn, by + ey_ * off * sgn,
+                              bz + ez_ * off * sgn)
+                n2 = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+                x2, y2, _, _ = P(EX + dx / n2 * L, EY + dy / n2 * L,
+                                  EZ + dz / n2 * L)
+                dpg.draw_line([x1, y1], [x2, y2],
+                              color=list(YELLOW) + [255], parent=dl)
+    out = app.sim._cpp_out
+    focal = app.cam.get("focal", 620.0)
+    if out is not None:
+        order = sorted(range(len(out["x"])), key=out["depth"].__getitem__)
+        for i in order:
+            col = PS.StudioApp._depth_shade("#%06x" % out["color"][i],
+                                            out["depth"][i], focal)
+            draw_shape_3d(dl, out["x"][i], out["y"][i], out["r"][i],
+                          PS.SHAPE_ORDER[out["shape"][i]], _c(col))
+    else:
+        projs = []
+        for p in app.sim.parts:
+            sx, sy, sc, depth = P(p[0], p[1], p[10])
+            projs.append((depth, sx, sy, sc, p))
+        projs.sort(key=lambda t: t[0])
+        for depth, sx, sy, sc, p in projs:
+            fill, r, shape = dot_style(app, p)
+            shaded = PS.StudioApp._depth_shade(
+                "#%02x%02x%02x" % tuple(fill[:3]), depth, focal)
+            draw_shape_3d(dl, sx, sy, max(1.0, r * sc), shape, _c(shaded))
+    m = min(W, H)
+    t = max(14, m * 0.07)
+    vc = [14, 16, 22, 255]
+    dpg.draw_rectangle([0, 0], [W, t], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([0, H - t], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([0, 0], [t, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    dpg.draw_rectangle([W - t, 0], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
+    ox, oy, _, _ = P(EX, EY, EZ)
+    for (ax, ay, az, col) in [(70, 0, 0, "#ff3b3b"), (0, 70, 0, "#3ddc84"),
+                              (0, 0, 70, "#2f6bff")]:
+        tx, ty, _, _ = P(EX + ax, EY + ay, EZ + az)
+        dpg.draw_arrow([ox, oy], [tx, ty], color=_c(col), thickness=3,
+                       parent=dl)
+    dpg.draw_circle([ox, oy], 6, color=[0, 0, 0, 0], fill=[255, 255, 255, 255],
+                    parent=dl, segments=16)
+
+
+# ================= ImGui UI =================
+def apply_theme():
+    with dpg.theme() as th:
+        with dpg.theme_component(dpg.mvAll):
+            dpg.add_theme_color(dpg.mvThemeCol_WindowBg, list(BG) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, list(SIDEBAR) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBg, list(INPUT) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered,
+                                [52, 54, 70, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive,
+                                [52, 54, 70, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_Button, list(CARD) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+                                [52, 54, 70, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+                                list(ACCENT) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
+                                list(ACCENT) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_SliderGrab,
+                                list(ACCENT) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_Header, list(CARD) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered,
+                                [52, 54, 70, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_TitleBg,
+                                [35, 36, 47, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive,
+                                [35, 36, 47, 255])
+            dpg.add_theme_color(dpg.mvThemeCol_Text, list(TEXT) + [255])
+            dpg.add_theme_color(dpg.mvThemeCol_Border, [53, 54, 70, 255])
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 0)
+            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+    dpg.bind_theme(th)
+
+
+ACCENT_THEME = None
+
+
+def bind_accent_buttons():
+    global ACCENT_THEME
+    try:
+        with dpg.theme() as accent_th:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button,
+                                    list(ACCENT) + [255])
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+                                    [143, 118, 255, 255])
+        ACCENT_THEME = accent_th
+        dpg.bind_item_theme("export_btn", accent_th)
+        dpg.bind_item_theme("preview_btn", accent_th)
+    except Exception:
+        pass
+
+
+APP = App()
+
+
+def show_msg(title, text):
+    dpg.set_value("msg_text", text)
+    dpg.configure_item("msg_win", label=title, show=True)
+
+
+def em_set(path, value):
+    """Write nested emitter dict: em_set(('gravity','x'), 1.0)."""
+    d = APP.em
+    for k in path[:-1]:
+        d = d.setdefault(k, {})
+    d[path[-1]] = value
+    APP.mark_dirty()
+
+
+def cb_em_float(path):
+    def _cb(sender, app_data):
+        try:
+            em_set(path, float(app_data))
+        except (ValueError, TypeError):
+            pass
+    return _cb
+
+
+def cb_em_int(path):
+    def _cb(sender, app_data):
+        try:
+            em_set(path, int(app_data))
+        except (ValueError, TypeError):
+            pass
+    return _cb
+
+
+def cb_em_combo(path, lower=False):
+    def _cb(sender, app_data):
+        em_set(path, str(app_data).lower() if lower else str(app_data))
+    return _cb
+
+
+def cb_em_bool(path):
+    def _cb(sender, app_data):
+        em_set(path, bool(app_data))
+    return _cb
+
+
+def cur_state():
+    if 0 <= APP.sel_state < len(APP.states):
+        return APP.states[APP.sel_state]
+    return None
+
+
+def cb_st_text(key, conv=str):
+    def _cb(sender, app_data):
+        if APP._restoring:
+            return
+        s = cur_state()
+        if s is None:
+            return
+        try:
+            s[key] = conv(app_data)
+        except (ValueError, TypeError):
+            return
+        APP.mark_dirty()
+    return _cb
+
+
+def cb_st_ap(key, conv=float):
+    def _cb(sender, app_data):
+        if APP._restoring:
+            return
+        s = cur_state()
+        if s is None:
+            return
+        try:
+            s.setdefault("appearance", {})[key] = conv(app_data)
+        except (ValueError, TypeError):
+            return
+        APP.mark_dirty()
+    return _cb
+
+
+def cb_st_mv(key):
+    def _cb(sender, app_data):
+        if APP._restoring:
+            return
+        s = cur_state()
+        if s is None:
+            return
+        try:
+            s.setdefault("movement", {})[key] = float(app_data)
+        except (ValueError, TypeError):
+            return
+        APP.mark_dirty()
+    return _cb
+
+
+def cb_st_shape(sender, app_data):
+    if APP._restoring:
+        return
+    s = cur_state()
+    if s is None:
+        return
+    s["shape"] = str(app_data)
+    APP.mark_dirty()
+    refresh_custom_row()
+
+
+def cb_st_ease(sender, app_data):
+    if APP._restoring:
+        return
+    s = cur_state()
+    if s is None:
+        return
+    s["easing"] = str(app_data)
+    APP.mark_dirty()
+
+
+def cb_color_edit(sender, app_data):
+    if APP._restoring:
+        return
+    s = cur_state()
+    if s is None:
+        return
+    r, g, b = int(app_data[0]), int(app_data[1]), int(app_data[2])
+    hx = "#%02x%02x%02x" % (r, g, b)
+    s.setdefault("appearance", {})["color"] = hx
+    try:
+        dpg.set_value("st_color_hex", hx)
+    except Exception:
+        pass
+    APP.mark_dirty()
+
+
+def cb_color_hex(sender, app_data):
+    if APP._restoring:
+        return
+    s = cur_state()
+    if s is None:
+        return
+    hx = str(app_data).strip()
+    import re as _re
+    if not _re.fullmatch(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", hx):
+        return
+    s.setdefault("appearance", {})["color"] = hx
+    try:
+        dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
+    except Exception:
+        pass
+    APP.mark_dirty()
+
+
+def refresh_custom_row():
+    try:
+        s = cur_state()
+        show = s is not None and str(s.get("shape", "")).lower() == "custom"
+        dpg.configure_item("row_custom", show=show)
+        dpg.configure_item("custom_hint", show=show)
+        multi = show and APP.ptype == "3d" and len(APP._custom_nodes) > 1
+        dpg.configure_item("row_custom_node", show=bool(multi))
+        if show:
+            dpg.set_value("upload_btn_label",
+                          "Upload 3D" if APP.ptype == "3d" else "Upload image")
+            cm = (s.get("customModel") or {}) if s else {}
+            dpg.set_value("custom_file_text",
+                          cm.get("file") or "no file")
+    except Exception:
+        pass
+
+
+def rebuild_node_combo(nodes, keep=""):
+    APP._custom_nodes = list(nodes)
+    try:
+        items = nodes if nodes else ["(whole file)"]
+        dpg.configure_item("st_node", items=items)
+        dpg.set_value("st_node", keep if keep in nodes else (nodes[0] if nodes else "(whole file)"))
+    except Exception:
+        pass
+
+
+def refresh_chips():
+    try:
+        dpg.delete_item("chip_group", children_only=True)
+        for i, s in enumerate(APP.states):
+            sel = (i == APP.sel_state)
+            dpg.add_button(label=("● " if sel else "○ ") + str(s.get("label")),
+                           parent="chip_group",
+                           callback=lambda sn, ap, u=i: select_state(u))
+    except Exception:
+        pass
+
+
+def select_state(i):
+    APP.sel_state = max(0, min(i, len(APP.states) - 1))
+    APP.sync_state_form()
+    refresh_chips()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def set_type(t, commit=True):
+    APP.ptype = t
+    try:
+        dpg.set_value("type_radio", "3D" if t == "3d" else "2D")
+        zshapes = PS.ZONE_3D if t == "3d" else PS.ZONE_2D
+        dpg.configure_item("em_zshape", items=zshapes)
+        pshapes = PS.SHAPES_3D if t == "3d" else PS.SHAPES_2D
+        dpg.configure_item("st_shape", items=pshapes)
+        show3 = (t == "3d")
+        dpg.configure_item("row_gz", show=show3)
+        dpg.configure_item("row_diry", show=show3)
+        dpg.configure_item("row_depth", show=show3)
+        dpg.configure_item("row_zonemode", show=show3)
+        dpg.set_value("dirz_label", "Dir. Z" if show3 else "Direction")
+        z = APP.em.get("emissionZone", {})
+        if t == "3d":
+            z["shape"] = str(z.get("shape", "sphere")).lower()
+            if z["shape"] not in PS.ZONE_3D:
+                z["shape"] = "sphere"
+            dpg.set_value("em_zshape", z["shape"])
+        else:
+            if z.get("shape") not in PS.ZONE_2D:
+                z["shape"] = "Circle"
+            dpg.set_value("em_zshape", z["shape"])
+        s = cur_state()
+        if s is not None and str(s.get("shape", "")).lower() not in pshapes:
+            s["shape"] = pshapes[0]
+        APP.sync_state_form()
+        refresh_custom_row()
+    except Exception:
+        pass
+    APP.sim.reset()
+    APP.mark_dirty()
+    if commit:
+        APP.history_commit()
+
+
+def on_type_radio(sender, app_data):
+    t = "3d" if str(app_data).upper() == "3D" else "2d"
+    if t != APP.ptype:
+        set_type(t)
+        if not getattr(APP, "_preview_opened", False):
+            APP._preview_opened = True
+            open_fast_preview()
+
+
+# ================= widget sync =================
+_orig_mark = App.mark_dirty
+
+
+def _mark_dirty2(self):
+    _orig_mark(self)
+    self._need_commit = True
+
+
+App.mark_dirty = _mark_dirty2
+APP._need_commit = False
+
+
+def _sf_size(self):
+    s = cur_state()
+    return float((s.get("appearance", {}) or {}).get("size", 8))
+
+
+def _sf_shape(self):
+    s = cur_state()
+    return str((s or {}).get("shape", ""))
+
+
+App.sf_size = _sf_size
+App.sf_shape = _sf_shape
+
+
+def _set(tag, value):
+    try:
+        dpg.set_value(tag, value)
+    except Exception:
+        pass
+
+
+def sync_state_form(self):
+    s = cur_state()
+    if s is None:
+        return
+    ap = s.get("appearance", {})
+    mv = s.get("movement", {})
+    _set("st_label", str(s.get("label", "")))
+    _set("st_dur", float(s.get("duration", 0.5) or 0.5))
+    _set("st_shape", str(s.get("shape", "")))
+    _set("st_ease", str(s.get("easing", "linear")))
+    _set("st_size", float(ap.get("size", 8) or 0))
+    _set("st_sizemax", float(ap.get("sizeMax", ap.get("size", 8)) or 0))
+    hx = str(ap.get("color", "#ffffff"))
+    _set("st_color_hex", hx)
+    try:
+        dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
+    except Exception:
+        pass
+    _set("st_op", float(ap.get("opacity", 255)
+                        if ap.get("opacity") is not None else 255))
+    _set("st_mins", float(mv.get("minSpeed", 0) or 0))
+    _set("st_maxs", float(mv.get("maxSpeed", mv.get("minSpeed", 0)) or 0))
+    cm = s.get("customModel") or {}
+    _set("custom_file_text", cm.get("file") or "no file")
+    rebuild_node_combo(list(cm.get("nodes") or []), keep=cm.get("node", ""))
+    refresh_custom_row()
+
+
+App.sync_state_form = sync_state_form
+
+
+def sync_emitter_form(self):
+    e = self.em
+    g = e.get("gravity", {})
+    z = e.get("emissionZone", {})
+    c = e.get("propagationCone", {})
+    _set("em_flow", float(e.get("flow", 40)))
+    _set("em_max", int(e.get("maxParticles", 300)))
+    _set("em_mode", str(e.get("mode", "Infinite")))
+    _set("em_rev", bool(e.get("reverse", False)))
+    _set("em_align", bool(e.get("alignDir", False)))
+    _set("em_gx", float(g.get("x", 0)))
+    _set("em_gy", float(g.get("y", 0)))
+    _set("em_gz", float(g.get("z", 0)))
+    _set("em_zshape", str(z.get("shape", "Circle")))
+    if self.ptype == "3d":
+        _set("em_rot", float(z.get("rotationZ", z.get("rotation", 0)) or 0))
+    else:
+        _set("em_rot", float(z.get("rotation", 0) or 0))
+    _set("em_radius", float(z.get("radius", 10) or 0))
+    _set("em_width", float(z.get("width", 100) or 0))
+    _set("em_height", float(z.get("height", 60) or 0))
+    _set("em_length", float(z.get("length", 100) or 0))
+    _set("em_depth", float(z.get("depth", 60) or 0))
+    _set("em_zonemode", str(z.get("mode", "Surface")))
+    _set("em_showzone", bool(z.get("showZone", True)))
+    if self.ptype == "3d":
+        _set("em_dirz", float(c.get("directionZ", c.get("direction", 0)) or 0))
+    else:
+        _set("em_dirz", float(c.get("direction", 0) or 0))
+    _set("em_diry", float(c.get("directionY", 0) or 0))
+    _set("em_spread", float(c.get("spread", 90) or 0))
+    _set("em_showcone", bool(c.get("showCone", True)))
+
+
+App.sync_emitter_form = sync_emitter_form
+
+
+def sync_all(self):
+    _set("filename_input", self.filename)
+    _set("fov_input", float(self.fov))
+    _set("sens_input", float(self.sens))
+    _set("colormode_radio",
+         "Selected" if self.colormode == "selected" else "Gradient")
+    self.sync_emitter_form()
+    self.sync_state_form()
+    refresh_chips()
+
+
+App.sync_all = sync_all
+
+
+def cb_zone_rot(sender, app_data):
+    try:
+        v = float(app_data)
+    except (ValueError, TypeError):
+        return
+    z = APP.em.setdefault("emissionZone", {})
+    if APP.ptype == "3d":
+        z["rotationZ"] = v
+    else:
+        z["rotation"] = v
+    APP.mark_dirty()
+
+
+def cb_dirz(sender, app_data):
+    try:
+        v = float(app_data)
+    except (ValueError, TypeError):
+        return
+    c = APP.em.setdefault("propagationCone", {})
+    if APP.ptype == "3d":
+        c["directionZ"] = v
+    else:
+        c["direction"] = v
+    APP.mark_dirty()
+
+
+def cb_colormode(sender, app_data):
+    APP.colormode = "selected" if str(app_data) == "Selected" else "gradient"
+    APP.mark_dirty()
+
+
+def cb_st_node(sender, app_data):
+    if APP._restoring:
+        return
+    s = cur_state()
+    if s is None:
+        return
+    v = str(app_data)
+    if v == "(whole file)":
+        v = ""
+    cm = s.setdefault("customModel", {"file": "", "node": "", "kind": "model",
+                                      "nodes": list(APP._custom_nodes)})
+    cm["node"] = v
+    APP.mark_dirty()
+
+
+# ================= UI construction =================
+def sec(title):
+    dpg.add_text(title, color=list(MUTED) + [255])
+    dpg.add_separator()
+
+
+def num_row(label, tag, default, cb, width=150):
+    with dpg.group(horizontal=True):
+        dpg.add_text(label, color=list(MUTED) + [255])
+        dpg.add_input_float(tag=tag, default_value=float(default), width=width,
+                            callback=cb)
+
+
+def build_sidebar():
+    sec("Emitter")
+    dpg.add_text("PARTICLE OUTPUT", color=list(MUTED) + [255])
+    num_row("Flow", "em_flow", 40, cb_em_float(("flow",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Max particles", color=list(MUTED) + [255])
+        dpg.add_input_int(tag="em_max", default_value=300, width=150,
+                          callback=cb_em_int(("maxParticles",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Mode", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_mode", items=PS.MODES, default_value="Infinite",
+                      width=150, callback=cb_em_combo(("mode",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Reverse", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_rev", callback=cb_em_bool(("reverse",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Align dir.", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_align", default_value=True,
+                         callback=cb_em_bool(("alignDir",)))
+    dpg.add_text("GRAVITY", color=list(MUTED) + [255])
+    num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
+    num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
+    with dpg.group(horizontal=True, tag="row_gz", show=False):
+        dpg.add_text("Gravity Z", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="em_gz", default_value=0, width=150,
+                            callback=cb_em_float(("gravity", "z")))
+    dpg.add_text("EMISSION ZONE", color=list(MUTED) + [255])
+    with dpg.group(horizontal=True):
+        dpg.add_text("Shape", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_zshape", items=PS.ZONE_2D, default_value="Circle",
+                      width=150, callback=cb_em_combo(("emissionZone", "shape")))
+    num_row("Rotation", "em_rot", 0, cb_zone_rot)
+    num_row("Radius", "em_radius", 10, cb_em_float(("emissionZone", "radius")))
+    num_row("Width", "em_width", 100, cb_em_float(("emissionZone", "width")))
+    num_row("Height", "em_height", 60, cb_em_float(("emissionZone", "height")))
+    num_row("Length", "em_length", 100, cb_em_float(("emissionZone", "length")))
+    with dpg.group(horizontal=True, tag="row_depth", show=False):
+        dpg.add_text("Depth", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="em_depth", default_value=60, width=150,
+                            callback=cb_em_float(("emissionZone", "depth")))
+    with dpg.group(horizontal=True, tag="row_zonemode", show=False):
+        dpg.add_text("Mode", color=list(MUTED) + [255])
+        dpg.add_radio_button(tag="em_zonemode", items=PS.ZONE_MODE,
+                             default_value="Surface", horizontal=True,
+                             callback=cb_em_combo(("emissionZone", "mode")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Show zone", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_showzone", default_value=True,
+                         callback=cb_em_bool(("emissionZone", "showZone")))
+    dpg.add_text("PROPAGATION CONE", color=list(MUTED) + [255])
+    with dpg.group(horizontal=True):
+        dpg.add_text("Direction", color=list(MUTED) + [255], tag="dirz_label")
+        dpg.add_input_float(tag="em_dirz", default_value=0, width=150,
+                            callback=cb_dirz)
+    with dpg.group(horizontal=True, tag="row_diry", show=False):
+        dpg.add_text("Dir. Y", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="em_diry", default_value=0, width=150,
+                            callback=cb_em_float(("propagationCone",
+                                                  "directionY")))
+    num_row("Spread", "em_spread", 90,
+            cb_em_float(("propagationCone", "spread")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Show cone", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_showcone", default_value=True,
+                         callback=cb_em_bool(("propagationCone", "showCone")))
+    sec("States")
+    with dpg.group(horizontal=True):
+        dpg.add_text("Preview color", color=list(MUTED) + [255])
+        dpg.add_radio_button(tag="colormode_radio",
+                             items=["Selected", "Gradient"],
+                             default_value="Gradient", horizontal=True,
+                             callback=cb_colormode)
+    with dpg.group(horizontal=True):
+        dpg.add_text("Label", color=list(MUTED) + [255])
+        dpg.add_input_text(tag="st_label", default_value="birth", width=150,
+                           callback=cb_st_text("label"))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Duration", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_dur", default_value=0.5, width=150,
+                            callback=cb_st_text("duration", float))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Shape", color=list(MUTED) + [255])
+        dpg.add_combo(tag="st_shape", items=PS.SHAPES_2D,
+                      default_value="circle", width=150, callback=cb_st_shape)
+    with dpg.group(horizontal=True):
+        dpg.add_text("Easing", color=list(MUTED) + [255])
+        dpg.add_combo(tag="st_ease", items=PS.EASINGS,
+                      default_value="linear", width=150, callback=cb_st_ease)
+    with dpg.group(horizontal=True):
+        dpg.add_text("Size", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_size", default_value=8, width=150,
+                            callback=cb_st_ap("size"))
+    with dpg.group(horizontal=True):
+        dpg.add_text("SizeMax", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_sizemax", default_value=12, width=150,
+                            callback=cb_st_ap("sizeMax"))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Color", color=list(MUTED) + [255])
+        dpg.add_color_edit(tag="st_color_edit",
+                           default_value=(255, 255, 255, 255), width=80,
+                           callback=cb_color_edit)
+        dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
+                           width=100, callback=cb_color_hex)
+    with dpg.group(horizontal=True):
+        dpg.add_text("Opacity", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_op", default_value=255, width=150,
+                            callback=cb_st_ap("opacity",
+                                              lambda v: int(float(v))))
+    with dpg.group(horizontal=True):
+        dpg.add_text("MinSpeed", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_mins", default_value=60, width=150,
+                            callback=cb_st_mv("minSpeed"))
+    with dpg.group(horizontal=True):
+        dpg.add_text("MaxSpd", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="st_maxs", default_value=160, width=150,
+                            callback=cb_st_mv("maxSpeed"))
+    with dpg.group(horizontal=True):
+        dpg.add_button(label="Save", callback=lambda: save_state(),
+                       width=90)
+        dpg.add_button(label="Delete", callback=lambda: del_state(),
+                       width=90)
+    with dpg.group(horizontal=True, tag="row_custom", show=False):
+        dpg.add_button(label="Upload 3D", tag="upload_btn_label",
+                       callback=lambda: upload_custom_model(), width=110)
+        dpg.add_text("no file", tag="custom_file_text",
+                     color=list(MUTED) + [255])
+        dpg.add_button(label="X", callback=lambda: clear_custom_model(),
+                       width=30)
+    with dpg.group(horizontal=True, tag="row_custom_node", show=False):
+        dpg.add_text("Node", color=list(MUTED) + [255])
+        dpg.add_combo(tag="st_node", items=["(whole file)"],
+                      default_value="(whole file)", width=150,
+                      callback=cb_st_node)
+    dpg.add_text("", tag="custom_hint", show=False, wrap=260)
+    sec("Templates")
+    with dpg.group(horizontal=True):
+        for name in PS.TEMPLATES:
+            dpg.add_button(label=name, width=80,
+                           callback=lambda s, a, u=name: apply_template(u))
+    dpg.add_button(label="Export JSON", tag="export_btn", width=-1, height=36,
+                   callback=lambda: do_save_as())
+
+
+def build_topbar():
+    with dpg.group(horizontal=True):
+        dpg.add_text("Carrot Studio", color=[255, 122, 0, 255])
+        dpg.add_input_text(tag="filename_input", default_value="Default",
+                           width=130,
+                           callback=lambda s, a: setattr(APP, "filename",
+                                                         str(a) or "Default"))
+        dpg.add_radio_button(tag="type_radio", items=["2D", "3D"],
+                             default_value="2D", horizontal=True,
+                             callback=on_type_radio)
+        dpg.add_text("FOV", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="fov_input", default_value=60.0, width=60,
+                            callback=lambda s, a: (
+                                setattr(APP, "fov",
+                                        max(10.0, min(120.0, float(a)))),
+                                APP.mark_dirty()))
+        dpg.add_text("Sens", color=list(MUTED) + [255])
+        dpg.add_input_float(tag="sens_input", default_value=1.0, width=60,
+                            callback=lambda s, a: setattr(
+                                APP, "sens",
+                                max(0.1, min(5.0, float(a)))))
+        dpg.add_button(label="New", callback=lambda: do_new(), width=60)
+        dpg.add_button(label="Save", callback=lambda: do_save(), width=60)
+        dpg.add_button(label="Save As", callback=lambda: do_save_as(),
+                       width=80)
+        dpg.add_button(label="Open", callback=lambda: do_open(), width=60)
+
+
+def build_timeline():
+    with dpg.group(horizontal=True):
+        dpg.add_text("STATES", color=list(MUTED) + [255])
+        dpg.add_group(tag="chip_group", horizontal=True)
+        dpg.add_button(label="+", callback=lambda: add_state(), width=36)
+        dpg.add_button(label="Fast preview 60FPS", tag="preview_btn",
+                       callback=lambda: open_fast_preview())
+        dpg.add_text("Ready", tag="status_text", color=list(OK) + [255])
+
+
+def build_viewport():
+    with dpg.child_window(tag="vp_child", autosize_x=True, height=-1,
+                          border=False):
+        dpg.add_drawlist(tag="vp_draw", width=-1, height=-64)
+        build_timeline()
+
+
+def build_chooser():
+    with dpg.window(tag="chooser_win", label="Carrot Particle Editor",
+                    modal=True, show=True, no_resize=True,
+                    width=460, height=420, pos=[410, 190]):
+        try:
+            w, h, ch, data = dpg.load_image(
+                os.path.join(PS.app_base_dir(), "assets", "app_icon.png"))
+            with dpg.texture_registry():
+                dpg.add_static_texture(w, h, data, tag="logo_tex")
+            dpg.add_image("logo_tex", width=180, height=180, pos=[140, 20])
+        except Exception:
+            pass
+        dpg.add_text("CARROT", color=[255, 122, 0, 255])
+        dpg.add_text("PARTICLE EDITOR", color=[0, 200, 83, 255])
+        dpg.add_text("ParticleFX — Choose your editor mode",
+                     color=list(MUTED) + [255])
+        dpg.add_separator()
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="2D\nSprites & SVG", width=200, height=100,
+                           callback=lambda: choose("2d"))
+            dpg.add_button(label="3D\nMeshes & Billboards", width=200,
+                           height=100, callback=lambda: choose("3d"))
+        dpg.add_text("press 2 / 3", color=list(MUTED) + [255])
+
+
+def build_dialogs():
+    with dpg.file_dialog(tag="dlg_open", show=False, width=600, height=400,
+                         callback=open_chosen):
+        dpg.add_file_extension(".json")
+    with dpg.file_dialog(tag="dlg_save", show=False, width=600, height=400,
+                         callback=save_chosen):
+        dpg.add_file_extension(".json")
+    with dpg.file_dialog(tag="dlg_model", show=False, width=600, height=400,
+                         callback=model_chosen):
+        dpg.add_file_extension(".glb")
+        dpg.add_file_extension(".gltf")
+    with dpg.file_dialog(tag="dlg_image", show=False, width=600, height=400,
+                         callback=image_chosen):
+        for ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"):
+            dpg.add_file_extension(ext)
+    with dpg.window(tag="msg_win", label="Message", modal=True, show=False,
+                    width=420, height=160, pos=[430, 320]):
+        dpg.add_text("", tag="msg_text", wrap=380)
+        dpg.add_button(label="OK", width=80,
+                       callback=lambda: dpg.configure_item("msg_win",
+                                                           show=False))
+
+
+def build_ui():
+    with dpg.window(tag="primary"):
+        build_topbar()
+        dpg.add_separator()
+        with dpg.group(horizontal=True):
+            with dpg.child_window(tag="side_child", width=300, height=-1):
+                build_sidebar()
+            build_viewport()
+    dpg.set_primary_window("primary", True)
+    build_chooser()
+    build_dialogs()
+    with dpg.handler_registry():
+        dpg.add_mouse_wheel_handler(
+            callback=lambda s, a: setattr(APP, "_wheel",
+                                          APP._wheel + float(a)))
+        dpg.add_mouse_double_click_handler(
+            button=dpg.mvMouseButton_Left,
+            callback=lambda: setattr(APP, "_dblclick", True))
+        for key, name in ((dpg.mvKey_Z, "z"), (dpg.mvKey_Y, "y"),
+                          (dpg.mvKey_S, "s"), (dpg.mvKey_2, "2"),
+                          (dpg.mvKey_3, "3")):
+            dpg.add_key_press_handler(
+                key=key,
+                callback=lambda s, a, u=name: APP._keys.append(u))
+    APP._keys = []
+    bind_accent_buttons()
+
+
+# ================= actions =================
+def choose(ptype):
+    dpg.configure_item("chooser_win", show=False)
+    APP._editor_open = True
+    set_type(ptype, commit=False)
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+    APP._boot_t = time.time()
+
+
+def add_state():
+    s = cur_state()
+    APP.states.append(PS.default_state("intermediate", len(APP.states)))
+    APP.sel_state = len(APP.states) - 1
+    APP.sync_state_form()
+    refresh_chips()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def del_state():
+    if len(APP.states) <= 2:
+        show_msg("Notice", "birth + death required")
+        return
+    APP.states.pop(APP.sel_state)
+    APP.sel_state = 0
+    APP.sync_state_form()
+    refresh_chips()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def save_state():
+    APP.sync_state_form()
+    refresh_chips()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def apply_template(name):
+    tpl = PS.TEMPLATES[name]
+    patch = tpl[APP.ptype]
+    em = PS.default_emitter(APP.ptype)
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(em.get(k), dict):
+            em[k].update(v)
+        else:
+            em[k] = v
+    APP.em = em
+    states_key = "states2d" if APP.ptype == "2d" else "states3d"
+    if tpl.get(states_key):
+        APP.states = copy.deepcopy(tpl[states_key])
+        APP.sel_state = 0
+    APP.sync_all()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def do_new():
+    APP.filepath = None
+    APP.filename = "Default"
+    APP.em = PS.default_emitter(APP.ptype)
+    APP.states = [PS.default_state("birth", 0), PS.default_state("death", 1)]
+    APP.sel_state = 0
+    APP.sync_all()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def _apply_loaded_effect(eff, path):
+    APP.filepath = path
+    APP.filename = os.path.splitext(os.path.basename(path))[0]
+    APP.ptype = eff.get("type", "2d")
+    if APP.ptype not in ("2d", "3d"):
+        APP.ptype = "2d"
+    set_type(APP.ptype, commit=False)
+    APP.states = eff.get("states", APP.states)
+    APP.sel_state = 0
+    APP.em = eff.get("emitter", PS.default_emitter("2d"))
+    APP.sync_all()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def do_open():
+    dpg.show_item("dlg_open")
+
+
+def open_chosen(sender, app_data):
+    try:
+        sels = app_data.get("selections") or {}
+        p = next(iter(sels.values()), None) or app_data.get("file_path_name")
+        if not p:
+            return
+        with open(p, encoding="utf-8") as f:
+            eff = json.load(f)
+        _apply_loaded_effect(eff, p)
+    except Exception as e:
+        show_msg("Error", str(e))
+
+
+def gather():
+    APP.filename = (dpg.get_value("filename_input") or "").strip() or "Default"
+    eff = APP.current_effect()
+    errs = PS.validate_effect(eff)
+    APP.set_status("OK — ready" if not errs else " | ".join(errs),
+                   OK if not errs else WARN)
+    return eff
+
+
+def do_save():
+    if not APP.filepath:
+        do_save_as()
+        return
+    eff = gather()
+    try:
+        with open(APP.filepath, "w", encoding="utf-8") as f:
+            json.dump(eff, f, indent=2, ensure_ascii=False)
+        APP.set_status("Saved", OK)
+    except OSError as e:
+        show_msg("Error", str(e))
+
+
+def do_save_as():
+    dpg.show_item("dlg_save")
+
+
+def save_chosen(sender, app_data):
+    try:
+        sels = app_data.get("selections") or {}
+        p = next(iter(sels.values()), None) or app_data.get("file_path_name")
+        if not p:
+            return
+        if not p.lower().endswith(".json"):
+            p += ".json"
+        eff = gather()
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(eff, f, indent=2, ensure_ascii=False)
+        APP.filepath = p
+        show_msg("Done", f"Exported:\n{p}\n\nAdd it in GDevelop as a JSON "
+                         "resource into ParticleJSON.")
+    except Exception as e:
+        show_msg("Error", str(e))
+
+
+def upload_custom_model():
+    dpg.show_item("dlg_model" if APP.ptype == "3d" else "dlg_image")
+
+
+def _custom_chosen(path, kind):
+    if not path:
+        return
+    fname = os.path.basename(path)
+    nodes = PS.model_nodes_from_file(path) if kind == "model" else []
+    s = cur_state()
+    if s is None:
+        return
+    node = dpg.get_value("st_node") if kind == "model" else ""
+    if node == "(whole file)":
+        node = ""
+    s["customModel"] = {"file": fname, "node": node, "kind": kind,
+                        "nodes": list(nodes)}
+    if fname:
+        ref = node or os.path.splitext(fname)[0]
+        if kind == "model":
+            s["modelRefs"] = [ref]
+        else:
+            s["customShapeRefs"] = [fname]
+    APP.sync_state_form()
+    APP.sim.reset()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def model_chosen(sender, app_data):
+    sels = app_data.get("selections") or {}
+    _custom_chosen(next(iter(sels.values()), None) or
+                   app_data.get("file_path_name"), "model")
+
+
+def image_chosen(sender, app_data):
+    sels = app_data.get("selections") or {}
+    _custom_chosen(next(iter(sels.values()), None) or
+                   app_data.get("file_path_name"), "image")
+
+
+def clear_custom_model():
+    s = cur_state()
+    if s is None:
+        return
+    s.pop("customModel", None)
+    s.pop("modelRefs", None)
+    APP.sync_state_form()
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+# ================= fast browser preview (reuses PS server) =================
+_preview_server = None
+_preview_port = 0
+
+
+def open_fast_preview():
+    global _preview_server, _preview_port
+    eff = gather()
+    base = PS.app_base_dir()
+    pv_dir = os.path.join(base, "preview")
+    try:
+        os.makedirs(pv_dir, exist_ok=True)
+        with open(os.path.join(pv_dir, "last_effect.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(eff, f, ensure_ascii=False)
+    except OSError as e:
+        show_msg("Error", f"Cannot write preview file:\n{e}")
+        return
+    if _preview_server is None:
+        handler = partial(PS._QuietHTTPHandler, directory=base)
+        try:
+            srv = PS._PreviewHTTPServer(("127.0.0.1", 0), handler)
+        except OSError as e:
+            show_msg("Error", f"Cannot start preview server: {e}")
+            return
+        _preview_port = srv.server_address[1]
+        _preview_server = srv
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{_preview_port}/preview/preview.html"
+    try:
+        with open(os.path.join(pv_dir, "preview.html"), encoding="utf-8") as f:
+            tpl = f.read()
+        with open(os.path.join(pv_dir, "live_bundle.js"), encoding="utf-8") as f:
+            bundle = f.read()
+        boot = json.dumps(eff, ensure_ascii=False).replace("</", "<\\/")
+        page = tpl.replace('<script type="module" src="./main.js"></script>',
+                           "<script type=\"module\">\n" + bundle +
+                           "\n</script>", 1)
+        page = page.replace('<script id="boot-effect" type="application/json">'
+                            "</script>",
+                            '<script id="boot-effect" type="application/json">'
+                            + boot + "</script>", 1)
+        if page == tpl or "__previewBooted" not in page:
+            raise ValueError("template markers missing")
+        with open(os.path.join(pv_dir, "live_effect.html"), "w",
+                  encoding="utf-8") as f:
+            f.write(page)
+        url = f"http://127.0.0.1:{_preview_port}/preview/live_effect.html"
+    except Exception:
+        pass
+    try:
+        import urllib.request as _url
+        opener = _url.build_opener(_url.ProxyHandler({}))
+        with opener.open(url, timeout=5) as _r:
+            if getattr(_r, "status", 200) != 200:
+                raise OSError(f"HTTP {getattr(_r, 'status', '?')}")
+    except Exception as e:
+        show_msg("Error", f"Preview server not responding:\n{e}")
+        return
+    APP._live_push_on = True
+    webbrowser.open(url)
+
+
+# ================= mouse + frame loop =================
+def gizmo_hit(lx, ly, W, H, cx, cy):
+    if APP.ptype == "3d":
+        o = APP.proj(*APP.emitter_pos, cx, cy)[:2]
+        if math.hypot(lx - o[0], ly - o[1]) <= 14:
+            return "move"
+        for i, (ax, ay, az) in enumerate(((70, 0, 0), (0, 70, 0),
+                                          (0, 0, 70))):
+            ex, ey, ez = APP.emitter_pos
+            t = APP.proj(ex + ax, ey + ay, ez + az, cx, cy)[:2]
+            dx, dy = t[0] - o[0], t[1] - o[1]
+            n = math.hypot(dx, dy)
+            if n < 1e-6:
+                continue
+            along = ((lx - o[0]) * dx + (ly - o[1]) * dy) / n
+            perp = abs((lx - o[0]) * dy - (ly - o[1]) * dx) / n
+            if 0 <= along <= n and perp <= 10:
+                return ("axis", i)
+        return None
+    ex = cx + APP.cam["ox"] + APP.emitter2d[0]
+    ey = cy + APP.cam["oy"] + APP.emitter2d[1]
+    if math.hypot(lx - ex, ly - ey) <= 14:
+        return "move2d"
+    return None
+
+
+def handle_mouse(lx, ly, hover, W, H, cx, cy):
+    if APP._dblclick:
+        APP._dblclick = False
+        if hover and gizmo_hit(lx, ly, W, H, cx, cy) is None:
+            APP.cam.update({"yaw": 0.7, "pitch": 0.42, "zoom": 1.0,
+                            "ox": 0.0, "oy": 0.0})
+            APP.emitter_pos = [0.0, 0.0, 0.0]
+            APP.emitter2d = [0.0, 0.0]
+            APP.history_commit()
+    if APP._wheel and hover:
+        f = 1.12 if APP._wheel > 0 else 1 / 1.12
+        APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] * (f ** APP.sens)))
+        APP.mark_dirty()
+    APP._wheel = 0
+    if not hover:
+        return
+    if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
+        hit = gizmo_hit(lx, ly, W, H, cx, cy)
+        APP._gizmo = None if hit is None else {"kind": hit, "x": lx, "y": ly}
+    if dpg.is_mouse_button_released(dpg.mvMouseButton_Left):
+        if APP._gizmo is not None:
+            APP._gizmo = None
+            APP.history_commit()
+    if dpg.is_mouse_button_released(dpg.mvMouseButton_Right) or \
+       dpg.is_mouse_button_released(dpg.mvMouseButton_Middle):
+        if APP._drag is not None:
+            APP._drag = None
+            APP.history_commit()
+    if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Right) or \
+       dpg.is_mouse_button_clicked(dpg.mvMouseButton_Middle):
+        APP._drag = (lx, ly)
+    g = APP._gizmo
+    if g is not None and dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
+        dx, dy = lx - g["x"], ly - g["y"]
+        g["x"], g["y"] = lx, ly
+        if g["kind"] == "move2d":
+            APP.emitter2d[0] += dx
+            APP.emitter2d[1] += dy
+        elif APP.ptype == "3d":
+            syaw, cyaw = math.sin(APP.cam["yaw"]), math.cos(APP.cam["yaw"])
+            spit, cpit = math.sin(APP.cam["pitch"]), math.cos(APP.cam["pitch"])
+            right = (cyaw, 0.0, syaw)
+            up = (spit * syaw, cpit, -spit * cyaw)
+            sc = max(1e-6, APP.proj(*APP.emitter_pos, cx, cy)[2])
+            if g["kind"] == "move":
+                APP.emitter_pos[0] += (dx * right[0] - dy * up[0]) / sc
+                APP.emitter_pos[1] += (dx * right[1] - dy * up[1]) / sc
+                APP.emitter_pos[2] += (dx * right[2] - dy * up[2]) / sc
+            else:
+                i = g["kind"][1]
+                o = APP.proj(*APP.emitter_pos, cx, cy)[:2]
+                ex, ey, ez = APP.emitter_pos
+                off = ((70, 0, 0), (0, 70, 0), (0, 0, 70))[i]
+                t = APP.proj(ex + off[0], ey + off[1], ez + off[2], cx, cy)[:2]
+                ax, ay = t[0] - o[0], t[1] - o[1]
+                n = math.hypot(ax, ay)
+                if n >= 1e-6:
+                    along = (dx * ax + dy * ay) / n / sc
+                    unit = ((1, 0, 0), (0, 1, 0), (0, 0, 1))[i]
+                    APP.emitter_pos[0] += unit[0] * along
+                    APP.emitter_pos[1] += unit[1] * along
+                    APP.emitter_pos[2] += unit[2] * along
+    if APP._drag is not None:
+        if dpg.is_mouse_button_down(dpg.mvMouseButton_Right):
+            if APP.ptype == "3d":
+                dx, dy = lx - APP._drag[0], ly - APP._drag[1]
+                APP._drag = (lx, ly)
+                APP.cam["yaw"] += dx * 0.01 * APP.sens
+                APP.cam["pitch"] = max(-1.4, min(1.4, APP.cam["pitch"] +
+                                                 dy * 0.01 * APP.sens))
+        elif dpg.is_mouse_button_down(dpg.mvMouseButton_Middle):
+            dx, dy = lx - APP._drag[0], ly - APP._drag[1]
+            APP._drag = (lx, ly)
+            APP.cam["ox"] += dx * APP.sens
+            APP.cam["oy"] += dy * APP.sens
+
+
+def _ctrl_down():
+    return dpg.is_key_down(dpg.mvKey_LControl) or \
+        dpg.is_key_down(dpg.mvKey_RControl)
+
+
+def _shift_down():
+    return dpg.is_key_down(dpg.mvKey_LShift) or \
+        dpg.is_key_down(dpg.mvKey_RShift)
+
+
+def handle_keys():
+    keys = list(APP._keys)
+    APP._keys.clear()
+    ctrl = _ctrl_down()
+    for k in keys:
+        if k == "z" and ctrl:
+            APP.undo() if not _shift_down() else APP.redo()
+        elif k == "y" and ctrl:
+            APP.redo()
+        elif k == "s" and ctrl:
+            do_save()
+        elif k in ("2", "3") and dpg.is_item_shown("chooser_win"):
+            choose("2d" if k == "2" else "3d")
+
+
+def frame():
+    t0 = time.time()
+    try:
+        dt = min(0.05, max(1e-3, t0 - APP.sim.last_t))
+        APP.sim.last_t = t0
+        eff = APP.cached_effect()
+        try:
+            W, H = (int(v) for v in dpg.get_item_rect_size("vp_draw"))
+        except Exception:
+            W, H = (800, 600)
+        W, H = max(100, W), max(100, H)
+        cx, cy = W * 0.5, H * 0.52
+        if eff is not None and APP.ptype == "2d":
+            scx = cx + APP.cam["ox"] + APP.emitter2d[0]
+            scy = cy + APP.cam["oy"] + APP.emitter2d[1]
+        else:
+            scx, scy = cx, cy
+        cpp_n, cpp_active = 0, False
+        if eff is not None:
+            em = eff["emitter"]
+            # NOTE: correct axis mapping (Tk edition had gx/gy swapped).
+            gx = em.get("gravity", {}).get("x", 0) * dt * 0.4
+            gy = em.get("gravity", {}).get("y", 0) * dt * 0.4
+            gz = em.get("gravity", {}).get("z", 0) * dt * 0.4
+            maxp = min(SimEngine.TK_MAX_DOTS,
+                       int(em.get("maxParticles", 300) or 300))
+            if HAS_CPP_CORE:
+                try:
+                    is3d = APP.ptype == "3d"
+                    if is3d:
+                        APP.cam["focal"] = ((max(100, H) * 0.5) /
+                                            max(0.05, math.tan(math.radians(
+                                                APP.fov / 2))))
+                    tracks = SimEngine._build_tracks(APP.states, APP.ptype)
+                    cpp_n = APP.sim.step_cpp(
+                        eff, em, APP.ptype, tracks, is3d, dt, scx, scy,
+                        tuple(APP.emitter_pos), APP.cam,
+                        APP.cam.get("focal", 620.0), cx, cy,
+                        gx, gy, gz, maxp, (APP.ptype, APP._cache_t))
+                    cpp_active = True
+                except Exception:
+                    APP.sim._cpp_eng = None
+                    APP.sim._cpp_key = None
+                    APP.sim._cpp_out = None
+            if not cpp_active:
+                APP.sim._cpp_out = None
+                tracks = SimEngine._build_tracks(APP.states, APP.ptype)
+                cpp_n = APP.sim.step_py(em, APP.ptype, scx, scy,
+                                        tuple(APP.emitter_pos), APP.cam,
+                                        tracks, dt, maxp)
+        else:
+            APP.sim._cpp_out = None
+        handle_keys()
+        try:
+            mx, my = dpg.get_mouse_pos()
+            rmin = dpg.get_item_rect_min("vp_draw")
+            lx, ly = mx - rmin[0], my - rmin[1]
+            hover = 0 <= lx < W and 0 <= ly < H
+        except Exception:
+            lx = ly = 0
+            hover = False
+        handle_mouse(lx, ly, hover, W, H, cx, cy)
+        try:
+            dpg.delete_item("vp_draw", children_only=True)
+            is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
+                    eff.get("emitter", {}).get("propagationCone", {}))
+            if is3d:
+                draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"])
+            else:
+                draw_view_2d(APP, "vp_draw", W, H, cx, cy, eff)
+            n_show = cpp_n if cpp_active else len(APP.sim.parts)
+            APP._n_show = n_show
+            APP._cpp_active = cpp_active
+            fps = int(1 / max(time.time() - t0, 1e-3))
+            APP._fps = min(fps, 240)
+            tag = "C++" if cpp_active else "PY"
+            dpg.draw_text([W - 220, 12],
+                          f"Particles: {n_show}  FPS: {APP._fps} {tag}",
+                          color=[232, 232, 238, 255], size=15,
+                          parent="vp_draw")
+            hint = ("3D: right-drag orbit, left-drag gizmo, wheel zoom" if
+                    APP.ptype == "3d" else
+                    "2D: left-drag gizmo, wheel zoom, double-click reset")
+            dpg.draw_text([W / 2 - 180, H - 24], hint,
+                          color=[154, 154, 173, 255], size=14,
+                          parent="vp_draw")
+        except Exception:
+            PS.debug_log("IMG-TICK-EXC",
+                         traceback.format_exc().replace("\n", " | ")[:1000])
+        now = time.time()
+        if getattr(APP, "_need_commit", False) and \
+                now - APP._last_edit > 0.8 and not APP._restoring:
+            APP._need_commit = False
+            APP.history_commit()
+        if APP._live_push_on and now - APP._last_push > 0.5:
+            APP._last_push = now
+            try:
+                ce = APP.current_effect()
+                with open(os.path.join(PS.app_base_dir(), "preview",
+                                       "last_effect.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump(ce, f, ensure_ascii=False)
+            except Exception:
+                pass
+        if getattr(APP, "_boot_t", None) is not None and \
+                now - APP._boot_t > 0.6 and \
+                not getattr(APP, "_preview_opened", False):
+            APP._preview_opened = True
+            try:
+                open_fast_preview()
+            except Exception:
+                pass
+    except Exception:
+        PS.debug_log("IMG-FRAME-EXC",
+                     traceback.format_exc().replace("\n", " | ")[:1000])
+
+
+def main():
+    PS.debug_log("boot-imgui", BUILD_ID)
+    dpg.create_context()
+    dpg.create_viewport(title=f"Carrot Particle Editor [{BUILD_ID}]",
+                        width=1280, height=800)
+    try:
+        ico = os.path.join(PS.app_base_dir(), "assets", "app_icon.ico")
+        if os.path.isfile(ico):
+            dpg.set_viewport_small_icon(ico)
+            dpg.set_viewport_large_icon(ico)
+    except Exception:
+        pass
+    apply_theme()
+    build_ui()
+    APP.sync_all()
+    APP.sim.reset()
+    APP.history_commit()
+    dpg.setup_dearpygui()
+    dpg.show_viewport()
+    smoke = 0
+    if "--smoke" in sys.argv:
+        try:
+            smoke = int(sys.argv[sys.argv.index("--smoke") + 1])
+        except (ValueError, IndexError):
+            smoke = 60
+    n = 0
+    while dpg.is_dearpygui_running():
+        frame()
+        dpg.render_dearpygui_frame()
+        n += 1
+        if smoke and n >= smoke:
+            print(f"SMOKE-OK frames={n} parts={APP._n_show} fps={APP._fps}")
+            break
+    dpg.destroy_context()
+
+
+if __name__ == "__main__":
+    main()
+

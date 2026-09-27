@@ -33,7 +33,8 @@ def exe_running():
 
 
 def main():
-    # 0) syntax gate
+    # 0) syntax gate (ImGui app + Tk fallback share the logic layer)
+    run([sys.executable, "-m", "py_compile", "studio_imgui.py"])
     run([sys.executable, "-m", "py_compile", "particle_studio.py"])
     # 1) refresh C++ core when its source is newer than the built .pyd
     src = os.path.join(ROOT, "core", "particle_core.cpp")

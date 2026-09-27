@@ -34,8 +34,8 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 ## Project structure
 
 ```
-<<<<<<< HEAD
-particle_studio.py              # Main app: UI, simulation fallback, C++ binding, GPU frames, preview server, export
+studio_imgui.py                 # Desktop editor (Dear ImGui edition, drawlist viewport)
+particle_studio.py              # Tk edition (fallback, shares the logic layer)
 rebuild_app.py                  # One-command build pipeline
 CarrotParticleEditor.spec       # PyInstaller spec (icon, datas, hidden imports)
 AdvancedParticleEmitter.json    # GDevelop extension (2D/3D particle system)
@@ -63,20 +63,6 @@ preview/
 
 assets/                          # App/window icons
 dist/CarrotParticleEditor.exe    # Packaged app (regenerated on every rebuild)
-=======
-Carrot-Particle-Editor/
-├── assets/                        # Editor UI assets / icons
-├── core/                          # Python simulation reference + C++ core + parity/behavior tests
-├── dist/                          # PyInstaller build output (generated, not hand-edited)
-├── preview/                       # Browser preview engine (Three.js / PixiJS) + its tests
-├── render/                        # OpenGL preview renderer (GL init, projection, cost profiling)
-├── AdvancedParticleEmitter.json   # GDevelop extension (2D/3D particle runtime)
-├── particle_studio.py             # Desktop editor entry point (Tkinter app)
-├── rebuild_app.py                 # Full build pipeline script
-├── CarrotParticleEditor.spec      # PyInstaller spec
-├── APP_STRUCTURE.md               # Detailed internal architecture notes
-└── README.md
->>>>>>> 251dc65920a9ca995c779c3d64ee0d10f3b2fdbe
 ```
 
 ## Getting started
@@ -84,6 +70,7 @@ Carrot-Particle-Editor/
 ### Requirements
 
 - Python 3.14
+- `pip install dearpygui` — ImGui UI layer (`studio_imgui.py`)
 - A C++ compiler for the optional simulation core: MSVC, g++, clang++, or Zig (auto-detected in that order)
 - Node.js — for building the browser preview (`three`, `pixi.js`, `typescript`, `esbuild`)
 

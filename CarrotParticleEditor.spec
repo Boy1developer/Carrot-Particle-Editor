@@ -14,11 +14,12 @@ except Exception:
 
 
 a = Analysis(
-    ['particle_studio.py'],
+    ['studio_imgui.py'],
     pathex=[],
     binaries=[],
     datas=[('preview', 'preview'), ('assets', 'assets'), ('render', 'render'), ('node_modules/three/build/three.module.js', 'node_modules/three/build'), ('node_modules/pixi.js/dist/pixi.mjs', 'node_modules/pixi.js/dist')] + _glfw_datas,
-    hiddenimports=['particle_core', 'render.gl_view', 'glfw'],
+    hiddenimports=['particle_core', 'render.gl_view', 'glfw', 'dearpygui',
+                   'particle_studio'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
