@@ -15,7 +15,7 @@ This repository is a two-part toolkit:
 
 The two share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts) below.
 
-Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a closed-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
+Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a open-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
 
 ## Features
 
