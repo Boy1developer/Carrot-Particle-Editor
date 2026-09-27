@@ -1125,9 +1125,6 @@ def on_type_radio(sender, app_data):
     t = "3d" if str(app_data).upper() == "3D" else "2d"
     if t != APP.ptype:
         set_type(t)
-        if not getattr(APP, "_preview_opened", False):
-            APP._preview_opened = True
-            open_fast_preview()
 
 
 # ================= widget sync =================
@@ -1600,7 +1597,6 @@ def choose(ptype):
     APP.sim.reset()
     APP.mark_dirty()
     APP.history_commit()
-    APP._boot_t = time.time()
 
 
 def add_state():
@@ -2094,18 +2090,9 @@ def frame():
                     json.dump(ce, f, ensure_ascii=False)
             except Exception:
                 pass
-        if getattr(APP, "_boot_t", None) is not None and \
-                now - APP._boot_t > 0.6 and \
-                not getattr(APP, "_preview_opened", False):
-            APP._preview_opened = True
-            try:
-                open_fast_preview()
-            except Exception:
-                pass
         auto = os.environ.get("CARROT_AUTO")
         if auto in ("2d", "3d") and dpg.is_item_shown("chooser_win"):
             choose(auto)
-            APP._preview_opened = True  # test mode: no browser popup
     except Exception:
         PS.debug_log("IMG-FRAME-EXC",
                      traceback.format_exc().replace("\n", " | ")[:1000])
