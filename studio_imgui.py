@@ -1489,20 +1489,41 @@ def build_timeline():
 def build_viewport():
     with dpg.child_window(tag="vp_child", autosize_x=True, height=-1,
                           border=False):
-        dpg.add_drawlist(tag="vp_draw", width=-1, height=-64)
+        dpg.add_drawlist(tag="vp_draw", width=800, height=536)
         build_timeline()
+
+
+def load_fonts():
+    """Segoe UI (like the old Tk edition) instead of the built-in
+    monospace-looking font. Falls back to default when missing."""
+    try:
+        candidates = [
+            r"C:\Windows\Fonts\segoeui.ttf",
+            r"C:\WinNT\Fonts\segoeui.ttf",
+        ]
+        path = next((p for p in candidates if os.path.isfile(p)), None)
+        if path is None:
+            return
+        with dpg.font_registry():
+            dpg.add_font(path, 17, tag="font_ui")
+            dpg.add_font(path, 15, tag="font_sm")
+        dpg.bind_font("font_ui")
+    except Exception as e:
+        PS.debug_log("font-fallback", repr(e)[:200])
 
 
 def build_chooser():
     with dpg.window(tag="chooser_win", label="Carrot Particle Editor",
-                    modal=True, show=True, no_resize=True,
-                    width=460, height=420, pos=[410, 190]):
+                    modal=True, show=True, no_resize=True, no_move=True,
+                    width=480, height=600, pos=[400, 100]):
         try:
             w, h, ch, data = dpg.load_image(
                 os.path.join(PS.app_base_dir(), "assets", "app_icon.png"))
             with dpg.texture_registry():
                 dpg.add_static_texture(w, h, data, tag="logo_tex")
-            dpg.add_image("logo_tex", width=180, height=180, pos=[140, 20])
+            dpg.add_spacer(height=6)
+            dpg.add_image("logo_tex", width=200, height=200, pos=[140, 40])
+            dpg.add_spacer(height=206)
         except Exception:
             pass
         dpg.add_text("CARROT", color=[255, 122, 0, 255])
@@ -1510,11 +1531,13 @@ def build_chooser():
         dpg.add_text("ParticleFX — Choose your editor mode",
                      color=list(MUTED) + [255])
         dpg.add_separator()
+        dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
-            dpg.add_button(label="2D\nSprites & SVG", width=200, height=100,
-                           callback=lambda: choose("2d"))
-            dpg.add_button(label="3D\nMeshes & Billboards", width=200,
-                           height=100, callback=lambda: choose("3d"))
+            dpg.add_button(label="2D  |  Sprites & SVG", width=220,
+                           height=84, callback=lambda: choose("2d"))
+            dpg.add_button(label="3D  |  Meshes & Billboards", width=220,
+                           height=84, callback=lambda: choose("3d"))
+        dpg.add_spacer(height=6)
         dpg.add_text("press 2 / 3", color=list(MUTED) + [255])
 
 
@@ -1970,10 +1993,14 @@ def frame():
         APP.sim.last_t = t0
         eff = APP.cached_effect()
         try:
-            W, H = (int(v) for v in dpg.get_item_rect_size("vp_draw"))
+            cw, ch = (int(v) for v in dpg.get_item_rect_size("vp_child"))
         except Exception:
-            W, H = (800, 600)
-        W, H = max(100, W), max(100, H)
+            cw, ch = (900, 640)
+        W, H = max(100, cw), max(100, ch - 70)
+        try:
+            dpg.configure_item("vp_draw", width=W, height=H)
+        except Exception:
+            pass
         cx, cy = W * 0.5, H * 0.52
         if eff is not None and APP.ptype == "2d":
             scx = cx + APP.cam["ox"] + APP.emitter2d[0]
@@ -2075,6 +2102,10 @@ def frame():
                 open_fast_preview()
             except Exception:
                 pass
+        auto = os.environ.get("CARROT_AUTO")
+        if auto in ("2d", "3d") and dpg.is_item_shown("chooser_win"):
+            choose(auto)
+            APP._preview_opened = True  # test mode: no browser popup
     except Exception:
         PS.debug_log("IMG-FRAME-EXC",
                      traceback.format_exc().replace("\n", " | ")[:1000])
@@ -2093,6 +2124,7 @@ def main():
     except Exception:
         pass
     apply_theme()
+    load_fonts()
     build_ui()
     APP.sync_all()
     APP.sim.reset()
