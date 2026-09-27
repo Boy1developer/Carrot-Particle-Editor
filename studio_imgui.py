@@ -884,6 +884,7 @@ def bind_accent_buttons():
 
 
 APP = App()
+APP._f_was_down = False
 
 
 def show_msg(title, text):
@@ -1880,6 +1881,74 @@ def gizmo_hit(lx, ly, W, H, cx, cy):
     return None
 
 
+def _typing():
+    """True while typing in a text/numeric/combo field (navigation keys
+    must not hijack typing)."""
+    try:
+        f = dpg.get_focused_item()
+        if not f:
+            return False
+        t = dpg.get_item_type(f)
+        return t in ("mvAppItemType::mvInputText",
+                     "mvAppItemType::mvInputFloat",
+                     "mvAppItemType::mvInputInt",
+                     "mvAppItemType::mvCombo",
+                     "mvAppItemType::mvColorEdit")
+    except Exception:
+        return False
+
+
+def focus_emitter(W, H, cx, cy):
+    """Frame the emitter at the viewport center (F key)."""
+    if APP.ptype == "3d":
+        sx, sy = APP.proj(*APP.emitter_pos, cx, cy)[:2]
+    else:
+        sx = cx + APP.cam["ox"] + APP.emitter2d[0]
+        sy = cy + APP.cam["oy"] + APP.emitter2d[1]
+    APP.cam["ox"] += cx - sx
+    APP.cam["oy"] += cy - sy
+    APP.mark_dirty()
+    APP.history_commit()
+
+
+def handle_nav_keys(dt, W, H, cx, cy):
+    """Game-engine style navigation, every frame:
+    WASD/arrows = move, Q/E = zoom, F = focus emitter, Shift = x3.
+    Skipped while typing or before the editor opens."""
+    if not APP._editor_open:
+        return
+    try:
+        if dpg.is_item_shown("chooser_win"):
+            return
+    except Exception:
+        pass
+    if _typing():
+        return
+    sens = APP.sens * (3.0 if _shift_down() else 1.0)
+    right = dpg.is_key_down(dpg.mvKey_D) or dpg.is_key_down(dpg.mvKey_Right)
+    left = dpg.is_key_down(dpg.mvKey_A) or dpg.is_key_down(dpg.mvKey_Left)
+    down = dpg.is_key_down(dpg.mvKey_S) or dpg.is_key_down(dpg.mvKey_Down)
+    up = dpg.is_key_down(dpg.mvKey_W) or dpg.is_key_down(dpg.mvKey_Up)
+    dx = (1 if right else 0) - (1 if left else 0)
+    dy = (1 if down else 0) - (1 if up else 0)
+    if dx or dy:
+        v = 340 * sens * dt
+        APP.cam["ox"] += dx * v
+        APP.cam["oy"] += dy * v
+        APP.mark_dirty()
+    zin = dpg.is_key_down(dpg.mvKey_E)
+    zout = dpg.is_key_down(dpg.mvKey_Q)
+    if zin or zout:
+        k = math.exp(0.9 * sens * dt)
+        APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] *
+                                       (k if zin else 1 / k)))
+        APP.mark_dirty()
+    f_down = dpg.is_key_down(dpg.mvKey_F)
+    if f_down and not APP._f_was_down:
+        focus_emitter(W, H, cx, cy)
+    APP._f_was_down = f_down
+
+
 def handle_mouse(lx, ly, hover, W, H, cx, cy):
     if APP._dblclick:
         APP._dblclick = False
@@ -1890,8 +1959,14 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy):
             APP.emitter2d = [0.0, 0.0]
             APP.history_commit()
     if APP._wheel and hover:
-        f = 1.12 if APP._wheel > 0 else 1 / 1.12
-        APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] * (f ** APP.sens)))
+        # zoom anchored at the cursor (world point under mouse stays put)
+        k = (1.12 ** APP.sens) ** APP._wheel
+        old = APP.cam["zoom"]
+        new = max(0.3, min(4.0, old * k))
+        s = new / old if old > 1e-9 else 1.0
+        APP.cam["ox"] = lx - cx - (lx - cx - APP.cam["ox"]) * s
+        APP.cam["oy"] = ly - cy - (ly - cy - APP.cam["oy"]) * s
+        APP.cam["zoom"] = new
         APP.mark_dirty()
     APP._wheel = 0
     if not hover:
@@ -2049,6 +2124,11 @@ def frame():
             hover = False
         handle_mouse(lx, ly, hover, W, H, cx, cy)
         try:
+            handle_nav_keys(dt, W, H, cx, cy)
+        except Exception:
+            PS.debug_log("IMG-NAV-EXC",
+                         traceback.format_exc().replace("\n", " | ")[:500])
+        try:
             dpg.delete_item("vp_draw", children_only=True)
             is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
                     eff.get("emitter", {}).get("propagationCone", {}))
@@ -2066,10 +2146,12 @@ def frame():
                           f"Particles: {n_show}  FPS: {APP._fps} {tag}",
                           color=[232, 232, 238, 255], size=15,
                           parent="vp_draw")
-            hint = ("3D: right-drag orbit, left-drag gizmo, wheel zoom" if
+            hint = ("3D: WASD move, right-drag orbit, Q/E zoom, F focus, "
+                    "Shift x3 | wheel zoom, double-click reset" if
                     APP.ptype == "3d" else
-                    "2D: left-drag gizmo, wheel zoom, double-click reset")
-            dpg.draw_text([W / 2 - 180, H - 24], hint,
+                    "2D: WASD/arrows move, Q/E zoom, F focus, Shift x3 | "
+                    "left-drag gizmo, wheel zoom at cursor")
+            dpg.draw_text([max(8, W / 2 - 280), H - 24], hint,
                           color=[154, 154, 173, 255], size=14,
                           parent="vp_draw")
         except Exception:
