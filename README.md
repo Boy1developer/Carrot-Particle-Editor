@@ -1,6 +1,6 @@
 # 🥕 Carrot Particle Editor
 
-**Advanced Particle Emitter** — a 2D/3D particle system extension for [GDevelop](https://gdevelop.io), paired with **Carrot Particle Editor**, a standalone desktop tool for authoring particle effects visually with real-time GPU preview.
+**Advanced Particle Emitter** — a 2D/3D particle system extension for [GDevelop](https://gdevelop.io) and [Carrots game engine](https://carrots-studio.itch.io/carrots-game-engine), paired with **Carrot Particle Editor**, a standalone desktop tool for authoring particle effects visually with real-time GPU preview.
 
 ---
 
