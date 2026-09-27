@@ -398,8 +398,85 @@ class App:
                 cy + self.cam["oy"] - y2 * scale, scale, z2)
 
     # ---------- effect assembly (mirrors StudioApp.current_effect) ----------
+    @staticmethod
+    def _fnum(v, default=0.0):
+        try:
+            f = float(v)
+        except (ValueError, TypeError):
+            return default
+        return f if math.isfinite(f) else default
+
     def read_emitter(self):
-        return copy.deepcopy(self.em)
+        """Rebuild a type-correct emitter dict every read (like the Tk
+        edition): switching 2D<->3D never leaks the other mode's keys,
+        so spawn/export always match the ACTIVE editor."""
+        src = self.em if isinstance(self.em, dict) else {}
+        g = src.get("gravity", {}) or {}
+        z = src.get("emissionZone", {}) or {}
+        c = src.get("propagationCone", {}) or {}
+        F = self._fnum
+        flow = max(0.0, F(src.get("flow", 40), 40))
+        maxp = max(1, int(F(src.get("maxParticles", 300), 300)))
+        resv = max(0, int(F(src.get("reservoir", 50), 50)))
+        mode = str(src.get("mode", "Infinite"))
+        rev = bool(src.get("reverse", False))
+        ali = bool(src.get("alignDir", False))
+        if self.ptype == "3d":
+            zs = str(z.get("shape", "sphere") or "sphere").lower()
+            if zs not in PS.ZONE_3D:
+                zs = "sphere"
+            return {
+                "flow": flow, "flowMode": "rate", "flowInterval": 1,
+                "maxParticles": maxp, "reservoir": resv,
+                "mode": mode, "reverse": rev, "alignDir": ali,
+                "billboard": True, "rotationMode": "speed",
+                "gravity": {"x": F(g.get("x", 0)), "y": F(g.get("y", 0)),
+                            "z": F(g.get("z", 0))},
+                "emissionZone": {
+                    "shape": zs,
+                    "radius": max(0.0, F(z.get("radius", 10), 10)),
+                    "width": max(0.0, F(z.get("width", 100), 100)),
+                    "height": max(0.0, F(z.get("height", 60), 60)),
+                    "depth": max(0.0, F(z.get("depth", 60), 60)),
+                    "length": max(0.0, F(z.get("length", 100), 100)),
+                    "mode": str(z.get("mode", "Surface")),
+                    "rotationX": 0, "rotationY": 0,
+                    "rotationZ": F(z.get("rotationZ", z.get("rotation", 0))),
+                    "showZone": bool(z.get("showZone", True))},
+                "propagationCone": {
+                    "directionX": 0,
+                    "directionY": F(c.get("directionY", 0)),
+                    "directionZ": F(c.get("directionZ",
+                                          c.get("direction", 0))),
+                    "spread": max(0.0, min(360.0, F(c.get("spread", 90),
+                                                    90))),
+                    "showCone": bool(c.get("showCone", True))},
+                "blendingMode": "Normal",
+            }
+        zs = str(z.get("shape", "Circle") or "Circle")
+        if zs not in PS.ZONE_2D:
+            zs = "Circle"
+        return {
+            "flow": flow, "flowMode": "rate", "flowInterval": 1,
+            "maxParticles": maxp, "reservoir": resv,
+            "mode": mode, "reverse": rev, "alignDir": ali,
+            "rotationMode": "speed",
+            "gravity": {"x": F(g.get("x", 0)), "y": F(g.get("y", 0))},
+            "emissionZone": {
+                "shape": zs,
+                "rotation": F(z.get("rotation", z.get("rotationZ", 0))),
+                "radius": max(0.0, F(z.get("radius", 10), 10)),
+                "width": max(0.0, F(z.get("width", 100), 100)),
+                "height": max(0.0, F(z.get("height", 60), 60)),
+                "length": max(0.0, F(z.get("length", 100), 100)),
+                "mode": str(z.get("mode", "Surface")),
+                "showZone": bool(z.get("showZone", True))},
+            "propagationCone": {
+                "direction": F(c.get("direction", c.get("directionZ", 0))),
+                "spread": max(0.0, min(360.0, F(c.get("spread", 90), 90))),
+                "showCone": bool(c.get("showCone", True))},
+            "blendingMode": "Normal",
+        }
 
     def current_effect(self):
         em = self.read_emitter()
@@ -885,6 +962,8 @@ def bind_accent_buttons():
 
 APP = App()
 APP._f_was_down = False
+APP._edge = {}
+APP._drag_kind = None
 
 
 def show_msg(title, text):
@@ -1911,9 +1990,31 @@ def focus_emitter(W, H, cx, cy):
     APP.history_commit()
 
 
+def _space_down():
+    try:
+        return bool(dpg.is_key_down(dpg.mvKey_Space))
+    except Exception:
+        return False
+
+
+def _edge(name, down):
+    was = APP._edge.get(name, False)
+    APP._edge[name] = down
+    return down and not was
+
+
+def _npkey(n):
+    return getattr(dpg, f"mvKey_Numpad{n}", None)
+
+
 def handle_nav_keys(dt, W, H, cx, cy):
-    """Game-engine style navigation, every frame:
-    WASD/arrows = move, Q/E = zoom, F = focus emitter, Shift = x3.
+    """Game-engine style navigation, every frame.
+
+    3D (Blender-like): A/D orbit yaw, W/S dolly, Q/E move up-down,
+    arrows pan, MMB orbit, Shift+MMB pan, wheel dolly, 1/3/7 views,
+    F focus emitter, Home reset view, Shift x3.
+    2D (GDevelop-like): WASD/arrows pan, Q/E zoom, wheel zooms at the
+    cursor, Space+left-drag pan, F focus, Home reset, Shift x3.
     Skipped while typing or before the editor opens."""
     if not APP._editor_open:
         return
@@ -1925,28 +2026,80 @@ def handle_nav_keys(dt, W, H, cx, cy):
     if _typing():
         return
     sens = APP.sens * (3.0 if _shift_down() else 1.0)
-    right = dpg.is_key_down(dpg.mvKey_D) or dpg.is_key_down(dpg.mvKey_Right)
-    left = dpg.is_key_down(dpg.mvKey_A) or dpg.is_key_down(dpg.mvKey_Left)
-    down = dpg.is_key_down(dpg.mvKey_S) or dpg.is_key_down(dpg.mvKey_Down)
-    up = dpg.is_key_down(dpg.mvKey_W) or dpg.is_key_down(dpg.mvKey_Up)
-    dx = (1 if right else 0) - (1 if left else 0)
-    dy = (1 if down else 0) - (1 if up else 0)
-    if dx or dy:
-        v = 340 * sens * dt
-        APP.cam["ox"] += dx * v
-        APP.cam["oy"] += dy * v
-        APP.mark_dirty()
-    zin = dpg.is_key_down(dpg.mvKey_E)
-    zout = dpg.is_key_down(dpg.mvKey_Q)
-    if zin or zout:
-        k = math.exp(0.9 * sens * dt)
-        APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] *
-                                       (k if zin else 1 / k)))
-        APP.mark_dirty()
+    is3d = APP.ptype == "3d"
+    if is3d:
+        yaw_in = int(dpg.is_key_down(dpg.mvKey_D)) - \
+            int(dpg.is_key_down(dpg.mvKey_A))
+        if yaw_in:
+            APP.cam["yaw"] += yaw_in * 1.8 * sens * dt
+            APP.mark_dirty()
+        fw = int(dpg.is_key_down(dpg.mvKey_W)) - \
+            int(dpg.is_key_down(dpg.mvKey_S))
+        if fw:
+            k = math.exp(1.1 * sens * dt)
+            APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] *
+                                           (k if fw > 0 else 1 / k)))
+            APP.mark_dirty()
+        vert = int(dpg.is_key_down(dpg.mvKey_E)) - \
+            int(dpg.is_key_down(dpg.mvKey_Q))
+        dx = int(dpg.is_key_down(dpg.mvKey_Right)) - \
+            int(dpg.is_key_down(dpg.mvKey_Left))
+        dy = int(dpg.is_key_down(dpg.mvKey_Down)) - \
+            int(dpg.is_key_down(dpg.mvKey_Up))
+        if dx or dy or vert:
+            v = 340 * sens * dt
+            APP.cam["ox"] += dx * v
+            APP.cam["oy"] += (dy + vert) * v
+            APP.mark_dirty()
+        views = []
+        for n, yaw, pitch in ((1, 0.0, 0.0), (3, math.pi / 2, 0.0),
+                              (7, 0.0, 1.55)):
+            key = _npkey(n)
+            if key is not None:
+                try:
+                    views.append((n, yaw, pitch,
+                                  dpg.is_key_down(key)))
+                except Exception:
+                    pass
+        for n, yaw, pitch, down in views:
+            if _edge(f"np{n}", down):
+                APP.cam["yaw"] = yaw
+                APP.cam["pitch"] = pitch
+                APP.mark_dirty()
+    else:
+        dx = int(dpg.is_key_down(dpg.mvKey_D)) - \
+            int(dpg.is_key_down(dpg.mvKey_A)) + \
+            int(dpg.is_key_down(dpg.mvKey_Right)) - \
+            int(dpg.is_key_down(dpg.mvKey_Left))
+        dy = int(dpg.is_key_down(dpg.mvKey_S)) - \
+            int(dpg.is_key_down(dpg.mvKey_W)) + \
+            int(dpg.is_key_down(dpg.mvKey_Down)) - \
+            int(dpg.is_key_down(dpg.mvKey_Up))
+        if dx or dy:
+            v = 340 * sens * dt
+            APP.cam["ox"] += dx * v
+            APP.cam["oy"] += dy * v
+            APP.mark_dirty()
+        zin = dpg.is_key_down(dpg.mvKey_E)
+        zout = dpg.is_key_down(dpg.mvKey_Q)
+        if zin or zout:
+            k = math.exp(0.9 * sens * dt)
+            APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] *
+                                           (k if zin else 1 / k)))
+            APP.mark_dirty()
     f_down = dpg.is_key_down(dpg.mvKey_F)
     if f_down and not APP._f_was_down:
         focus_emitter(W, H, cx, cy)
     APP._f_was_down = f_down
+    try:
+        home_down = dpg.is_key_down(dpg.mvKey_Home)
+    except Exception:
+        home_down = False
+    if _edge("home", bool(home_down)):
+        APP.cam.update({"yaw": 0.7, "pitch": 0.42, "zoom": 1.0,
+                        "ox": 0.0, "oy": 0.0})
+        APP.mark_dirty()
+        APP.history_commit()
 
 
 def handle_mouse(lx, ly, hover, W, H, cx, cy):
@@ -1959,33 +2112,53 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy):
             APP.emitter2d = [0.0, 0.0]
             APP.history_commit()
     if APP._wheel and hover:
-        # zoom anchored at the cursor (world point under mouse stays put)
-        k = (1.12 ** APP.sens) ** APP._wheel
-        old = APP.cam["zoom"]
-        new = max(0.3, min(4.0, old * k))
-        s = new / old if old > 1e-9 else 1.0
-        APP.cam["ox"] = lx - cx - (lx - cx - APP.cam["ox"]) * s
-        APP.cam["oy"] = ly - cy - (ly - cy - APP.cam["oy"]) * s
-        APP.cam["zoom"] = new
+        if APP.ptype == "3d":
+            # pure dolly in place (anchoring would swing the orbit target)
+            k = (1.12 ** APP.sens) ** APP._wheel
+            APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] * k))
+        else:
+            # zoom anchored at the cursor (world point under mouse stays)
+            k = (1.12 ** APP.sens) ** APP._wheel
+            old = APP.cam["zoom"]
+            new = max(0.3, min(4.0, old * k))
+            s = new / old if old > 1e-9 else 1.0
+            APP.cam["ox"] = lx - cx - (lx - cx - APP.cam["ox"]) * s
+            APP.cam["oy"] = ly - cy - (ly - cy - APP.cam["oy"]) * s
+            APP.cam["zoom"] = new
         APP.mark_dirty()
     APP._wheel = 0
     if not hover:
         return
     if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
-        hit = gizmo_hit(lx, ly, W, H, cx, cy)
-        APP._gizmo = None if hit is None else {"kind": hit, "x": lx, "y": ly}
+        if _space_down():
+            # Space+drag pans (GDevelop/Unity style), gizmo stays put
+            APP._drag = (lx, ly)
+            APP._drag_kind = "pan"
+            APP._gizmo = None
+        else:
+            hit = gizmo_hit(lx, ly, W, H, cx, cy)
+            APP._gizmo = None if hit is None else {"kind": hit,
+                                                   "x": lx, "y": ly}
     if dpg.is_mouse_button_released(dpg.mvMouseButton_Left):
         if APP._gizmo is not None:
             APP._gizmo = None
+            APP.history_commit()
+        if APP._drag_kind == "pan":
+            APP._drag = None
+            APP._drag_kind = None
             APP.history_commit()
     if dpg.is_mouse_button_released(dpg.mvMouseButton_Right) or \
        dpg.is_mouse_button_released(dpg.mvMouseButton_Middle):
         if APP._drag is not None:
             APP._drag = None
+            APP._drag_kind = None
             APP.history_commit()
-    if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Right) or \
-       dpg.is_mouse_button_clicked(dpg.mvMouseButton_Middle):
+    if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Right):
         APP._drag = (lx, ly)
+        APP._drag_kind = "orbit"
+    if dpg.is_mouse_button_clicked(dpg.mvMouseButton_Middle):
+        APP._drag = (lx, ly)
+        APP._drag_kind = "pan"
     g = APP._gizmo
     if g is not None and dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
         dx, dy = lx - g["x"], ly - g["y"]
@@ -2018,14 +2191,21 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy):
                     APP.emitter_pos[1] += unit[1] * along
                     APP.emitter_pos[2] += unit[2] * along
     if APP._drag is not None:
-        if dpg.is_mouse_button_down(dpg.mvMouseButton_Right):
+        kind = APP._drag_kind
+        if kind == "orbit" and \
+                dpg.is_mouse_button_down(dpg.mvMouseButton_Right):
+            # Blender-style orbit (3D) with the right button
             if APP.ptype == "3d":
                 dx, dy = lx - APP._drag[0], ly - APP._drag[1]
                 APP._drag = (lx, ly)
                 APP.cam["yaw"] += dx * 0.01 * APP.sens
                 APP.cam["pitch"] = max(-1.4, min(1.4, APP.cam["pitch"] +
                                                  dy * 0.01 * APP.sens))
-        elif dpg.is_mouse_button_down(dpg.mvMouseButton_Middle):
+        elif kind == "pan" and \
+                (dpg.is_mouse_button_down(dpg.mvMouseButton_Middle) or
+                 (dpg.is_mouse_button_down(dpg.mvMouseButton_Left) and
+                  _space_down())):
+            # middle-drag, or Space+left-drag (GDevelop/Unity style)
             dx, dy = lx - APP._drag[0], ly - APP._drag[1]
             APP._drag = (lx, ly)
             APP.cam["ox"] += dx * APP.sens
@@ -2146,11 +2326,11 @@ def frame():
                           f"Particles: {n_show}  FPS: {APP._fps} {tag}",
                           color=[232, 232, 238, 255], size=15,
                           parent="vp_draw")
-            hint = ("3D: WASD move, right-drag orbit, Q/E zoom, F focus, "
-                    "Shift x3 | wheel zoom, double-click reset" if
+            hint = ("3D Blender-style: A/D orbit, W/S dolly, Q/E up-down, "
+                    "MMB orbit, wheel dolly, 1/3/7 views, F focus" if
                     APP.ptype == "3d" else
-                    "2D: WASD/arrows move, Q/E zoom, F focus, Shift x3 | "
-                    "left-drag gizmo, wheel zoom at cursor")
+                    "2D GDevelop-style: WASD/arrows move, wheel zoom at "
+                    "cursor, Space+drag pan, F focus | left-drag gizmo")
             dpg.draw_text([max(8, W / 2 - 280), H - 24], hint,
                           color=[154, 154, 173, 255], size=14,
                           parent="vp_draw")

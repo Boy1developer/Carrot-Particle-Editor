@@ -26,6 +26,21 @@ try:
     assert abs(ex - cx) < 1e-6 and abs(ey - cy) < 1e-6, (ex, ey)
     # nav guarded while typing
     assert S._typing() is False
+    # type switch rebuilds a type-correct emitter (no 2D leak into 3D)
+    S.set_type("3d", commit=False)
+    eff3 = app.current_effect()
+    assert "directionZ" in eff3["emitter"]["propagationCone"], \
+        eff3["emitter"]["propagationCone"]
+    assert eff3["emitter"]["emissionZone"]["shape"] in ("sphere", "box",
+                                                        "point", "line")
+    tr3 = S.SimEngine._build_tracks(app.states, "3d")
+    p3 = S.SimEngine().spawn(eff3["emitter"], "3d", 400, 312, (0, 0, 0),
+                             tr3)
+    assert len(p3) == 22
+    S.set_type("2d", commit=False)
+    eff2 = app.current_effect()
+    assert "direction" in eff2["emitter"]["propagationCone"]
+    assert "directionZ" not in eff2["emitter"]["propagationCone"]
     print("NAV-OK")
 finally:
     dpg.destroy_context()
