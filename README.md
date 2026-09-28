@@ -11,7 +11,7 @@
 This repository is a two-part toolkit:
 
 1. **`AdvancedParticleEmitter.json`** — a GDevelop extension (namespace `AdvancedParticleEmitter`, author *Carrot Studio*) that renders particle effects inside GDevelop games: 2D via [PixiJS](https://pixijs.com), 3D via [Three.js](https://threejs.org), using a shared custom JSON effect format.
-2. **Carrot Particle Editor** — a Python/Tkinter desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, before exporting them to the extension's JSON format.
+2. **Carrot Particle Editor** — a Python desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, before exporting them to the extension's JSON format. The main UI is the **Dear PyGui edition** (`studio_imgui.py`, retained-mode ImGui widgets over a drawlist viewport); the original Tkinter edition (`particle_studio.py`) is kept as a fallback and shares the same simulation logic layer.
 
 The two share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts) below.
 
@@ -25,6 +25,7 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
+- **Dear PyGui editor UX** — draggable sidebar splitter (200–520px), engine-style navigation (Blender-like 3D orbit/dolly, GDevelop-like 2D pan/zoom, WASD/arrows + Q/E + F focus), per-state color editing (birth/death/mid states keep their own colors), and viewport zoom gated to the preview area so panel scrolling never dollies the camera.
 
 ## Screenshots / Preview
 
@@ -34,8 +35,12 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 ## Project structure
 
 ```
-studio_imgui.py                 # Desktop editor (Dear ImGui edition, drawlist viewport)
+studio_imgui.py                 # Desktop editor (Dear PyGui edition, drawlist viewport)
 particle_studio.py              # Tk edition (fallback, shares the logic layer)
+test_imgui_nav.py               # Headless nav/splitter/type-switch tests
+test_imgui_logic.py             # Headless sim/C++ parity tests
+test_imgui_build.py             # Headless UI-build test
+test_imgui_color.py             # Color editing regression test (widget==state, engine colors)
 rebuild_app.py                  # One-command build pipeline
 CarrotParticleEditor.spec       # PyInstaller spec (icon, datas, hidden imports)
 AdvancedParticleEmitter.json    # GDevelop extension (2D/3D particle system)
@@ -96,6 +101,10 @@ Launch via **Carrot Particle Editor.lnk**, or run `dist/CarrotParticleEditor.exe
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
 | `preview/test_engine*.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
+| `test_imgui_nav.py` | Headless viewport nav math, splitter, and 2D↔3D type-switch rebuild |
+| `test_imgui_logic.py` | Headless simulation logic and C++ core parity |
+| `test_imgui_build.py` | Headless full UI construction and state sync |
+| `test_imgui_color.py` | Color editing regression: panel always shows the selected state's own color, engine emits the edited colors |
 
 ## Carrots Engine integration
 
@@ -137,6 +146,10 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 - More export/import interoperability with other particle formats.
 
 *(This list reflects current thinking — update it as priorities firm up.)*
+
+## Third-party libraries
+
+- **[Dear PyGui](https://github.com/hoffstadt/DearPyGui)** — the retained-mode GUI toolkit behind the editor's main UI edition (`studio_imgui.py`). Dear PyGui is distributed under the **MIT License**, compatible with this project's own MIT licensing.
 
 ## Related projects
 
