@@ -2225,7 +2225,7 @@ def handle_splitter(lx, hover):
     return False
 
 
-def handle_mouse(lx, ly, hover, W, H, cx, cy):
+def handle_mouse(lx, ly, hover, W, H, cx, cy, zoom_ok=True):
     if APP._dblclick:
         APP._dblclick = False
         if hover and gizmo_hit(lx, ly, W, H, cx, cy) is None:
@@ -2234,7 +2234,7 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy):
             APP.emitter_pos = [0.0, 0.0, 0.0]
             APP.emitter2d = [0.0, 0.0]
             APP.history_commit()
-    if APP._wheel and hover:
+    if APP._wheel and hover and zoom_ok:
         if APP.ptype == "3d":
             # pure dolly in place (anchoring would swing the orbit target)
             k = (1.12 ** APP.sens) ** APP._wheel
@@ -2449,10 +2449,14 @@ def frame():
             lx, ly, hover = lx_r, ly_r, True
         else:
             hover = False
-        if sidebar_hovered():
+        _side = sidebar_hovered()
+        if _side:
             # wheel over the panel scrolls the panel, never zooms viewport
             hover = False
             APP._wheel = 0
+        # zoom gate: cursor must be inside the viewport rect AND outside
+        # the panel, even if the fuzzy hover flag got polluted
+        zoom_ok = bool(hover) and bool(in_r) and not _side
         if os.environ.get("CARROT_DEBUG_MOUSE") and \
                 not getattr(APP, "_geo_logged", False) and \
                 time.time() - getattr(APP, "_t_start", time.time()) > 5:
@@ -2507,7 +2511,7 @@ def frame():
             PS.debug_log("IMG-SPLIT-EXC",
                          traceback.format_exc().replace("\n", " | ")[:500])
         if not split_busy:
-            handle_mouse(lx, ly, hover, W, H, cx, cy)
+            handle_mouse(lx, ly, hover, W, H, cx, cy, zoom_ok)
         try:
             handle_nav_keys(dt, W, H, cx, cy)
         except Exception:
