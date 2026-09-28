@@ -46,7 +46,7 @@ try:
     assert app._split_hover is True
     assert S.handle_splitter(500.0, False) is False
     assert app._split_hover is False
-    assert app.side_w == 300
+    assert app.side_w == 320
     print("NAV-OK")
 finally:
     dpg.destroy_context()

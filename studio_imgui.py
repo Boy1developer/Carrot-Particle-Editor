@@ -65,6 +65,17 @@ def rgba(col, a=255):
     return (r, g, b, a)
 
 
+def _safe_action(fn):
+    """Button callbacks must never die silently: log + status on error."""
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            PS.debug_log("UI-ACTION-EXC", fn.__name__,
+                         traceback.format_exc().replace("\n", " | ")[:800])
+            APP.set_status(f"Error: {e}", WARN)
+    return wrapper
+
 # ================= framework-free simulation =================
 class SimEngine:
     """Particle sim ported from StudioApp (no Tkinter): pure-Python tracks
@@ -964,7 +975,7 @@ APP = App()
 APP._f_was_down = False
 APP._edge = {}
 APP._drag_kind = None
-APP.side_w = 300
+APP.side_w = 320
 APP._split = None
 APP._split_hover = False
 
@@ -984,7 +995,7 @@ def em_set(path, value):
 
 
 def cb_em_float(path):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         try:
             em_set(path, float(app_data))
         except (ValueError, TypeError):
@@ -993,7 +1004,7 @@ def cb_em_float(path):
 
 
 def cb_em_int(path):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         try:
             em_set(path, int(app_data))
         except (ValueError, TypeError):
@@ -1002,13 +1013,13 @@ def cb_em_int(path):
 
 
 def cb_em_combo(path, lower=False):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         em_set(path, str(app_data).lower() if lower else str(app_data))
     return _cb
 
 
 def cb_em_bool(path):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         em_set(path, bool(app_data))
     return _cb
 
@@ -1020,7 +1031,7 @@ def cur_state():
 
 
 def cb_st_text(key, conv=str):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1035,7 +1046,7 @@ def cb_st_text(key, conv=str):
 
 
 def cb_st_ap(key, conv=float):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1050,7 +1061,7 @@ def cb_st_ap(key, conv=float):
 
 
 def cb_st_mv(key):
-    def _cb(sender, app_data):
+    def _cb(sender, app_data, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1064,7 +1075,7 @@ def cb_st_mv(key):
     return _cb
 
 
-def cb_st_shape(sender, app_data):
+def cb_st_shape(sender, app_data, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1075,7 +1086,7 @@ def cb_st_shape(sender, app_data):
     refresh_custom_row()
 
 
-def cb_st_ease(sender, app_data):
+def cb_st_ease(sender, app_data, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1085,7 +1096,7 @@ def cb_st_ease(sender, app_data):
     APP.mark_dirty()
 
 
-def cb_color_edit(sender, app_data):
+def cb_color_edit(sender, app_data, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1101,7 +1112,7 @@ def cb_color_edit(sender, app_data):
     APP.mark_dirty()
 
 
-def cb_color_hex(sender, app_data):
+def cb_color_hex(sender, app_data, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1154,11 +1165,12 @@ def refresh_chips():
             sel = (i == APP.sel_state)
             dpg.add_button(label=("● " if sel else "○ ") + str(s.get("label")),
                            parent="chip_group",
-                           callback=lambda sn, ap, u=i: select_state(u))
+                           callback=lambda *a, u=i: select_state(u))
     except Exception:
         pass
 
 
+@_safe_action
 def select_state(i):
     APP.sel_state = max(0, min(i, len(APP.states) - 1))
     APP.sync_state_form()
@@ -1204,7 +1216,8 @@ def set_type(t, commit=True):
         APP.history_commit()
 
 
-def on_type_radio(sender, app_data):
+@_safe_action
+def on_type_radio(sender, app_data, *r):
     t = "3d" if str(app_data).upper() == "3D" else "2d"
     if t != APP.ptype:
         set_type(t)
@@ -1326,7 +1339,7 @@ def sync_all(self):
 App.sync_all = sync_all
 
 
-def cb_zone_rot(sender, app_data):
+def cb_zone_rot(sender, app_data, *r):
     try:
         v = float(app_data)
     except (ValueError, TypeError):
@@ -1339,7 +1352,7 @@ def cb_zone_rot(sender, app_data):
     APP.mark_dirty()
 
 
-def cb_dirz(sender, app_data):
+def cb_dirz(sender, app_data, *r):
     try:
         v = float(app_data)
     except (ValueError, TypeError):
@@ -1352,12 +1365,12 @@ def cb_dirz(sender, app_data):
     APP.mark_dirty()
 
 
-def cb_colormode(sender, app_data):
+def cb_colormode(sender, app_data, *r):
     APP.colormode = "selected" if str(app_data) == "Selected" else "gradient"
     APP.mark_dirty()
 
 
-def cb_st_node(sender, app_data):
+def cb_st_node(sender, app_data, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1378,7 +1391,7 @@ def sec(title):
     dpg.add_separator()
 
 
-def num_row(label, tag, default, cb, width=150):
+def num_row(label, tag, default, cb, width=118):
     with dpg.group(horizontal=True):
         dpg.add_text(label, color=list(MUTED) + [255])
         dpg.add_input_float(tag=tag, default_value=float(default), width=width,
@@ -1390,13 +1403,13 @@ def build_sidebar():
     dpg.add_text("PARTICLE OUTPUT", color=list(MUTED) + [255])
     num_row("Flow", "em_flow", 40, cb_em_float(("flow",)))
     with dpg.group(horizontal=True):
-        dpg.add_text("Max particles", color=list(MUTED) + [255])
-        dpg.add_input_int(tag="em_max", default_value=300, width=150,
+        dpg.add_text("Max", color=list(MUTED) + [255])
+        dpg.add_input_int(tag="em_max", default_value=300, width=118,
                           callback=cb_em_int(("maxParticles",)))
     with dpg.group(horizontal=True):
         dpg.add_text("Mode", color=list(MUTED) + [255])
         dpg.add_combo(tag="em_mode", items=PS.MODES, default_value="Infinite",
-                      width=150, callback=cb_em_combo(("mode",)))
+                      width=118, callback=cb_em_combo(("mode",)))
     with dpg.group(horizontal=True):
         dpg.add_text("Reverse", color=list(MUTED) + [255])
         dpg.add_checkbox(tag="em_rev", callback=cb_em_bool(("reverse",)))
@@ -1409,13 +1422,13 @@ def build_sidebar():
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
     with dpg.group(horizontal=True, tag="row_gz", show=False):
         dpg.add_text("Gravity Z", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_gz", default_value=0, width=150,
+        dpg.add_input_float(tag="em_gz", default_value=0, width=118,
                             callback=cb_em_float(("gravity", "z")))
     dpg.add_text("EMISSION ZONE", color=list(MUTED) + [255])
     with dpg.group(horizontal=True):
         dpg.add_text("Shape", color=list(MUTED) + [255])
         dpg.add_combo(tag="em_zshape", items=PS.ZONE_2D, default_value="Circle",
-                      width=150, callback=cb_em_combo(("emissionZone", "shape")))
+                      width=118, callback=cb_em_combo(("emissionZone", "shape")))
     num_row("Rotation", "em_rot", 0, cb_zone_rot)
     num_row("Radius", "em_radius", 10, cb_em_float(("emissionZone", "radius")))
     num_row("Width", "em_width", 100, cb_em_float(("emissionZone", "width")))
@@ -1423,7 +1436,7 @@ def build_sidebar():
     num_row("Length", "em_length", 100, cb_em_float(("emissionZone", "length")))
     with dpg.group(horizontal=True, tag="row_depth", show=False):
         dpg.add_text("Depth", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_depth", default_value=60, width=150,
+        dpg.add_input_float(tag="em_depth", default_value=60, width=118,
                             callback=cb_em_float(("emissionZone", "depth")))
     with dpg.group(horizontal=True, tag="row_zonemode", show=False):
         dpg.add_text("Mode", color=list(MUTED) + [255])
@@ -1437,11 +1450,11 @@ def build_sidebar():
     dpg.add_text("PROPAGATION CONE", color=list(MUTED) + [255])
     with dpg.group(horizontal=True):
         dpg.add_text("Direction", color=list(MUTED) + [255], tag="dirz_label")
-        dpg.add_input_float(tag="em_dirz", default_value=0, width=150,
+        dpg.add_input_float(tag="em_dirz", default_value=0, width=118,
                             callback=cb_dirz)
     with dpg.group(horizontal=True, tag="row_diry", show=False):
         dpg.add_text("Dir. Y", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_diry", default_value=0, width=150,
+        dpg.add_input_float(tag="em_diry", default_value=0, width=118,
                             callback=cb_em_float(("propagationCone",
                                                   "directionY")))
     num_row("Spread", "em_spread", 90,
@@ -1452,80 +1465,80 @@ def build_sidebar():
                          callback=cb_em_bool(("propagationCone", "showCone")))
     sec("States")
     with dpg.group(horizontal=True):
-        dpg.add_text("Preview color", color=list(MUTED) + [255])
+        dpg.add_text("Preview", color=list(MUTED) + [255])
         dpg.add_radio_button(tag="colormode_radio",
                              items=["Selected", "Gradient"],
                              default_value="Gradient", horizontal=True,
                              callback=cb_colormode)
     with dpg.group(horizontal=True):
         dpg.add_text("Label", color=list(MUTED) + [255])
-        dpg.add_input_text(tag="st_label", default_value="birth", width=150,
+        dpg.add_input_text(tag="st_label", default_value="birth", width=118,
                            callback=cb_st_text("label"))
     with dpg.group(horizontal=True):
         dpg.add_text("Duration", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_dur", default_value=0.5, width=150,
+        dpg.add_input_float(tag="st_dur", default_value=0.5, width=118,
                             callback=cb_st_text("duration", float))
     with dpg.group(horizontal=True):
         dpg.add_text("Shape", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_shape", items=PS.SHAPES_2D,
-                      default_value="circle", width=150, callback=cb_st_shape)
+                      default_value="circle", width=118, callback=cb_st_shape)
     with dpg.group(horizontal=True):
         dpg.add_text("Easing", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_ease", items=PS.EASINGS,
-                      default_value="linear", width=150, callback=cb_st_ease)
+                      default_value="linear", width=118, callback=cb_st_ease)
     with dpg.group(horizontal=True):
         dpg.add_text("Size", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_size", default_value=8, width=150,
+        dpg.add_input_float(tag="st_size", default_value=8, width=118,
                             callback=cb_st_ap("size"))
     with dpg.group(horizontal=True):
         dpg.add_text("SizeMax", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_sizemax", default_value=12, width=150,
+        dpg.add_input_float(tag="st_sizemax", default_value=12, width=118,
                             callback=cb_st_ap("sizeMax"))
     with dpg.group(horizontal=True):
         dpg.add_text("Color", color=list(MUTED) + [255])
         dpg.add_color_edit(tag="st_color_edit",
-                           default_value=(255, 255, 255, 255), width=80,
+                           default_value=(255, 255, 255, 255), width=56,
                            callback=cb_color_edit)
         dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
-                           width=100, callback=cb_color_hex)
+                           width=84, callback=cb_color_hex)
     with dpg.group(horizontal=True):
         dpg.add_text("Opacity", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_op", default_value=255, width=150,
+        dpg.add_input_float(tag="st_op", default_value=255, width=118,
                             callback=cb_st_ap("opacity",
                                               lambda v: int(float(v))))
     with dpg.group(horizontal=True):
         dpg.add_text("MinSpeed", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_mins", default_value=60, width=150,
+        dpg.add_input_float(tag="st_mins", default_value=60, width=118,
                             callback=cb_st_mv("minSpeed"))
     with dpg.group(horizontal=True):
         dpg.add_text("MaxSpd", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_maxs", default_value=160, width=150,
+        dpg.add_input_float(tag="st_maxs", default_value=160, width=118,
                             callback=cb_st_mv("maxSpeed"))
     with dpg.group(horizontal=True):
-        dpg.add_button(label="Save", callback=lambda: save_state(),
+        dpg.add_button(label="Save", callback=lambda *a: save_state(),
                        width=90)
-        dpg.add_button(label="Delete", callback=lambda: del_state(),
+        dpg.add_button(label="Delete", callback=lambda *a: del_state(),
                        width=90)
     with dpg.group(horizontal=True, tag="row_custom", show=False):
         dpg.add_button(label="Upload 3D", tag="upload_btn_label",
-                       callback=lambda: upload_custom_model(), width=110)
+                       callback=lambda *a: upload_custom_model(), width=110)
         dpg.add_text("no file", tag="custom_file_text",
                      color=list(MUTED) + [255])
-        dpg.add_button(label="X", callback=lambda: clear_custom_model(),
+        dpg.add_button(label="X", callback=lambda *a: clear_custom_model(),
                        width=30)
     with dpg.group(horizontal=True, tag="row_custom_node", show=False):
         dpg.add_text("Node", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_node", items=["(whole file)"],
-                      default_value="(whole file)", width=150,
+                      default_value="(whole file)", width=118,
                       callback=cb_st_node)
     dpg.add_text("", tag="custom_hint", show=False, wrap=260)
     sec("Templates")
     with dpg.group(horizontal=True):
         for name in PS.TEMPLATES:
-            dpg.add_button(label=name, width=80,
-                           callback=lambda s, a, u=name: apply_template(u))
+            dpg.add_button(label=name, width=74,
+                           callback=lambda *a, u=name: apply_template(u))
     dpg.add_button(label="Export JSON", tag="export_btn", width=-1, height=36,
-                   callback=lambda: do_save_as())
+                   callback=lambda *a: do_save_as())
 
 
 def build_topbar():
@@ -1533,36 +1546,36 @@ def build_topbar():
         dpg.add_text("Carrot Studio", color=[255, 122, 0, 255])
         dpg.add_input_text(tag="filename_input", default_value="Default",
                            width=130,
-                           callback=lambda s, a: setattr(APP, "filename",
+                           callback=lambda s, a, *r: setattr(APP, "filename",
                                                          str(a) or "Default"))
         dpg.add_radio_button(tag="type_radio", items=["2D", "3D"],
                              default_value="2D", horizontal=True,
                              callback=on_type_radio)
         dpg.add_text("FOV", color=list(MUTED) + [255])
         dpg.add_input_float(tag="fov_input", default_value=60.0, width=60,
-                            callback=lambda s, a: (
+                            callback=lambda s, a, *r: (
                                 setattr(APP, "fov",
                                         max(10.0, min(120.0, float(a)))),
                                 APP.mark_dirty()))
         dpg.add_text("Sens", color=list(MUTED) + [255])
         dpg.add_input_float(tag="sens_input", default_value=1.0, width=60,
-                            callback=lambda s, a: setattr(
+                            callback=lambda s, a, *r: setattr(
                                 APP, "sens",
                                 max(0.1, min(5.0, float(a)))))
-        dpg.add_button(label="New", callback=lambda: do_new(), width=60)
-        dpg.add_button(label="Save", callback=lambda: do_save(), width=60)
-        dpg.add_button(label="Save As", callback=lambda: do_save_as(),
+        dpg.add_button(label="New", callback=lambda *a: do_new(), width=60)
+        dpg.add_button(label="Save", callback=lambda *a: do_save(), width=60)
+        dpg.add_button(label="Save As", callback=lambda *a: do_save_as(),
                        width=80)
-        dpg.add_button(label="Open", callback=lambda: do_open(), width=60)
+        dpg.add_button(label="Open", callback=lambda *a: do_open(), width=60)
 
 
 def build_timeline():
     with dpg.group(horizontal=True):
         dpg.add_text("STATES", color=list(MUTED) + [255])
         dpg.add_group(tag="chip_group", horizontal=True)
-        dpg.add_button(label="+", callback=lambda: add_state(), width=36)
+        dpg.add_button(label="+", callback=lambda *a: add_state(), width=36)
         dpg.add_button(label="Fast preview 60FPS", tag="preview_btn",
-                       callback=lambda: open_fast_preview())
+                       callback=lambda *a: open_fast_preview())
         dpg.add_text("Ready", tag="status_text", color=list(OK) + [255])
 
 
@@ -1614,9 +1627,9 @@ def build_chooser():
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_button(label="2D  |  Sprites & SVG", width=220,
-                           height=84, callback=lambda: choose("2d"))
+                           height=84, callback=lambda *a: choose("2d"))
             dpg.add_button(label="3D  |  Meshes & Billboards", width=220,
-                           height=84, callback=lambda: choose("3d"))
+                           height=84, callback=lambda *a: choose("3d"))
         dpg.add_spacer(height=6)
         dpg.add_text("press 2 / 3", color=list(MUTED) + [255])
 
@@ -1640,7 +1653,7 @@ def build_dialogs():
                     width=420, height=160, pos=[430, 320]):
         dpg.add_text("", tag="msg_text", wrap=380)
         dpg.add_button(label="OK", width=80,
-                       callback=lambda: dpg.configure_item("msg_win",
+                       callback=lambda *a: dpg.configure_item("msg_win",
                                                            show=False))
 
 
@@ -1658,23 +1671,28 @@ def build_ui():
     build_dialogs()
     with dpg.handler_registry():
         dpg.add_mouse_wheel_handler(
-            callback=lambda s, a: setattr(APP, "_wheel",
+            callback=lambda s, a, *r: setattr(APP, "_wheel",
                                           APP._wheel + float(a)))
         dpg.add_mouse_double_click_handler(
             button=dpg.mvMouseButton_Left,
-            callback=lambda: setattr(APP, "_dblclick", True))
+            callback=lambda *a: setattr(APP, "_dblclick", True))
         for key, name in ((dpg.mvKey_Z, "z"), (dpg.mvKey_Y, "y"),
                           (dpg.mvKey_S, "s"), (dpg.mvKey_2, "2"),
                           (dpg.mvKey_3, "3")):
             dpg.add_key_press_handler(
                 key=key,
-                callback=lambda s, a, u=name: APP._keys.append(u))
+                callback=lambda *a, u=name: APP._keys.append(u))
     APP._keys = []
     bind_accent_buttons()
 
 
 # ================= actions =================
+
+
+
+@_safe_action
 def choose(ptype):
+    PS.debug_log("CHOOSE", ptype)
     dpg.configure_item("chooser_win", show=False)
     APP._editor_open = True
     set_type(ptype, commit=False)
@@ -1683,6 +1701,7 @@ def choose(ptype):
     APP.history_commit()
 
 
+@_safe_action
 def add_state():
     s = cur_state()
     APP.states.append(PS.default_state("intermediate", len(APP.states)))
@@ -1693,6 +1712,7 @@ def add_state():
     APP.history_commit()
 
 
+@_safe_action
 def del_state():
     if len(APP.states) <= 2:
         show_msg("Notice", "birth + death required")
@@ -1706,6 +1726,7 @@ def del_state():
     APP.history_commit()
 
 
+@_safe_action
 def save_state():
     APP.sync_state_form()
     refresh_chips()
@@ -1714,6 +1735,7 @@ def save_state():
     APP.history_commit()
 
 
+@_safe_action
 def apply_template(name):
     tpl = PS.TEMPLATES[name]
     patch = tpl[APP.ptype]
@@ -1734,6 +1756,7 @@ def apply_template(name):
     APP.history_commit()
 
 
+@_safe_action
 def do_new():
     APP.filepath = None
     APP.filename = "Default"
@@ -1766,7 +1789,8 @@ def do_open():
     dpg.show_item("dlg_open")
 
 
-def open_chosen(sender, app_data):
+@_safe_action
+def open_chosen(sender, app_data, *r):
     try:
         sels = app_data.get("selections") or {}
         p = next(iter(sels.values()), None) or app_data.get("file_path_name")
@@ -1788,6 +1812,7 @@ def gather():
     return eff
 
 
+@_safe_action
 def do_save():
     if not APP.filepath:
         do_save_as()
@@ -1801,11 +1826,13 @@ def do_save():
         show_msg("Error", str(e))
 
 
+@_safe_action
 def do_save_as():
     dpg.show_item("dlg_save")
 
 
-def save_chosen(sender, app_data):
+@_safe_action
+def save_chosen(sender, app_data, *r):
     try:
         sels = app_data.get("selections") or {}
         p = next(iter(sels.values()), None) or app_data.get("file_path_name")
@@ -1823,6 +1850,7 @@ def save_chosen(sender, app_data):
         show_msg("Error", str(e))
 
 
+@_safe_action
 def upload_custom_model():
     dpg.show_item("dlg_model" if APP.ptype == "3d" else "dlg_image")
 
@@ -1852,18 +1880,21 @@ def _custom_chosen(path, kind):
     APP.history_commit()
 
 
-def model_chosen(sender, app_data):
+@_safe_action
+def model_chosen(sender, app_data, *r):
     sels = app_data.get("selections") or {}
     _custom_chosen(next(iter(sels.values()), None) or
                    app_data.get("file_path_name"), "model")
 
 
-def image_chosen(sender, app_data):
+@_safe_action
+def image_chosen(sender, app_data, *r):
     sels = app_data.get("selections") or {}
     _custom_chosen(next(iter(sels.values()), None) or
                    app_data.get("file_path_name"), "image")
 
 
+@_safe_action
 def clear_custom_model():
     s = cur_state()
     if s is None:
@@ -1880,6 +1911,7 @@ _preview_server = None
 _preview_port = 0
 
 
+@_safe_action
 def open_fast_preview():
     global _preview_server, _preview_port
     eff = gather()
@@ -1942,7 +1974,7 @@ def open_fast_preview():
 def gizmo_hit(lx, ly, W, H, cx, cy):
     if APP.ptype == "3d":
         o = APP.proj(*APP.emitter_pos, cx, cy)[:2]
-        if math.hypot(lx - o[0], ly - o[1]) <= 14:
+        if math.hypot(lx - o[0], ly - o[1]) <= 24:
             return "move"
         for i, (ax, ay, az) in enumerate(((70, 0, 0), (0, 70, 0),
                                           (0, 0, 70))):
@@ -1954,12 +1986,12 @@ def gizmo_hit(lx, ly, W, H, cx, cy):
                 continue
             along = ((lx - o[0]) * dx + (ly - o[1]) * dy) / n
             perp = abs((lx - o[0]) * dy - (ly - o[1]) * dx) / n
-            if 0 <= along <= n and perp <= 10:
+            if 0 <= along <= n and perp <= 16:
                 return ("axis", i)
         return None
     ex = cx + APP.cam["ox"] + APP.emitter2d[0]
     ey = cy + APP.cam["oy"] + APP.emitter2d[1]
-    if math.hypot(lx - ex, ly - ey) <= 14:
+    if math.hypot(lx - ex, ly - ey) <= 24:
         return "move2d"
     return None
 
@@ -2161,6 +2193,16 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy):
             APP._gizmo = None
         else:
             hit = gizmo_hit(lx, ly, W, H, cx, cy)
+            if os.environ.get("CARROT_DEBUG_MOUSE"):
+                try:
+                    _mx2, _my2 = dpg.get_mouse_pos(local=False)
+                except Exception:
+                    _mx2, _my2 = (-1, -1)
+                PS.debug_log("MOUSE-CLICK",
+                             f"lx={lx:.1f} ly={ly:.1f} W={W} H={H} "
+                             f"cx={cx:.0f} cy={cy:.0f} hit={hit} "
+                             f"mxy={mx:.1f},{my:.1f} mglob={_mx2:.1f},{_my2:.1f} "
+                             f"rmin={rmin}")
             APP._gizmo = None if hit is None else {"kind": hit,
                                                    "x": lx, "y": ly}
     if dpg.is_mouse_button_released(dpg.mvMouseButton_Left):
@@ -2319,13 +2361,74 @@ def frame():
             APP.sim._cpp_out = None
         handle_keys()
         try:
-            mx, my = dpg.get_mouse_pos()
-            rmin = dpg.get_item_rect_min("vp_draw")
-            lx, ly = mx - rmin[0], my - rmin[1]
-            hover = 0 <= lx < W and 0 <= ly < H
+            hov = bool(dpg.is_item_hovered("vp_draw"))
         except Exception:
-            lx = ly = 0
+            hov = False
+        try:
+            lx, ly = (float(v) for v in dpg.get_drawing_mouse_pos())
+        except Exception:
+            lx, ly = (0, 0)
+        in_d = 0 <= lx < W and 0 <= ly < H
+        try:
+            mx2, my2 = dpg.get_mouse_pos()
+            rmin2 = dpg.get_item_rect_min("vp_draw")
+            lx_r, ly_r = mx2 - rmin2[0], my2 - rmin2[1]
+        except Exception:
+            lx_r, ly_r = (0, 0)
+        in_r = 0 <= lx_r < W and 0 <= ly_r < H
+        if in_d and (hov or not in_r):
+            hover = True
+        elif in_r:
+            lx, ly, hover = lx_r, ly_r, True
+        else:
             hover = False
+        if os.environ.get("CARROT_DEBUG_MOUSE") and \
+                not getattr(APP, "_geo_logged", False) and \
+                time.time() - getattr(APP, "_t_start", time.time()) > 5:
+            APP._geo_logged = True
+            try:
+                import ctypes as _ct
+                _hwnd = _ct.windll.user32.GetForegroundWindow()
+                _r = (_ct.c_long * 4)()
+                _ct.windll.user32.GetWindowRect(_hwnd, _r)
+                _wrect = tuple(_r)
+            except Exception:
+                _wrect = ("?",)
+            try:
+                _vp = dpg.get_viewport_pos()
+            except Exception:
+                _vp = ("?",)
+            try:
+                _m1 = dpg.get_mouse_pos()
+            except Exception:
+                _m1 = ("?",)
+            try:
+                _m2 = dpg.get_mouse_pos(local=False)
+            except Exception:
+                _m2 = ("?",)
+            try:
+                _rmn = dpg.get_item_rect_min("vp_draw")
+                _rmx = dpg.get_item_rect_max("vp_draw")
+            except Exception as _e:
+                _rmn, _rmx = (f"ERR:{type(_e).__name__}", None)
+            try:
+                _parts = []
+                for _tag in ("vp_draw", "vp_child", "side_child",
+                             "primary"):
+                    try:
+                        _mn = dpg.get_item_rect_min(_tag)
+                        _mx = dpg.get_item_rect_max(_tag)
+                    except Exception as _e:
+                        _mn, _mx = (f"ERR:{type(_e).__name__}", None)
+                    _parts.append(f"{_tag}={_mn}/{_mx}")
+                try:
+                    _pos = dpg.get_item_pos("vp_draw")
+                except Exception as _e:
+                    _pos = f"ERR:{type(_e).__name__}"
+                _parts.append(f"pos={_pos}")
+            except Exception:
+                _parts = ["?"]
+            PS.debug_log("GEO2", " ".join(str(p) for p in _parts))
         split_busy = False
         try:
             split_busy = handle_splitter(lx, hover)
@@ -2350,6 +2453,20 @@ def frame():
             if APP._split is not None or APP._split_hover:
                 dpg.draw_line([2, 0], [2, H], color=[123, 97, 255, 255],
                               thickness=3, parent="vp_draw")
+            if os.environ.get("CARROT_DEBUG_MOUSE"):
+                try:
+                    dpg.draw_circle([lx, ly], 12, color=[0, 255, 0, 255],
+                                    thickness=2, parent="vp_draw",
+                                    segments=16)
+                    dpg.draw_text([lx + 16, ly - 8],
+                                  f"{int(lx)},{int(ly)}",
+                                  color=[0, 255, 0, 255], size=16,
+                                  parent="vp_draw")
+                    dpg.draw_circle([lx_r, ly_r], 12, color=[255, 0, 0, 255],
+                                    thickness=2, parent="vp_draw",
+                                    segments=16)
+                except Exception:
+                    pass
             n_show = cpp_n if cpp_active else len(APP.sim.parts)
             APP._n_show = n_show
             APP._cpp_active = cpp_active
@@ -2399,6 +2516,12 @@ def main():
     dpg.create_context()
     dpg.create_viewport(title=f"Carrot Particle Editor [{BUILD_ID}]",
                         width=1280, height=800)
+    _pos = os.environ.get("CARROT_WINPOS", "")
+    try:
+        _x, _y = (int(v) for v in _pos.split(","))
+        dpg.set_viewport_pos([_x, _y])
+    except Exception:
+        pass
     try:
         ico = os.path.join(PS.app_base_dir(), "assets", "app_icon.ico")
         if os.path.isfile(ico):
@@ -2414,6 +2537,7 @@ def main():
     APP.history_commit()
     dpg.setup_dearpygui()
     dpg.show_viewport()
+    APP._t_start = time.time()
     smoke = 0
     if "--smoke" in sys.argv:
         try:
