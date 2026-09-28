@@ -1106,6 +1106,7 @@ def cb_color_edit(sender=None, app_data=None, *r):
     r, g, b = int(app_data[0]), int(app_data[1]), int(app_data[2])
     hx = "#%02x%02x%02x" % (r, g, b)
     s.setdefault("appearance", {})["color"] = hx
+    s.setdefault("appearance", {})["opacity"] = 255
     APP._last_custom_color = hx
     try:
         dpg.set_value("st_color_hex", hx)
@@ -1125,6 +1126,7 @@ def cb_color_hex(sender=None, app_data=None, *r):
     if not _re.fullmatch(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", hx):
         return
     s.setdefault("appearance", {})["color"] = hx
+    s.setdefault("appearance", {})["opacity"] = 255
     APP._last_custom_color = hx
     try:
         dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
