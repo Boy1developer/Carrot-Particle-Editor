@@ -2181,6 +2181,19 @@ def handle_nav_keys(dt, W, H, cx, cy):
         APP.history_commit()
 
 
+def sidebar_hovered():
+    """True when the mouse is over anything in the left panel (rect math,
+    independent of the stale drawing-space mouse position)."""
+    try:
+        mp = dpg.get_mouse_pos()
+        smin = dpg.get_item_rect_min("side_child")
+        smax = dpg.get_item_rect_max("side_child")
+        return (smin[0] <= mp[0] < smax[0] and
+                smin[1] <= mp[1] < smax[1])
+    except Exception:
+        return False
+
+
 def handle_splitter(lx, hover):
     # While dragging, anchor in SCREEN x (valid inside and outside the
     # viewport). Drawing-space lx freezes once the cursor leaves vp_draw,
@@ -2436,6 +2449,10 @@ def frame():
             lx, ly, hover = lx_r, ly_r, True
         else:
             hover = False
+        if sidebar_hovered():
+            # wheel over the panel scrolls the panel, never zooms viewport
+            hover = False
+            APP._wheel = 0
         if os.environ.get("CARROT_DEBUG_MOUSE") and \
                 not getattr(APP, "_geo_logged", False) and \
                 time.time() - getattr(APP, "_t_start", time.time()) > 5:
