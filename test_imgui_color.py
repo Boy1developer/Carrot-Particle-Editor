@@ -31,6 +31,21 @@ try:
     S.cb_color_edit("st_color_edit", [255, 0, 255, 255])
     assert app.states[1]["appearance"]["color"] == "#ff00ff"
     assert app.states[1]["appearance"]["opacity"] == 255
+    # 3b) hostile payloads must never corrupt the state
+    S.select_state(0)
+    S.cb_color_edit("st_color_edit", None)  # DPG zero-arg call: widget fallback
+    assert app.states[0]["appearance"]["color"] == "#00ffa4", \
+        app.states[0]["appearance"]
+    S.cb_color_edit("st_color_edit", [0.0, 1.0, 0.64])  # normalized floats
+    assert app.states[0]["appearance"]["color"] == "#00ffa3", \
+        app.states[0]["appearance"]
+    S.cb_color_edit("st_color_edit", [0, 255, 164, 255])  # restore teal
+    S.cb_color_hex("st_color_hex", "00ff00")  # missing '#' tolerated
+    assert app.states[0]["appearance"]["color"] == "#00ff00", \
+        app.states[0]["appearance"]
+    S.cb_color_hex("st_color_hex", "notacolor")  # garbage ignored
+    assert app.states[0]["appearance"]["color"] == "#00ff00"
+    S.cb_color_edit("st_color_edit", [0, 255, 164, 255])  # restore teal
     S.select_state(0)
     assert dpg.get_value("st_color_hex") == "#00ffa4", \
         dpg.get_value("st_color_hex")

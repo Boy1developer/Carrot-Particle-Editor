@@ -37,7 +37,7 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = "1.0"
-BUILD_ID = "b20260927-gl3"  # bump on every shipped change; shown in title
+BUILD_ID = "b20260929-colorfix"  # bump on every shipped change; shown in title
 
 
 def debug_log(*parts):

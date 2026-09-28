@@ -1096,13 +1096,32 @@ def cb_st_ease(sender=None, app_data=None, *r):
     APP.mark_dirty()
 
 
+@_safe_action
 def cb_color_edit(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
     if s is None:
         return
-    r, g, b = int(app_data[0]), int(app_data[1]), int(app_data[2])
+    vals = app_data
+    if vals is None:
+        # DPG sometimes invokes callbacks with no payload: fall back to
+        # the widget's live value instead of dying silently (widget keeps
+        # showing the picked color while the state never updates).
+        try:
+            vals = dpg.get_value(sender or "st_color_edit")
+        except Exception:
+            return
+    try:
+        comps = [float(vals[i]) for i in range(3)]
+    except (ValueError, TypeError, IndexError):
+        return
+    # DPG may deliver 0-255 or normalized 0-1 floats; a fractional part
+    # below 1.0 means normalized (whole numbers are the 0-255 scale).
+    if all(0.0 <= v <= 1.0 for v in comps) and \
+            any(v != 0.0 and v != 1.0 and v != float(int(v)) for v in comps):
+        comps = [v * 255.0 for v in comps]
+    r, g, b = [max(0, min(255, int(round(v)))) for v in comps]
     hx = "#%02x%02x%02x" % (r, g, b)
     s.setdefault("appearance", {})["color"] = hx
     s.setdefault("appearance", {})["opacity"] = 255
@@ -1113,16 +1132,26 @@ def cb_color_edit(sender=None, app_data=None, *r):
     APP.mark_dirty()
 
 
+@_safe_action
 def cb_color_hex(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
     if s is None:
         return
-    hx = str(app_data).strip()
+    hx = str(app_data).strip() if app_data is not None else ""
+    if not hx:
+        try:
+            hx = str(dpg.get_value("st_color_hex")).strip()
+        except Exception:
+            return
     import re as _re
     if not _re.fullmatch(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", hx):
-        return
+        # tolerate a missing leading '#'
+        if _re.fullmatch(r"([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", hx):
+            hx = "#" + hx
+        else:
+            return
     s.setdefault("appearance", {})["color"] = hx
     s.setdefault("appearance", {})["opacity"] = 255
     try:
