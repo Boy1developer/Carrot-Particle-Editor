@@ -2182,10 +2182,17 @@ def handle_nav_keys(dt, W, H, cx, cy):
 
 
 def handle_splitter(lx, hover):
+    # While dragging, anchor in SCREEN x (valid inside and outside the
+    # viewport). Drawing-space lx freezes once the cursor leaves vp_draw,
+    # which made shrinking stall after the panel grew.
     if APP._split is not None:
         if dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
+            try:
+                mx = float(dpg.get_mouse_pos()[0])
+            except Exception:
+                return True
             ax, aw = APP._split
-            APP.side_w = max(200, min(520, aw + (lx - ax)))
+            APP.side_w = max(200, min(520, aw + (mx - ax)))
             try:
                 dpg.configure_item("side_child", width=int(APP.side_w))
             except Exception:
@@ -2195,7 +2202,11 @@ def handle_splitter(lx, hover):
         return False
     if hover and 0 <= lx <= 6 and \
             dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
-        APP._split = (lx, APP.side_w)
+        try:
+            mx = float(dpg.get_mouse_pos()[0])
+        except Exception:
+            mx = lx
+        APP._split = (mx, APP.side_w)
         return True
     APP._split_hover = bool(hover and 0 <= lx <= 6)
     return False
