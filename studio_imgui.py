@@ -1278,9 +1278,13 @@ def sync_state_form(self):
     _set("st_ease", str(s.get("easing", "linear")))
     _set("st_size", float(ap.get("size", 8) or 0))
     _set("st_sizemax", float(ap.get("sizeMax", ap.get("size", 8)) or 0))
-    # Preserve custom color across state switches: use state color if set,
-    # otherwise fall back to the last custom color the user applied globally
-    hx = ap.get("color") or APP._last_custom_color or "#ffffff"
+    # Preserve custom color across state switches:
+# If user has set a custom color (_last_custom_color != default), use it;
+# otherwise use the state's color
+if APP._last_custom_color != "#ffffff":
+    hx = APP._last_custom_color
+else:
+    hx = ap.get("color", "#ffffff")
     _set("st_color_hex", hx)
     try:
         dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
