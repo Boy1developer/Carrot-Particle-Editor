@@ -1501,7 +1501,7 @@ def build_sidebar():
     with dpg.group(horizontal=True):
         dpg.add_text("Color", color=list(MUTED) + [255])
         dpg.add_color_edit(tag="st_color_edit",
-                           default_value=(255, 255, 255, 255), width=110,
+                           default_value=(255, 255, 255, 255), width=-1,
                            callback=cb_color_edit)
         dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
                            width=90, callback=cb_color_hex)
