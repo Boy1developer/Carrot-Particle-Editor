@@ -381,7 +381,6 @@ class App:
         self._cache_t = 0.0
         self._cached_eff = None
         self._last_edit = 0.0
-        self._last_custom_color = "#ffffff"
         self._live_push_on = False
         self._last_push = 0.0
         self._status = "Ready"
@@ -1107,7 +1106,6 @@ def cb_color_edit(sender=None, app_data=None, *r):
     hx = "#%02x%02x%02x" % (r, g, b)
     s.setdefault("appearance", {})["color"] = hx
     s.setdefault("appearance", {})["opacity"] = 255
-    APP._last_custom_color = hx
     try:
         dpg.set_value("st_color_hex", hx)
     except Exception:
@@ -1127,7 +1125,6 @@ def cb_color_hex(sender=None, app_data=None, *r):
         return
     s.setdefault("appearance", {})["color"] = hx
     s.setdefault("appearance", {})["opacity"] = 255
-    APP._last_custom_color = hx
     try:
         dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
     except Exception:
@@ -1278,13 +1275,11 @@ def sync_state_form(self):
     _set("st_ease", str(s.get("easing", "linear")))
     _set("st_size", float(ap.get("size", 8) or 0))
     _set("st_sizemax", float(ap.get("sizeMax", ap.get("size", 8)) or 0))
-    # Preserve custom color across state switches:
-# If user has set a custom color (_last_custom_color != default), use it;
-# otherwise use the state's color
-if APP._last_custom_color != "#ffffff":
-    hx = APP._last_custom_color
-else:
-    hx = ap.get("color", "#ffffff")
+    # Show this state's own color (each state keeps its own appearance).
+    hx = str(ap.get("color") or "#ffffff")
+    import re as _re
+    if not _re.fullmatch(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", hx):
+        hx = "#ffffff"
     _set("st_color_hex", hx)
     try:
         dpg.set_value("st_color_edit", tuple(hex_to_rgb(hx)) + (255,))
