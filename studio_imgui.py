@@ -995,7 +995,7 @@ def em_set(path, value):
 
 
 def cb_em_float(path):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         try:
             em_set(path, float(app_data))
         except (ValueError, TypeError):
@@ -1004,7 +1004,7 @@ def cb_em_float(path):
 
 
 def cb_em_int(path):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         try:
             em_set(path, int(app_data))
         except (ValueError, TypeError):
@@ -1013,13 +1013,13 @@ def cb_em_int(path):
 
 
 def cb_em_combo(path, lower=False):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         em_set(path, str(app_data).lower() if lower else str(app_data))
     return _cb
 
 
 def cb_em_bool(path):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         em_set(path, bool(app_data))
     return _cb
 
@@ -1031,7 +1031,7 @@ def cur_state():
 
 
 def cb_st_text(key, conv=str):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1046,7 +1046,7 @@ def cb_st_text(key, conv=str):
 
 
 def cb_st_ap(key, conv=float):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1061,7 +1061,7 @@ def cb_st_ap(key, conv=float):
 
 
 def cb_st_mv(key):
-    def _cb(sender, app_data, *r):
+    def _cb(sender=None, app_data=None, *r):
         if APP._restoring:
             return
         s = cur_state()
@@ -1075,7 +1075,7 @@ def cb_st_mv(key):
     return _cb
 
 
-def cb_st_shape(sender, app_data, *r):
+def cb_st_shape(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1086,7 +1086,7 @@ def cb_st_shape(sender, app_data, *r):
     refresh_custom_row()
 
 
-def cb_st_ease(sender, app_data, *r):
+def cb_st_ease(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1096,7 +1096,7 @@ def cb_st_ease(sender, app_data, *r):
     APP.mark_dirty()
 
 
-def cb_color_edit(sender, app_data, *r):
+def cb_color_edit(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1112,7 +1112,7 @@ def cb_color_edit(sender, app_data, *r):
     APP.mark_dirty()
 
 
-def cb_color_hex(sender, app_data, *r):
+def cb_color_hex(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1217,8 +1217,12 @@ def set_type(t, commit=True):
 
 
 @_safe_action
-def on_type_radio(sender, app_data, *r):
-    t = "3d" if str(app_data).upper() == "3D" else "2d"
+def on_type_radio(sender=None, app_data=None, *r):
+    try:
+        v = app_data if app_data is not None else dpg.get_value("type_radio")
+    except Exception:
+        v = "2D"
+    t = "3d" if str(v).upper() == "3D" else "2d"
     if t != APP.ptype:
         set_type(t)
 
@@ -1339,7 +1343,7 @@ def sync_all(self):
 App.sync_all = sync_all
 
 
-def cb_zone_rot(sender, app_data, *r):
+def cb_zone_rot(sender=None, app_data=None, *r):
     try:
         v = float(app_data)
     except (ValueError, TypeError):
@@ -1352,7 +1356,7 @@ def cb_zone_rot(sender, app_data, *r):
     APP.mark_dirty()
 
 
-def cb_dirz(sender, app_data, *r):
+def cb_dirz(sender=None, app_data=None, *r):
     try:
         v = float(app_data)
     except (ValueError, TypeError):
@@ -1365,12 +1369,12 @@ def cb_dirz(sender, app_data, *r):
     APP.mark_dirty()
 
 
-def cb_colormode(sender, app_data, *r):
+def cb_colormode(sender=None, app_data=None, *r):
     APP.colormode = "selected" if str(app_data) == "Selected" else "gradient"
     APP.mark_dirty()
 
 
-def cb_st_node(sender, app_data, *r):
+def cb_st_node(sender=None, app_data=None, *r):
     if APP._restoring:
         return
     s = cur_state()
@@ -1391,7 +1395,7 @@ def sec(title):
     dpg.add_separator()
 
 
-def num_row(label, tag, default, cb, width=118):
+def num_row(label, tag, default, cb, width=-1):
     with dpg.group(horizontal=True):
         dpg.add_text(label, color=list(MUTED) + [255])
         dpg.add_input_float(tag=tag, default_value=float(default), width=width,
@@ -1404,12 +1408,12 @@ def build_sidebar():
     num_row("Flow", "em_flow", 40, cb_em_float(("flow",)))
     with dpg.group(horizontal=True):
         dpg.add_text("Max", color=list(MUTED) + [255])
-        dpg.add_input_int(tag="em_max", default_value=300, width=118,
+        dpg.add_input_int(tag="em_max", default_value=300, width=-1,
                           callback=cb_em_int(("maxParticles",)))
     with dpg.group(horizontal=True):
         dpg.add_text("Mode", color=list(MUTED) + [255])
         dpg.add_combo(tag="em_mode", items=PS.MODES, default_value="Infinite",
-                      width=118, callback=cb_em_combo(("mode",)))
+                      width=-1, callback=cb_em_combo(("mode",)))
     with dpg.group(horizontal=True):
         dpg.add_text("Reverse", color=list(MUTED) + [255])
         dpg.add_checkbox(tag="em_rev", callback=cb_em_bool(("reverse",)))
@@ -1422,13 +1426,13 @@ def build_sidebar():
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
     with dpg.group(horizontal=True, tag="row_gz", show=False):
         dpg.add_text("Gravity Z", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_gz", default_value=0, width=118,
+        dpg.add_input_float(tag="em_gz", default_value=0, width=-1,
                             callback=cb_em_float(("gravity", "z")))
     dpg.add_text("EMISSION ZONE", color=list(MUTED) + [255])
     with dpg.group(horizontal=True):
         dpg.add_text("Shape", color=list(MUTED) + [255])
         dpg.add_combo(tag="em_zshape", items=PS.ZONE_2D, default_value="Circle",
-                      width=118, callback=cb_em_combo(("emissionZone", "shape")))
+                      width=-1, callback=cb_em_combo(("emissionZone", "shape")))
     num_row("Rotation", "em_rot", 0, cb_zone_rot)
     num_row("Radius", "em_radius", 10, cb_em_float(("emissionZone", "radius")))
     num_row("Width", "em_width", 100, cb_em_float(("emissionZone", "width")))
@@ -1436,7 +1440,7 @@ def build_sidebar():
     num_row("Length", "em_length", 100, cb_em_float(("emissionZone", "length")))
     with dpg.group(horizontal=True, tag="row_depth", show=False):
         dpg.add_text("Depth", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_depth", default_value=60, width=118,
+        dpg.add_input_float(tag="em_depth", default_value=60, width=-1,
                             callback=cb_em_float(("emissionZone", "depth")))
     with dpg.group(horizontal=True, tag="row_zonemode", show=False):
         dpg.add_text("Mode", color=list(MUTED) + [255])
@@ -1450,11 +1454,11 @@ def build_sidebar():
     dpg.add_text("PROPAGATION CONE", color=list(MUTED) + [255])
     with dpg.group(horizontal=True):
         dpg.add_text("Direction", color=list(MUTED) + [255], tag="dirz_label")
-        dpg.add_input_float(tag="em_dirz", default_value=0, width=118,
+        dpg.add_input_float(tag="em_dirz", default_value=0, width=-1,
                             callback=cb_dirz)
     with dpg.group(horizontal=True, tag="row_diry", show=False):
         dpg.add_text("Dir. Y", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_diry", default_value=0, width=118,
+        dpg.add_input_float(tag="em_diry", default_value=0, width=-1,
                             callback=cb_em_float(("propagationCone",
                                                   "directionY")))
     num_row("Spread", "em_spread", 90,
@@ -1472,27 +1476,27 @@ def build_sidebar():
                              callback=cb_colormode)
     with dpg.group(horizontal=True):
         dpg.add_text("Label", color=list(MUTED) + [255])
-        dpg.add_input_text(tag="st_label", default_value="birth", width=118,
+        dpg.add_input_text(tag="st_label", default_value="birth", width=-1,
                            callback=cb_st_text("label"))
     with dpg.group(horizontal=True):
         dpg.add_text("Duration", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_dur", default_value=0.5, width=118,
+        dpg.add_input_float(tag="st_dur", default_value=0.5, width=-1,
                             callback=cb_st_text("duration", float))
     with dpg.group(horizontal=True):
         dpg.add_text("Shape", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_shape", items=PS.SHAPES_2D,
-                      default_value="circle", width=118, callback=cb_st_shape)
+                      default_value="circle", width=-1, callback=cb_st_shape)
     with dpg.group(horizontal=True):
         dpg.add_text("Easing", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_ease", items=PS.EASINGS,
-                      default_value="linear", width=118, callback=cb_st_ease)
+                      default_value="linear", width=-1, callback=cb_st_ease)
     with dpg.group(horizontal=True):
         dpg.add_text("Size", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_size", default_value=8, width=118,
+        dpg.add_input_float(tag="st_size", default_value=8, width=-1,
                             callback=cb_st_ap("size"))
     with dpg.group(horizontal=True):
         dpg.add_text("SizeMax", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_sizemax", default_value=12, width=118,
+        dpg.add_input_float(tag="st_sizemax", default_value=12, width=-1,
                             callback=cb_st_ap("sizeMax"))
     with dpg.group(horizontal=True):
         dpg.add_text("Color", color=list(MUTED) + [255])
@@ -1500,19 +1504,19 @@ def build_sidebar():
                            default_value=(255, 255, 255, 255), width=56,
                            callback=cb_color_edit)
         dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
-                           width=84, callback=cb_color_hex)
+                           width=-1, callback=cb_color_hex)
     with dpg.group(horizontal=True):
         dpg.add_text("Opacity", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_op", default_value=255, width=118,
+        dpg.add_input_float(tag="st_op", default_value=255, width=-1,
                             callback=cb_st_ap("opacity",
                                               lambda v: int(float(v))))
     with dpg.group(horizontal=True):
         dpg.add_text("MinSpeed", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_mins", default_value=60, width=118,
+        dpg.add_input_float(tag="st_mins", default_value=60, width=-1,
                             callback=cb_st_mv("minSpeed"))
     with dpg.group(horizontal=True):
         dpg.add_text("MaxSpd", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_maxs", default_value=160, width=118,
+        dpg.add_input_float(tag="st_maxs", default_value=160, width=-1,
                             callback=cb_st_mv("maxSpeed"))
     with dpg.group(horizontal=True):
         dpg.add_button(label="Save", callback=lambda *a: save_state(),
@@ -1529,7 +1533,7 @@ def build_sidebar():
     with dpg.group(horizontal=True, tag="row_custom_node", show=False):
         dpg.add_text("Node", color=list(MUTED) + [255])
         dpg.add_combo(tag="st_node", items=["(whole file)"],
-                      default_value="(whole file)", width=118,
+                      default_value="(whole file)", width=-1,
                       callback=cb_st_node)
     dpg.add_text("", tag="custom_hint", show=False, wrap=260)
     sec("Templates")
@@ -1790,8 +1794,9 @@ def do_open():
 
 
 @_safe_action
-def open_chosen(sender, app_data, *r):
+def open_chosen(sender=None, app_data=None, *r):
     try:
+        app_data = app_data or {}
         sels = app_data.get("selections") or {}
         p = next(iter(sels.values()), None) or app_data.get("file_path_name")
         if not p:
@@ -1832,8 +1837,9 @@ def do_save_as():
 
 
 @_safe_action
-def save_chosen(sender, app_data, *r):
+def save_chosen(sender=None, app_data=None, *r):
     try:
+        app_data = app_data or {}
         sels = app_data.get("selections") or {}
         p = next(iter(sels.values()), None) or app_data.get("file_path_name")
         if not p:
@@ -1881,14 +1887,16 @@ def _custom_chosen(path, kind):
 
 
 @_safe_action
-def model_chosen(sender, app_data, *r):
+def model_chosen(sender=None, app_data=None, *r):
+    app_data = app_data or {}
     sels = app_data.get("selections") or {}
     _custom_chosen(next(iter(sels.values()), None) or
                    app_data.get("file_path_name"), "model")
 
 
 @_safe_action
-def image_chosen(sender, app_data, *r):
+def image_chosen(sender=None, app_data=None, *r):
+    app_data = app_data or {}
     sels = app_data.get("selections") or {}
     _custom_chosen(next(iter(sels.values()), None) or
                    app_data.get("file_path_name"), "image")
