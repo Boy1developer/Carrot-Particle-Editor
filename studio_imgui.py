@@ -1501,10 +1501,10 @@ def build_sidebar():
     with dpg.group(horizontal=True):
         dpg.add_text("Color", color=list(MUTED) + [255])
         dpg.add_color_edit(tag="st_color_edit",
-                           default_value=(255, 255, 255, 255), width=56,
+                           default_value=(255, 255, 255, 255), width=110,
                            callback=cb_color_edit)
         dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
-                           width=-1, callback=cb_color_hex)
+                           width=90, callback=cb_color_hex)
     with dpg.group(horizontal=True):
         dpg.add_text("Opacity", color=list(MUTED) + [255])
         dpg.add_input_float(tag="st_op", default_value=255, width=-1,
