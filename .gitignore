@@ -18,6 +18,9 @@ __pycache__/
 carrot_debug.log
 preview/last_effect.json
 
+# Incoming dropbox for the agent (never pushed to GitHub)
+incoming/
+
 # Backups
 *.bak
 
