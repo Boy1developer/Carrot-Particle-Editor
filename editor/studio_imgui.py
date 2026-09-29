@@ -34,6 +34,7 @@ if not getattr(sys, "frozen", False):
 import dearpygui.dearpygui as dpg
 
 import particle_studio as PS
+import mesh_cache
 
 try:
     import particle_core as _CPP_MOD
@@ -700,6 +701,78 @@ def draw_shape_3d(dl, sx, sy, r, shape, col):
                         segments=24)
 
 
+MESH_MAX_PARTICLES = 120  # above this, custom meshes fall back to the box
+
+
+def _find_model_file(base):
+    """Resolve a stored model basename against likely locations."""
+    if not base:
+        return ""
+    cands = [os.path.join(os.getcwd(), base),
+             os.path.join(PS.app_base_dir(), base),
+             os.path.join(PS.app_base_dir(), "assets", base)]
+    for p in cands:
+        try:
+            if os.path.isfile(p):
+                return p
+        except Exception:
+            pass
+    return ""
+
+
+def custom_mesh_tris():
+    """Normalized mesh triangles for custom-shaped particles, or None.
+
+    Prefers the selected state, else the first custom-shaped state carrying
+    a model. Pure display data: never mutates APP.
+    """
+    states = APP.states
+    ordered = []
+    if 0 <= APP.sel_state < len(states):
+        ordered.append(states[APP.sel_state])
+    ordered.extend(s for s in states if
+                   not any(s is o for o in ordered))
+    for s in ordered:
+        try:
+            if str(s.get("shape", "")).lower() != "custom":
+                continue
+            cm = s.get("customModel") or {}
+            path = cm.get("path") or ""
+            if not path:
+                path = _find_model_file(cm.get("file") or "")
+            if not path:
+                continue
+            tris = mesh_cache.load_mesh_tris(path, cm.get("node") or "")
+            if tris:
+                return tris
+        except Exception:
+            continue
+    return None
+
+
+def draw_custom_mesh_3d(dl, app, wx, wy, wz, ws_world, col, cx, cy):
+    """Draw one particle as its uploaded mesh, camera-projected.
+
+    ws_world is the mesh half-extent in world units. Returns True when
+    drawn, False to let the caller fall back to the placeholder box.
+    """
+    tris = custom_mesh_tris()
+    if not tris or ws_world <= 0:
+        return False
+    try:
+        for tri in tris:
+            pts = []
+            for lx, ly, lz in tri:
+                sx, sy, _, _ = app.proj(wx + lx * ws_world,
+                                       wy + ly * ws_world,
+                                       wz + lz * ws_world, cx, cy)
+                pts.append([sx, sy])
+            dpg.draw_polygon(pts, color=[0, 0, 0, 0], fill=col, parent=dl)
+    except Exception:
+        return False
+    return True
+
+
 def dot_style(app, p):
     """(fill_rgba, radius, shape) shared by 2D/3D drawing."""
     if app.colormode == "gradient":
@@ -892,21 +965,44 @@ def draw_view_3d(app, dl, W, H, cx, cy, em):
     focal = app.cam.get("focal", 620.0)
     if out is not None:
         order = sorted(range(len(out["x"])), key=out["depth"].__getitem__)
+        mesh, mesh_checked = None, False
         for i in order:
             col = PS.StudioApp._depth_shade("#%06x" % out["color"][i],
                                             out["depth"][i], focal)
+            sh = PS.SHAPE_ORDER[out["shape"][i]]
+            if sh == "custom":
+                if not mesh_checked:
+                    mesh_checked = True
+                    if len(out["x"]) <= MESH_MAX_PARTICLES:
+                        mesh = custom_mesh_tris()
+                if mesh is not None:
+                    _, _, sc0, _ = app.proj(out["wx"][i], out["wy"][i],
+                                           out["z"][i], cx, cy)
+                    if sc0 > 1e-6 and draw_custom_mesh_3d(
+                            dl, app, out["wx"][i], out["wy"][i], out["z"][i],
+                            out["r"][i] / sc0, _c(col), cx, cy):
+                        continue
             draw_shape_3d(dl, out["x"][i], out["y"][i], out["r"][i],
-                          PS.SHAPE_ORDER[out["shape"][i]], _c(col))
+                          sh, _c(col))
     else:
         projs = []
         for p in app.sim.parts:
             sx, sy, sc, depth = P(p[0], p[1], p[10])
             projs.append((depth, sx, sy, sc, p))
         projs.sort(key=lambda t: t[0])
+        mesh, mesh_checked = None, False
         for depth, sx, sy, sc, p in projs:
             fill, r, shape = dot_style(app, p)
             shaded = PS.StudioApp._depth_shade(
                 "#%02x%02x%02x" % tuple(fill[:3]), depth, focal)
+            if shape == "custom":
+                if not mesh_checked:
+                    mesh_checked = True
+                    if len(projs) <= MESH_MAX_PARTICLES:
+                        mesh = custom_mesh_tris()
+                if mesh is not None and draw_custom_mesh_3d(
+                        dl, app, p[0], p[1], p[10], r, _c(shaded), cx, cy):
+                    continue
             draw_shape_3d(dl, sx, sy, max(1.0, r * sc), shape, _c(shaded))
     m = min(W, H)
     t = max(14, m * 0.07)
@@ -1915,8 +2011,8 @@ def _custom_chosen(path, kind):
     node = dpg.get_value("st_node") if kind == "model" else ""
     if node == "(whole file)":
         node = ""
-    s["customModel"] = {"file": fname, "node": node, "kind": kind,
-                        "nodes": list(nodes)}
+    s["customModel"] = {"file": fname, "path": path, "node": node,
+                        "kind": kind, "nodes": list(nodes)}
     if fname:
         ref = node or os.path.splitext(fname)[0]
         if kind == "model":
