@@ -7,11 +7,30 @@
 <!-- TODO: add a screenshot or GIF of the editor here -->
 <!-- ![Carrot Particle Editor](docs/screenshot.png) -->
 
+## Screenshots
+
+| 3D viewport | 3D fast preview (three.js) |
+| --- | --- |
+| ![3D viewport](docs/screenshots/viewport-3d.png) | ![3D fast preview](docs/screenshots/fast-preview-3d.png) |
+
+| 2D viewport | 2D fast preview (pixi.js) |
+| --- | --- |
+| ![2D viewport](docs/screenshots/viewport-2d.png) | ![2D fast preview](docs/screenshots/fast-preview-2d.png) |
+
+| Emitter + propagation cone | States + templates |
+| --- | --- |
+| ![Emitter panel](docs/screenshots/emitter-panel.png) | ![States panel](docs/screenshots/states-panel.png) |
+
+| Shape list | Custom shape (uploaded 3D model) |
+| --- | --- |
+| ![Shapes 1](docs/screenshots/shapes-list-1.png) ![Shapes 2](docs/screenshots/shapes-list-2.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
+
 ---
 
 ## Table of contents
 
 - [Overview](#overview)
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Download](#download)
 - [Project structure](#project-structure)
