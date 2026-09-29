@@ -45,7 +45,7 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = "1.0"
-BUILD_ID = "b20260930-robotfix"  # bump on every shipped change; shown in title
+BUILD_ID = "b20260930-prevskin"  # bump on every shipped change; shown in title
 
 
 def debug_log(*parts):

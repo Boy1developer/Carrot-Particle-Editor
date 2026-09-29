@@ -11,6 +11,100 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 const CAP = 4000; // per-shape instance cap (matches engine MAX_POOL)
 const MODEL_POOL_CAP = 150; // pooled model clones (overflow falls back to squares)
 const BASE_DIST = 560;
+/** Collapse SkinnedMeshes under root to static Meshes baked in rest pose.
+ *
+ * Pooled particles clone the template (tpl.clone(true)), and a plain
+ * clone shares the source skeleton whose bones never enter the scene —
+ * so rigged uploads (robots, characters) render crumpled or invisible.
+ * Particles never animate bones (the pool only spins the whole object),
+ * so baking once at load is exact for what the preview shows, and drops
+ * per-frame skinning cost. Math mirrors the skinning equation:
+ * bindMatrixInverse * (sum w * boneWorld * inverse) * bindMatrix.
+ * Returns the number of meshes replaced. */
+export function bakeSkinnedMeshes(root) {
+    root.updateMatrixWorld(true);
+    const swaps = [];
+    const v = new THREE.Vector3();
+    const blend = new THREE.Matrix4(), tmpM = new THREE.Matrix4();
+    const full = new THREE.Matrix4(), nm = new THREE.Matrix3();
+    root.traverse((o) => {
+        const sk = o;
+        if (!sk.isSkinnedMesh || !sk.skeleton)
+            return;
+        const geo = sk.geometry;
+        const pos = geo.getAttribute("position");
+        const sIdx = geo.getAttribute("skinIndex");
+        const sW = geo.getAttribute("skinWeight");
+        if (!pos || !sIdx || !sW)
+            return;
+        const bones = sk.skeleton.bones, inv = sk.skeleton.boneInverses;
+        const nb = Math.min(bones.length, inv.length);
+        if (nb <= 0)
+            return;
+        const out = new Float32Array(pos.count * 3);
+        const nrm = geo.getAttribute("normal");
+        const outN = nrm ? new Float32Array(nrm.count * 3) : null;
+        const n = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+            v.fromBufferAttribute(pos, i);
+            v.applyMatrix4(sk.bindMatrix);
+            const be = blend.elements;
+            for (let e = 0; e < 16; e++)
+                be[e] = 0;
+            for (let j = 0; j < 4; j++) {
+                const w = sW.getComponent(i, j);
+                if (!w)
+                    continue;
+                let b = sIdx.getComponent(i, j) | 0;
+                if (b < 0)
+                    b = 0;
+                else if (b >= nb)
+                    b = nb - 1;
+                tmpM.multiplyMatrices(bones[b].matrixWorld, inv[b]);
+                const te = tmpM.elements;
+                for (let e = 0; e < 16; e++)
+                    be[e] += w * te[e];
+            }
+            v.applyMatrix4(blend).applyMatrix4(sk.bindMatrixInverse);
+            out[i * 3] = v.x;
+            out[i * 3 + 1] = v.y;
+            out[i * 3 + 2] = v.z;
+            if (outN && nrm) {
+                full.multiplyMatrices(sk.bindMatrixInverse, blend)
+                    .multiply(sk.bindMatrix);
+                nm.getNormalMatrix(full);
+                n.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize();
+                outN[i * 3] = n.x;
+                outN[i * 3 + 1] = n.y;
+                outN[i * 3 + 2] = n.z;
+            }
+        }
+        const geo2 = geo.clone();
+        geo2.setAttribute("position", new THREE.BufferAttribute(out, 3));
+        if (outN)
+            geo2.setAttribute("normal", new THREE.BufferAttribute(outN, 3));
+        geo2.morphAttributes = {};
+        geo2.computeBoundingSphere();
+        geo2.computeBoundingBox();
+        const mesh = new THREE.Mesh(geo2, sk.material);
+        mesh.position.copy(sk.position);
+        mesh.quaternion.copy(sk.quaternion);
+        mesh.scale.copy(sk.scale);
+        mesh.name = sk.name;
+        const parent = sk.parent;
+        if (parent) {
+            swaps.push({ parent, idx: parent.children.indexOf(sk), mesh });
+            geo.dispose();
+        }
+    });
+    for (const s of swaps) {
+        s.parent.children.splice(s.idx, 1, s.mesh);
+        s.mesh.parent = s.parent;
+    }
+    if (swaps.length)
+        root.updateMatrixWorld(true);
+    return swaps.length;
+}
 function starShape2D(outer, inner) {
     const s = new THREE.Shape();
     for (let k = 0; k < 10; k++) {
@@ -193,6 +287,7 @@ export class ThreeScene {
                 : new TextDecoder().decode(bin);
             const gltf = await new GLTFLoader().parseAsync(payload, "");
             const root = gltf.scene;
+            bakeSkinnedMeshes(root); // rigged uploads pose statically (see helper)
             const box = new THREE.Box3().setFromObject(root);
             const sphere = box.getBoundingSphere(new THREE.Sphere());
             const r = Math.max(1e-6, sphere.radius);
@@ -202,7 +297,10 @@ export class ThreeScene {
             norm.scale.setScalar(1 / r); // unit bounding sphere like other shapes
             this.modelCache.set(ref, norm);
         }
-        catch (e) { /* draco/ktx2/foreign data -> square fallback stays */ }
+        catch (e) {
+            console.warn("[preview] model parse failed:", ref, e);
+            /* draco/ktx2/foreign data -> square fallback stays */
+        }
     }
     /** Draw one particle as its uploaded model. False -> use square bucket. */
     drawModel(ref, x, y, z, s, age, r, g, b, a) {
