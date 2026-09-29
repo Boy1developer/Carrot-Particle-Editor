@@ -114,11 +114,18 @@ try:
                                       + len(tbin))
                 + struct.pack("<II", len(tjs), 0x4E4F534A) + tjs
                 + struct.pack("<II", len(tbin), 0x004E4942) + tbin)
-    ttris, ttex = mesh_cache.load_mesh(tglb, "Skin")
+    ttris, ttex = mesh_cache.load_mesh(tglb, "Skin")[:2]
     assert ttris and len(ttris) == 2 and len(ttex) == 2, (ttris, ttex)
     # tri1 uv-centroid (0.667,0.333) -> white texel; tri2 -> red texel
     assert ttex[0] == (255, 255, 255), ttex
     assert ttex[1] == (255, 0, 0), ttex
+    # doubleSided materials are not backface-culled
+    fakeds = {"materials": [{"doubleSided": True}],
+              "textures": [], "images": []}
+    fakess = {"materials": [{}], "textures": [], "images": []}
+    assert mesh_cache._mat_of(fakeds, [], None, {"material": 0})[2] is False
+    assert mesh_cache._mat_of(fakess, [], None, {"material": 0})[2] is True
+    assert mesh_cache.load_mesh(tglb, "Skin")[2] == [True, True]
 
     # 2) integration: custom-shaped state resolves its mesh, draws polys
     S.build_ui()
@@ -133,7 +140,7 @@ try:
         assert got and len(got) == 2, got
         md = S.mesh_frame(app, 400, 300, 21)
         assert md is not None
-        mtris, mtex, mproj = md
+        mtris, mtex, mcull, mproj = md
         assert len(mtris) == 2
         # hoisted projector is bit-identical to App.proj
         for pt in ((5.0, -3.0, 2.0, 0.3, -0.4, 0.7, 9.0),
@@ -178,7 +185,8 @@ try:
                                         10.0, [255, 255, 255, 255]) is True
         finally:
             dpg.draw_polygon = real_poly
-        assert fills == [[255, 255, 255, 255], [255, 0, 0, 255]], fills
+        assert sorted(fills) == [[255, 0, 0, 255], [255, 255, 255, 255]], \
+            fills  # painter order may swap equal-ish depths; set matters
         fills.clear()
         dpg.draw_polygon = lambda pts, **kw: fills.append(kw.get("fill"))
         try:
@@ -188,6 +196,45 @@ try:
         finally:
             dpg.draw_polygon = real_poly
         assert fills == [[255, 0, 0, 255], [255, 0, 0, 255]], fills
+        # culling + painter order on synthetic data (orthographic proj)
+        fake_proj = lambda wx, wy, wz, lx, ly, lz, ws: (lx * 10.0,
+                                                        -ly * 10.0, lz)
+        front = [(-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (0.0, 1.0, 0.0)]
+        back = [front[0], front[2], front[1]]
+        seen = []
+        dpg.draw_polygon = lambda pts, **kw: seen.append((list(pts),
+                                                          kw.get("fill")))
+        try:
+            md2 = ([front, back], [(255, 255, 255)] * 2, [True, True],
+                   fake_proj)
+            assert S.draw_custom_mesh_3d("vp_draw", md2, 0, 0, 0, 1.0,
+                                        [255, 255, 255, 255]) is True
+        finally:
+            dpg.draw_polygon = real_poly
+        assert len(seen) == 1, seen  # backface culled
+        seen.clear()
+        dpg.draw_polygon = lambda pts, **kw: seen.append((list(pts),
+                                                          kw.get("fill")))
+        try:
+            md3 = ([front, back], [(255, 0, 0), (0, 0, 255)], [True, False],
+                   fake_proj)
+            assert S.draw_custom_mesh_3d("vp_draw", md3, 0, 0, 0, 1.0,
+                                        [255, 255, 255, 255]) is True
+        finally:
+            dpg.draw_polygon = real_poly
+        assert len(seen) == 2, seen  # doubleSided backface kept
+        # painter: far (blue, z=5) drawn before near (red, z=0)
+        far = [(x, y, 5.0) for x, y, _ in front]
+        seen.clear()
+        dpg.draw_polygon = lambda pts, **kw: seen.append(kw.get("fill"))
+        try:
+            md4 = ([front, far], [(255, 0, 0), (0, 0, 255)], [True, True],
+                   fake_proj)
+            assert S.draw_custom_mesh_3d("vp_draw", md4, 0, 0, 0, 1.0,
+                                        [255, 255, 255, 255]) is True
+        finally:
+            dpg.draw_polygon = real_poly
+        assert seen == [[0, 0, 255, 255], [255, 0, 0, 255]], seen
     finally:
         st["shape"] = old_shape
         if old_cm is None:

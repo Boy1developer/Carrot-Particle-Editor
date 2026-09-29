@@ -158,11 +158,12 @@ def _image_bytes(doc, bufs, base, img):
 
 
 def _mat_of(doc, bufs, base, prim):
-    """-> ((fr,fg,fb) factor 0-1, decoded image or None) for a primitive."""
-    factor, img = (1.0, 1.0, 1.0), None
+    """-> ((fr,fg,fb) factor 0-1, decoded image or None, cullable bool)."""
+    factor, img, cull = (1.0, 1.0, 1.0), None, True
     try:
         mats = doc.get("materials", [])
         m = mats[int(prim.get("material", -1))]
+        cull = not bool(m.get("doubleSided", False))
         pbr = m.get("pbrMetallicRoughness", {})
         fc = pbr.get("baseColorFactor", [1.0, 1.0, 1.0, 1.0])
         factor = (float(fc[0]), float(fc[1]), float(fc[2]))
@@ -182,11 +183,11 @@ def _mat_of(doc, bufs, base, prim):
                     img = _decode_image(data, hint)
     except Exception:
         pass
-    return factor, img
+    return factor, img, cull
 
 
 def _collect_tris(doc, bufs, base, mesh_idxs, world_of):
-    """-> list of (tri, (u, v, factor, img)) keeping material data paired."""
+    """-> list of (tri, (u, v, factor, img, cull)) keeping data paired."""
     out = []
     for mi in mesh_idxs:
         try:
@@ -203,7 +204,7 @@ def _collect_tris(doc, bufs, base, mesh_idxs, world_of):
                 uv_acc = (prim.get("attributes", {}).get("TEXCOORD_0"))
                 uvs = _read_acc(doc, bufs, uv_acc) if uv_acc is not None \
                     else None
-                factor, img = _mat_of(doc, bufs, base, prim)
+                factor, img, cull = _mat_of(doc, bufs, base, prim)
                 if "indices" in prim:
                     idx = _read_acc(doc, bufs, prim["indices"])
                     if not idx:
@@ -229,7 +230,8 @@ def _collect_tris(doc, bufs, base, mesh_idxs, world_of):
                             else 0.5
                         vv = sum(v for _, v in uvt) / len(uvt) if uvt \
                             else 0.5
-                        out.append((tuple(tri), (uu, vv, factor, img)))
+                        out.append((tuple(tri), (uu, vv, factor, img,
+                                                 cull)))
                     except Exception:
                         continue
             except Exception:
@@ -408,23 +410,25 @@ def _parse_obj(ap):
 
 
 def load_mesh(path, node="", max_tris=MAX_TRIS):
-    """(normalized tris, per-tri (r,g,b) material colors) or (None, None).
+    """(normalized tris, per-tri (r,g,b), per-tri cullable) or Nones.
 
     Material color = texture texel at the triangle UV centroid times the
-    baseColorFactor (white when untextured). Same cache as load_mesh_tris.
+    baseColorFactor (white when untextured). cullable is False for
+    doubleSided materials (both faces drawn). Same cache as load_mesh_tris.
     """
     try:
         ap = os.path.abspath(path)
         key = (ap, os.path.getmtime(ap), node, int(max_tris))
     except OSError:
-        return None, None
+        return None, None, None
     if key in _cache:
         return _cache[key]
     if ap.lower().endswith(".obj"):
-        pairs = _normalize([(t, (0.5, 0.5, (1.0, 1.0, 1.0), None))
+        pairs = _normalize([(t, (0.5, 0.5, (1.0, 1.0, 1.0), None, True))
                             for t in (_parse_obj(ap) or [])], max_tris)
-        result = ([t for t, _ in pairs], [(255, 255, 255)] * len(pairs)) \
-            if pairs else (None, None)
+        result = ([t for t, _ in pairs],
+                  [(255, 255, 255)] * len(pairs),
+                  [True] * len(pairs)) if pairs else (None, None, None)
     else:
         result = _parse(ap, node, max_tris)
     if len(_cache) >= _CACHE_MAX:
@@ -435,20 +439,20 @@ def load_mesh(path, node="", max_tris=MAX_TRIS):
 
 def load_mesh_tris(path, node="", max_tris=MAX_TRIS):
     """Normalized triangle soup for preview, or None (see load_mesh)."""
-    tris, _tex = load_mesh(path, node, max_tris)
+    tris, _tex, _cull = load_mesh(path, node, max_tris)
     return tris
 
 
 def _parse(ap, node, max_tris):
     loaded = _load_doc(ap)
     if loaded is None:
-        return None, None
+        return None, None, None
     doc, bufs, base = loaded
     try:
         nodes = doc.get("nodes", [])
         meshes = doc.get("meshes", [])
         if not nodes or not meshes:
-            return None, None
+            return None, None, None
         parent = {}
         for ni, nd in enumerate(nodes):
             for ch in nd.get("children", []):
@@ -481,7 +485,7 @@ def _parse(ap, node, max_tris):
                 if str(nd.get("name", "")) == node:
                     targets.append(ni)
             if not targets:
-                return None, None
+                return None, None, None
         else:
             targets = list(range(len(nodes)))
 
@@ -510,10 +514,11 @@ def _parse(ap, node, max_tris):
                                            sorted(world_of), world_of),
                            max_tris)
         if not pairs:
-            return None, None
-        tris, texels = [], []
-        for t, (u, v, factor, img) in pairs:
+            return None, None, None
+        tris, texels, culls = [], [], []
+        for t, (u, v, factor, img, cull) in pairs:
             tris.append(t)
+            culls.append(bool(cull))
             if img is not None:
                 pr, pg, pb = _sample(img, u, v)
             else:
@@ -522,6 +527,6 @@ def _parse(ap, node, max_tris):
             texels.append((max(0, min(255, int(round(pr * fr)))),
                            max(0, min(255, int(round(pg * fg)))),
                            max(0, min(255, int(round(pb * fb))))))
-        return tris, texels
+        return tris, texels, culls
     except Exception:
-        return None, None
+        return None, None, None

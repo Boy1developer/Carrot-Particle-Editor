@@ -723,10 +723,10 @@ def _find_model_file(base):
 
 
 def custom_mesh():
-    """(normalized tris, per-tri material (r,g,b)) or (None, None).
+    """(normalized tris, per-tri material (r,g,b), per-tri cullable).
 
-    Prefers the selected state, else the first custom-shaped state carrying
-    a model. Pure display data: never mutates APP.
+    Nones when no model resolves. Prefers the selected state, else the
+    first custom-shaped state carrying a model. Never mutates APP.
     """
     states = APP.states
     ordered = []
@@ -744,29 +744,31 @@ def custom_mesh():
                 path = _find_model_file(cm.get("file") or "")
             if not path:
                 continue
-            tris, texels = mesh_cache.load_mesh(path, cm.get("node") or "")
+            tris, texels, culls = mesh_cache.load_mesh(path,
+                                                       cm.get("node") or "")
             if tris:
-                return tris, texels
+                return tris, texels, culls
         except Exception:
             continue
-    return None, None
+    return None, None, None
 
 
 def custom_mesh_tris():
     """Normalized mesh triangles or None (see custom_mesh)."""
-    tris, _tex = custom_mesh()
+    tris, _tex, _cull = custom_mesh()
     return tris
 
 
 def mesh_frame(app, cx, cy, n_total):
-    """Frame-hoisted custom-mesh data: (tris, texels, proj) or None.
+    """Frame-hoisted custom-mesh data: (tris, texels, culls, proj) or None.
 
     Resolves the mesh once, stride-downsamples it to the frame polygon
     budget, and builds a projector with camera trig hoisted out of the
     per-vertex loop (App.proj recomputes 4 sin/cos per call). The
-    projector is bit-identical to App.proj's screen mapping.
+    projector returns (sx, sy, z2) with screen mapping bit-identical to
+    App.proj (z2 is camera depth, used for painter sorting).
     """
-    tris, texels = custom_mesh()
+    tris, texels, culls = custom_mesh()
     if not tris:
         return None
     keep = max(8, MESH_FRAME_BUDGET // max(1, int(n_total)))
@@ -775,6 +777,7 @@ def mesh_frame(app, cx, cy, n_total):
         idx = [int(i * step) for i in range(keep)]
         tris = [tris[i] for i in idx]
         texels = [texels[i] for i in idx]
+        culls = [culls[i] for i in idx]
     cam = app.cam
     syaw, cyaw = math.sin(cam["yaw"]), math.cos(cam["yaw"])
     spit, cpit = math.sin(cam["pitch"]), math.cos(cam["pitch"])
@@ -791,9 +794,9 @@ def mesh_frame(app, cx, cy, n_total):
         y2 = y * cpit - z1 * spit
         z2 = y * spit + z1 * cpit
         sc = zoom * focal / (focal + z2)
-        return (cx + ox + x1 * sc, cy + oy - y2 * sc)
+        return (cx + ox + x1 * sc, cy + oy - y2 * sc, z2)
 
-    return (tris, texels, proj)
+    return (tris, texels, culls, proj)
 
 
 def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
@@ -801,26 +804,36 @@ def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
 
     mesh_data comes from mesh_frame() (frame-hoisted). Each triangle is
     filled with its material color; the particle color acts as a tint
-    (white = natural materials). ws_world is the mesh half-extent in
-    world units. Returns True when drawn, False to fall back to the box.
+    (white = natural materials). Triangles are painter-sorted far to
+    near and single-sided backfaces are culled, so closed meshes read
+    as solids instead of a scrambled blob. ws_world is the mesh
+    half-extent in world units. Returns True when drawn, False to fall
+    back to the box.
     """
     if mesh_data is None or ws_world <= 0:
         return False
     try:
-        tris, texels, proj = mesh_data
+        tris, texels, culls, proj = mesh_data
         tr, tg, tb = (int(col[0]), int(col[1]), int(col[2]))
         natural = (tr == 255 and tg == 255 and tb == 255)
         poly = dpg.draw_polygon
-        for tri, (mr, mg, mb) in zip(tris, texels):
+        items = []
+        for tri, (mr, mg, mb), cull in zip(tris, texels, culls):
             (ax, ay, az), (bx, by, bz), (cx_, cy_, cz_) = tri
-            pts = [list(proj(wx, wy, wz, ax, ay, az, ws_world)),
-                   list(proj(wx, wy, wz, bx, by, bz, ws_world)),
-                   list(proj(wx, wy, wz, cx_, cy_, cz_, ws_world))]
+            x0, y0, z0 = proj(wx, wy, wz, ax, ay, az, ws_world)
+            x1, y1, z1 = proj(wx, wy, wz, bx, by, bz, ws_world)
+            x2, y2, z2 = proj(wx, wy, wz, cx_, cy_, cz_, ws_world)
+            if cull and (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) >= 0:
+                continue  # backface in screen space (y-down)
             if natural:
                 fill = [mr, mg, mb, 255]
             else:
                 fill = [mr * tr // 255, mg * tg // 255, mb * tb // 255,
                         255]
+            items.append(((z0 + z1 + z2) / 3.0, [[x0, y0], [x1, y1],
+                                                 [x2, y2]], fill))
+        items.sort(key=lambda t: t[0], reverse=True)
+        for _z, pts, fill in items:
             poly(pts, color=[0, 0, 0, 0], fill=fill, parent=dl)
     except Exception:
         return False
