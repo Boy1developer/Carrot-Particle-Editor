@@ -133,7 +133,7 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 ## Roadmap
 
 - [ ] Evaluate integration with a dedicated C++ particle library (Effekseer or SPARK) as a complement to the current custom core
-- [ ] Add ready-made effect presets (fire, smoke, sparks, magic)
+- [x] Add ready-made effect presets (fire, smoke, sparks, magic)
 - [ ] Add CI to run the parity and behavior tests automatically
 - [ ] Add screenshots/GIFs and a step-by-step GDevelop tutorial
 
