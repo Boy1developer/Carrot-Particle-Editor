@@ -2,9 +2,10 @@
 # PyInstaller spec for Carrot Particle Editor (Dear PyGui edition).
 # Layout: this file lives in packaging/; every path below is anchored at
 # the repo root so the build works no matter the invoking CWD.
+# (PyInstaller execs the spec without __file__; it provides SPECPATH.)
 import os as _os
 
-_SPEC_DIR = _os.path.dirname(_os.path.abspath(__file__))
+_SPEC_DIR = SPECPATH  # directory containing this spec file
 _ROOT = _os.path.dirname(_SPEC_DIR)
 
 _glfw_datas = []
