@@ -2,20 +2,38 @@
 
 **Advanced Particle Emitter** — a 2D/3D particle system extension for [GDevelop](https://gdevelop.io), paired with **Carrot Particle Editor**, a standalone desktop tool for authoring particle effects visually with real-time GPU preview.
 
-> Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem — the "Advanced particle editor for stunning VFX" referenced in the main engine's feature list is this project.
+> Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem. The "Advanced particle editor for stunning VFX" mentioned in the engine's feature list is this project.
+
+<!-- TODO: add a screenshot or GIF of the editor here -->
+<!-- ![Carrot Particle Editor](docs/screenshot.png) -->
 
 ---
+
+## Table of contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Download](#download)
+- [Project structure](#project-structure)
+- [Getting started (from source)](#getting-started-from-source)
+- [Using effects in GDevelop](#using-effects-in-gdevelop)
+- [Testing](#testing)
+- [Shared contracts](#shared-contracts)
+- [Roadmap](#roadmap)
+- [Related projects](#related-projects)
+- [Author](#author)
+- [License](#license)
 
 ## Overview
 
 This repository is a two-part toolkit:
 
 1. **`AdvancedParticleEmitter.json`** — a GDevelop extension (namespace `AdvancedParticleEmitter`, author *Carrot Studio*) that renders particle effects inside GDevelop games: 2D via [PixiJS](https://pixijs.com), 3D via [Three.js](https://threejs.org), using a shared custom JSON effect format.
-2. **Carrot Particle Editor** — a Python desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, before exporting them to the extension's JSON format. The main UI is the **Dear PyGui edition** (`studio_imgui.py`, retained-mode ImGui widgets over a drawlist viewport); the original Tkinter edition (`particle_studio.py`) is kept as a fallback and shares the same simulation logic layer.
+2. **Carrot Particle Editor** — a Python/Tkinter desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, then exporting them to the extension's JSON format.
 
-The two share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts) below.
+Both parts share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts).
 
-Built independently to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — a open-source 2D/3D game engine built on GDevelop Core — but usable in any GDevelop-based project.
+Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** (a 2D/3D engine built on GDevelop Core), but usable in any GDevelop-based project.
 
 ## Features
 
@@ -25,137 +43,99 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
-- **Dear PyGui editor UX** — draggable sidebar splitter (200–520px), engine-style navigation (Blender-like 3D orbit/dolly, GDevelop-like 2D pan/zoom, WASD/arrows + Q/E + F focus), per-state color editing (birth/death/mid states keep their own colors), and viewport zoom gated to the preview area so panel scrolling never dollies the camera.
 
-## Screenshots / Preview
+## Download
 
-<!-- TODO: add a screenshot or short GIF of the editor UI and the live GPU preview here.
-     A visual tool like this benefits a lot from being shown, not just described. -->
+Prebuilt Windows executables are published on the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page.
+Download `CarrotParticleEditor.exe` and run it — no Python installation required.
 
 ## Project structure
 
-```
-editor/
-├── studio_imgui.py              # Desktop editor (Dear PyGui edition, drawlist viewport)
-└── particle_studio.py           # Tk edition (fallback, shares the logic layer)
-tests/
-├── bootstrap.py                 # sys.path setup (repo root + editor/)
-├── test_imgui_nav.py            # Headless nav/splitter/type-switch tests
-├── test_imgui_logic.py          # Headless sim/C++ parity tests
-├── test_imgui_build.py          # Headless UI-build test
-└── test_imgui_color.py          # Color editing regression test (widget==state, engine colors)
-tools/
-├── rebuild_app.py               # One-command build pipeline
-└── make_icon.py                 # Icon builder (assets/download.png -> app_icon.*)
-packaging/
-└── CarrotParticleEditor.spec    # PyInstaller spec (icon, datas, hidden imports)
-AdvancedParticleEmitter.json    # GDevelop extension (2D/3D particle system)
-sample_effect.json              # Example export
-carrots-runtime/                # Typed TS loader for the effect JSON (Carrots Engine)
-.gitignore / .gitattributes     # node_modules, dist, binaries out of git; generated preview excluded from stats
-
-core/
-├── particle_core.cpp           # C++ simulation core (mirrors Python logic)
-├── build_core.py               # Builds particle_core.pyd (MSVC > g++ > clang++ > Zig)
-├── test_parity.py              # C++ vs Python numerical parity
-└── test_behavior.py            # Simulation behavior/perf tests
-
-render/
-├── gl_view.py                  # Offscreen GPU renderer (GLFW + raw OpenGL 3.3)
-└── test_*.py                   # GL init, clip-matrix parity, render-cost tests
-
-preview/
-├── preview.ts / main.ts        # Browser preview engine + effect polling
-├── three_scene.ts               # 3D scene layer (Three.js)
-├── pixi_scene.ts                # 2D scene layer (PixiJS)
-├── live_bundle.js               # esbuild bundle
-├── live_effect.html             # Self-contained preview page
-└── test_*.mjs / test_server.py  # Engine, scene, and guide tests
-
-assets/                          # App/window icons
-dist/CarrotParticleEditor.exe    # Packaged app (regenerated on every rebuild)
+```text
+Carrot-Particle-Editor/
+├── assets/                        # Icons and static resources
+├── core/                          # Simulation core (Python + C++) and its tests
+├── preview/                       # Browser preview (Three.js / PixiJS) and its tests
+├── render/                        # OpenGL preview renderer and its tests
+├── particle_studio.py             # Main editor application (Tkinter)
+├── rebuild_app.py                 # One-command build pipeline
+├── CarrotParticleEditor.spec      # PyInstaller spec
+├── AdvancedParticleEmitter.json   # GDevelop extension
+├── sample_effect.json             # Example effect
+├── APP_STRUCTURE.md               # Detailed architecture notes
+├── package.json                   # Node dependencies for the browser preview
+└── LICENSE                        # MIT
 ```
 
-## Getting started
+## Getting started (from source)
 
 ### Requirements
 
 - Python 3.14
-- `pip install dearpygui` — ImGui UI layer (`studio_imgui.py`)
 - A C++ compiler for the optional simulation core: MSVC, g++, clang++, or Zig (auto-detected in that order)
 - Node.js — for building the browser preview (`three`, `pixi.js`, `typescript`, `esbuild`)
 
+### Install
+
+```bash
+git clone https://github.com/Boy1developer/Carrot-Particle-Editor.git
+cd Carrot-Particle-Editor
+npm install
+```
+
 ### Build
 
-```
-python tools/rebuild_app.py
+```bash
+python rebuild_app.py
 ```
 
 This runs the full pipeline: compiles and validates the app, rebuilds the C++ core if it's stale, packages the executable with PyInstaller, runs a smoke boot test, and regenerates the Windows shortcut.
 
 ### Run
 
-Launch via **Carrot Particle Editor.lnk**, or run `dist/CarrotParticleEditor.exe` directly.
+```bash
+# From source
+python particle_studio.py
+
+# Or the packaged build
+dist/CarrotParticleEditor.exe
+```
+
+## Using effects in GDevelop
+
+1. Design your effect in Carrot Particle Editor and export it as a `.json` file.
+2. In GDevelop, import the `AdvancedParticleEmitter.json` extension into your project.
+3. Add the emitter behavior/object to your scene and load the exported effect file.
+4. Run the preview to see the effect in your game.
+
+> The exact action/condition names depend on the extension version — see the extension's in-editor descriptions.
 
 ## Testing
 
 | Test | Covers |
 | --- | --- |
 | `core/test_parity.py` | Python vs C++ simulation output — 99/99 passing |
-| `core/test_behavior.py` | Simulation behavior and performance (~4ms @ 2,000 particles) |
+| `core/test_behavior.py` | Simulation behavior and performance (~4 ms @ 2,000 particles) |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
 | `preview/test_engine*.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
-| `test_imgui_nav.py` | Headless viewport nav math, splitter, and 2D↔3D type-switch rebuild |
-| `test_imgui_logic.py` | Headless simulation logic and C++ core parity |
-| `test_imgui_build.py` | Headless full UI construction and state sync |
-| `test_imgui_color.py` | Color editing regression: panel always shows the selected state's own color, engine emits the edited colors |
-
-## Carrots Engine integration
-
-`carrots-runtime/` is the typed TypeScript ingestion path for the exported
-effect JSON (v1.0) — Carrots GDJS runtime is TypeScript (PixiJS 2D / Three.js
-3D, JSON-based particle resources since engine `1.0.3`).
-
-```ts
-import { loadCarrotEffectFromJsonText, normalizeEffect } from "@carrot-studio/particle-runtime";
-const effect = loadCarrotEffectFromJsonText(await res.text());
-const runtime = normalizeEffect(effect); // 2d: needShape / 3d: mesh swap
-```
-
-```bash
-node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json --noEmit
-node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json
-node carrots-runtime/test_loader.mjs
-```
-
-Generated preview artefacts (`preview/live_bundle.js`, `preview/live_effect.html`,
-compiled `preview/*.js`) are marked `linguist-generated` in `.gitattributes`
-so GitHub stats reflect real source; `node_modules/`, `dist/` and binaries
-stay out of git (see `.gitignore`).
 
 ## Shared contracts
 
 A few conventions are kept identical across the Python app, the C++ core, and the browser preview, so effects look and behave the same everywhere:
 
 - **Particle record layout** — `[x, y, vx, vy, age, c0, c1, s0, s1, life, z, vz, shape, tracks, dx, dy, dz, gx, gy, gz, sizeRatio, speedRatio]`
-- **`SHAPE_ORDER`** (12 shapes, shared Python ↔ C++ ↔ preview)
+- **`SHAPE_ORDER`** — 12 shapes, shared Python ↔ C++ ↔ preview
 - **Export format** — GDevelop extension v1.0 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values
 - **GL coordinates** — sizes are resolved once in the vertex shader; the editor's own projection matrix is numerically matched in tests
 
 ## Roadmap
 
-- Evaluating integration with a dedicated C++ particle library (Effekseer or SPARK) as a possible complement to the current custom core.
-- Additional particle shapes / emitter presets.
-- Packaged builds for macOS/Linux in addition to the current Windows `.exe` pipeline.
-- More export/import interoperability with other particle formats.
-
-*(This list reflects current thinking — update it as priorities firm up.)*
-
-## Third-party libraries
-
-- **[Dear PyGui](https://github.com/hoffstadt/DearPyGui)** — the retained-mode GUI toolkit behind the editor's main UI edition (`studio_imgui.py`). Dear PyGui is distributed under the **MIT License**, compatible with this project's own MIT licensing.
+- [ ] Evaluate integration with a dedicated C++ particle library (Effekseer or SPARK) as a complement to the current custom core
+- [ ] Add ready-made effect presets (fire, smoke, sparks, magic)
+- [ ] Add CI to run the parity and behavior tests automatically
+- [ ] Add screenshots/GIFs and a step-by-step GDevelop tutorial
 
 ## Related projects
 
@@ -167,4 +147,6 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 ## License
 
-This project (the GDevelop extension and the standalone Carrot Particle Editor) is released under the **MIT License** — see [LICENSE](LICENSE). This is independent of Carrots Engine's own proprietary license; only its GDevelop-derived core remains MIT (see its [LICENSE.md](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)).
+This project is released under the [MIT License](LICENSE).
+
+Note: [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine) itself is distributed under its own separate license; that does not affect the license of this repository.https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)).
