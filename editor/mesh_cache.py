@@ -173,12 +173,60 @@ def _collect_tris(doc, bufs, mesh_idxs, world_of):
     return tris
 
 
+def _normalize(tris, max_tris):
+    if not tris:
+        return None
+    if len(tris) > max_tris:
+        step = len(tris) / max_tris
+        tris = [tris[int(i * step)] for i in range(max_tris)]
+    xs = [v[0] for t in tris for v in t]
+    ys = [v[1] for t in tris for v in t]
+    zs = [v[2] for t in tris for v in t]
+    cx, cy, cz = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
+                  (min(zs) + max(zs)) / 2)
+    ext = max(max(xs) - min(xs), max(ys) - min(ys),
+              max(zs) - min(zs), 1e-9)
+    k = 2.0 / ext
+    return [tuple((round((v[0] - cx) * k, 5), round((v[1] - cy) * k, 5),
+                  round((v[2] - cz) * k, 5)) for v in t) for t in tris]
+
+
+def _parse_obj(ap):
+    verts, tris = [], []
+    try:
+        with open(ap, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("v "):
+                    try:
+                        p = line.split()
+                        verts.append((float(p[1]), float(p[2]),
+                                      float(p[3])))
+                    except Exception:
+                        continue
+                elif line.startswith("f "):
+                    try:
+                        idx = []
+                        for tok in line.split()[1:]:
+                            vi = int(tok.split("/")[0])
+                            idx.append(vi - 1 if vi > 0 else
+                                       len(verts) + vi)
+                        pts = [verts[i] for i in idx]
+                        for k in range(1, len(pts) - 1):
+                            tris.append((pts[0], pts[k], pts[k + 1]))
+                    except Exception:
+                        continue
+    except OSError:
+        return None
+    return tris or None
+
+
 def load_mesh_tris(path, node="", max_tris=MAX_TRIS):
     """Normalized triangle soup for preview, or None.
 
     Triangles are centered and scaled so the longest bounding-box extent
-    is 2.0 (half-extent 1.0). `node` selects a GLTF node subtree by name;
-    empty means the whole file. Results (including None) are cached.
+    is 2.0 (half-extent 1.0). Supports GLB/GLTF (node selects a subtree
+    by name; empty means the whole file) and Wavefront OBJ (node ignored).
+    Results (including None) are cached.
     """
     try:
         ap = os.path.abspath(path)
@@ -187,7 +235,10 @@ def load_mesh_tris(path, node="", max_tris=MAX_TRIS):
         return None
     if key in _cache:
         return _cache[key]
-    tris = _parse(ap, node, max_tris)
+    if ap.lower().endswith(".obj"):
+        tris = _normalize(_parse_obj(ap) or [], max_tris)
+    else:
+        tris = _parse(ap, node, max_tris)
     if len(_cache) >= _CACHE_MAX:
         _cache.pop(next(iter(_cache)))
     _cache[key] = tris
@@ -262,20 +313,6 @@ def _parse(ap, node, max_tris):
                 world_of.setdefault(mi, mat)
 
         tris = _collect_tris(doc, bufs, sorted(world_of), world_of)
-        if not tris:
-            return None
-        if len(tris) > max_tris:
-            step = len(tris) / max_tris
-            tris = [tris[int(i * step)] for i in range(max_tris)]
-        xs = [v[0] for t in tris for v in t]
-        ys = [v[1] for t in tris for v in t]
-        zs = [v[2] for t in tris for v in t]
-        cx, cy, cz = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
-                      (min(zs) + max(zs)) / 2)
-        ext = max(max(xs) - min(xs), max(ys) - min(ys),
-                  max(zs) - min(zs), 1e-9)
-        k = 2.0 / ext
-        return [tuple((round((v[0] - cx) * k, 5), round((v[1] - cy) * k, 5),
-                      round((v[2] - cz) * k, 5)) for v in t) for t in tris]
+        return _normalize(tris, max_tris)
     except Exception:
         return None

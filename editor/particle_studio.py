@@ -1736,7 +1736,7 @@ class StudioApp(tk.Tk):
     def upload_custom_model(self):
         if self.ptype == "3d":
             p = filedialog.askopenfilename(
-                filetypes=[("3D models", "*.glb *.gltf"), ("All", "*.*")])
+                filetypes=[("3D models", "*.glb *.gltf *.obj"), ("All", "*.*")])
             kind = "model"
         else:
             p = filedialog.askopenfilename(

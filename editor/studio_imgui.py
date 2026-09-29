@@ -1788,6 +1788,7 @@ def build_dialogs():
                          callback=model_chosen):
         dpg.add_file_extension(".glb")
         dpg.add_file_extension(".gltf")
+        dpg.add_file_extension(".obj")
     with dpg.file_dialog(tag="dlg_image", show=False, width=600, height=400,
                          callback=image_chosen):
         for ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"):
@@ -2023,14 +2024,21 @@ def _custom_chosen(path, kind):
     APP.sim.reset()
     APP.mark_dirty()
     APP.history_commit()
+    extra = f" ({len(nodes)} nodes)" if kind == "model" else ""
+    APP.set_status(f"Model loaded: {fname}{extra}", OK)
 
 
 @_safe_action
 def model_chosen(sender=None, app_data=None, *r):
     app_data = app_data or {}
     sels = app_data.get("selections") or {}
-    _custom_chosen(next(iter(sels.values()), None) or
-                   app_data.get("file_path_name"), "model")
+    path = next(iter(sels.values()), None) or app_data.get("file_path_name")
+    if not path:
+        PS.debug_log("MODEL-EMPTY",
+                     str(sorted(app_data.keys()))[:200])
+        APP.set_status("No file selected", WARN)
+        return
+    _custom_chosen(path, "model")
 
 
 @_safe_action
