@@ -22,6 +22,7 @@
 - [Roadmap](#roadmap)
 - [Related projects](#related-projects)
 - [Author](#author)
+- [Third-party](#third-party)
 - [License](#license)
 
 ## Overview
@@ -29,7 +30,7 @@
 This repository is a two-part toolkit:
 
 1. **`AdvancedParticleEmitter.json`** — a GDevelop extension (namespace `AdvancedParticleEmitter`, author *Carrot Studio*) that renders particle effects inside GDevelop games: 2D via [PixiJS](https://pixijs.com), 3D via [Three.js](https://threejs.org), using a shared custom JSON effect format.
-2. **Carrot Particle Editor** — a Python/Tkinter desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live preview, then exporting them to the extension's JSON format.
+2. **Carrot Particle Editor** — a Dear PyGui desktop application (packaged as `CarrotParticleEditor.exe`, Tkinter kept as fallback) for designing those effects with a live viewport, then exporting them to the extension's JSON format.
 
 Both parts share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts).
 
@@ -38,6 +39,9 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 ## Features
 
 - **12 particle shapes** — circle, square, triangle, star, diamond, line, custom, sphere, cube, pyramid, torus, billboard — shared between the 2D and 3D renderers.
+- **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` models (or images for 2D); models render as themselves in the viewport, the browser preview, and export. The node picker lists only mesh-bearing nodes; picking a mesh-less (bone) node falls back to the whole file with a warning. Rigged/skinned GLBs are baked to their rest pose for preview.
+- **Per-state colors** — each birth/mid/death state keeps its own color; white means natural materials, any other color tints over the base.
+- **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
 - **In-editor GPU preview (Tk fallback edition)** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The main Dear PyGui edition renders its viewport with drawlist primitives instead, so it has no such switch.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
@@ -54,12 +58,14 @@ Download `CarrotParticleEditor.exe` and run it — no Python installation requir
 ```text
 Carrot-Particle-Editor/
 ├── assets/                        # Icons and static resources
+├── carrots-runtime/               # Game-runtime ingestion (normalizeEffect)
 ├── core/                          # Simulation core (Python + C++) and its tests
+├── editor/                        # Dear PyGui app (studio_imgui.py), Tk fallback + shared logic (particle_studio.py), mesh_cache.py
+├── packaging/                     # PyInstaller spec
 ├── preview/                       # Browser preview (Three.js / PixiJS) and its tests
 ├── render/                        # OpenGL preview renderer and its tests
-├── particle_studio.py             # Main editor application (Tkinter)
-├── rebuild_app.py                 # One-command build pipeline
-├── CarrotParticleEditor.spec      # PyInstaller spec
+├── tests/                         # Headless Dear PyGui UI tests + preview blob tests
+├── tools/                         # One-command build pipeline (rebuild_app.py), icon tools
 ├── AdvancedParticleEmitter.json   # GDevelop extension
 ├── sample_effect.json             # Example effect
 ├── APP_STRUCTURE.md               # Detailed architecture notes
@@ -86,7 +92,7 @@ npm install
 ### Build
 
 ```bash
-python rebuild_app.py
+python tools/rebuild_app.py
 ```
 
 This runs the full pipeline: compiles and validates the app, rebuilds the C++ core if it's stale, packages the executable with PyInstaller, runs a smoke boot test, and regenerates the Windows shortcut.
@@ -94,8 +100,8 @@ This runs the full pipeline: compiles and validates the app, rebuilds the C++ co
 ### Run
 
 ```bash
-# From source
-python particle_studio.py
+# From source (Dear PyGui edition; Tkinter fallback lives in editor/particle_studio.py)
+python editor/studio_imgui.py
 
 # Or the packaged build
 dist/CarrotParticleEditor.exe
@@ -115,11 +121,22 @@ dist/CarrotParticleEditor.exe
 | Test | Covers |
 | --- | --- |
 | `core/test_parity.py` | Python vs C++ simulation output — 99/99 passing |
-| `core/test_behavior.py` | Simulation behavior and performance (~4 ms @ 2,000 particles) |
+| `core/test_behavior.py` | Simulation behavior, morph-window keys, and performance (~5 ms @ 2,000 particles) |
+| `tests/test_imgui_build.py` | UI builds without errors |
+| `tests/test_imgui_logic.py` | Headless simulation logic (C++ path) |
+| `tests/test_imgui_nav.py` | Viewport navigation (WASD/arrows, Q/E, F, Shift×3) |
+| `tests/test_imgui_color.py` | Per-state color persistence across birth/death switches |
+| `tests/test_imgui_mesh.py` | Uploaded models render as meshes (not placeholders), tint, culling, LOD |
+| `tests/test_imgui_morph.py` | Shape cross-fade window (edges, split alpha, legacy fallback) |
+| `tests/test_imgui_upload.py` | Upload chain, OBJ parsing, big-JSON node names, bone-node fallback |
+| `tests/test_preview_blobs.py` | Model-blob embedding for the browser preview |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
-| `preview/test_engine*.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
+| `preview/test_engine.mjs`, `test_engine3d.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
+| `preview/test_models.mjs` | Model-blob caching and live-push behavior |
+| `preview/test_morph.mjs` | Preview-side `morphAt()` cross-fade sampling |
+| `preview/test_bake.mjs` | Skinned-mesh rest-pose baking (synthetic 2-bone rig) |
 
 ## Shared contracts
 
@@ -145,8 +162,14 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 **Carrot Studio** — Mostafa Fathy Thabet ([@Boy1developer](https://github.com/Boy1developer)) — contributor to [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine).
 
+## Third-party
+
+- [Dear PyGui](https://github.com/hoffstadt/DearPyGui) (MIT) — the desktop editor UI.
+- [Three.js](https://threejs.org) (MIT) — 3D rendering in the browser preview and the GDevelop extension.
+- [PixiJS](https://pixijs.com) (MIT) — 2D rendering in the browser preview and the GDevelop extension.
+
 ## License
 
 This project is released under the [MIT License](LICENSE).
 
-Note: [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine) itself is distributed under its own separate license; that does not affect the license of this repository.https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md)).
+Note: [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine) itself is distributed under [its own separate license](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md); that does not affect the license of this repository.
