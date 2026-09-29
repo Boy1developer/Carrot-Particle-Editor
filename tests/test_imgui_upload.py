@@ -27,10 +27,11 @@ try:
     assert abs((max(xs) - min(xs)) - 2.0) < 1e-6
     assert mesh_cache.load_mesh_tris(obj + ".missing", "") is None
 
-    # 2) upload chain with a realistic DPG file-dialog payload
+    # 2) upload chain via the native picker (monkeypatched path)
     S.build_ui()
     S.APP.sync_all()
     app = S.APP
+    S.set_type("3d", commit=False)
     app.sel_state = 0
     st = app.states[0]
     st["shape"] = "custom"
@@ -39,10 +40,12 @@ try:
     app.sync_state_form()
     assert dpg.get_value("custom_file_text") == "no file"
 
-    S.model_chosen("dlg_model", {"file_path_name": obj,
-                                 "file_name": "box.obj",
-                                 "current_path": tmp,
-                                 "selections": {"box.obj": obj}})
+    real_pick = S._native_pick
+    S._native_pick = lambda kind: (obj, "")
+    try:
+        S.upload_custom_model()
+    finally:
+        S._native_pick = real_pick
     cm = st.get("customModel")
     assert cm and cm.get("file") == "box.obj", cm
     assert cm.get("path") == obj, cm
@@ -53,11 +56,27 @@ try:
     # mesh resolves for the viewport
     assert S.custom_mesh_tris() is not None
 
-    # 3) empty payload: no crash, no state change, visible status
+    # 3) picker cancel: no crash, no state change, status untouched
     before = dict(st.get("customModel"))
-    S.model_chosen("dlg_model", {})
+    status_before = dpg.get_value("status_text")
+    S._native_pick = lambda kind: ("", "")
+    try:
+        S.upload_custom_model()
+    finally:
+        S._native_pick = real_pick
     assert st.get("customModel") == before
-    assert dpg.get_value("status_text") == "No file selected"
+    assert dpg.get_value("status_text") == status_before
+
+    # 3b) picker failure: visible error, no state change
+    S._native_pick = lambda kind: ("", "boom")
+    try:
+        S.upload_custom_model()
+    finally:
+        S._native_pick = real_pick
+    assert st.get("customModel") == before
+    assert dpg.get_value("msg_text") == "boom", \
+        dpg.get_value("msg_text")
+    dpg.configure_item("msg_win", show=False)
 
     # 4) dialog_pick accepts every known payload shape
     P = S.dialog_pick

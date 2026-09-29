@@ -1798,17 +1798,6 @@ def build_dialogs():
                          callback=save_chosen,
                          cancel_callback=_dialog_cancelled):
         dpg.add_file_extension(".json")
-    with dpg.file_dialog(tag="dlg_model", show=False, width=600, height=400,
-                         callback=model_chosen,
-                         cancel_callback=_dialog_cancelled):
-        dpg.add_file_extension(".glb")
-        dpg.add_file_extension(".gltf")
-        dpg.add_file_extension(".obj")
-    with dpg.file_dialog(tag="dlg_image", show=False, width=600, height=400,
-                         callback=image_chosen,
-                         cancel_callback=_dialog_cancelled):
-        for ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"):
-            dpg.add_file_extension(ext)
     with dpg.window(tag="msg_win", label="Message", modal=True, show=False,
                     width=420, height=160, pos=[430, 320]):
         dpg.add_text("", tag="msg_text", wrap=380)
@@ -2046,7 +2035,49 @@ def save_chosen(sender=None, app_data=None, *r):
 
 @_safe_action
 def upload_custom_model():
-    dpg.show_item("dlg_model" if APP.ptype == "3d" else "dlg_image")
+    kind = "model" if APP.ptype == "3d" else "image"
+    path, err = _native_pick(kind)
+    if err:
+        show_msg("Error", err)
+        return
+    if not path:
+        return  # user cancelled the OS picker
+    _custom_chosen(path, kind)
+
+
+def _native_pick(kind):
+    """OS-native file picker (tkinter): returns (path, error).
+
+    Synchronous plain path string — no DPG payload quirks. ("", "") means
+    the user cancelled; ("", message) means the picker itself failed.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        if kind == "model":
+            title = "Pick 3D model"
+            fts = [("3D models", "*.glb *.gltf *.obj"), ("All files", "*.*")]
+        else:
+            title = "Pick image"
+            fts = [("Images", "*.png *.jpg *.jpeg *.gif *.bmp *.svg"),
+                   ("All files", "*.*")]
+        root = tk.Tk()
+        try:
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            path = filedialog.askopenfilename(title=title, filetypes=fts)
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+        return (path or "", "")
+    except Exception as e:
+        PS.debug_log("NATIVE-DLG-EXC", str(e)[:200])
+        return ("", f"Could not open file picker:\n{e}")
 
 
 def _custom_chosen(path, kind):
@@ -2074,27 +2105,6 @@ def _custom_chosen(path, kind):
     APP.history_commit()
     extra = f" ({len(nodes)} nodes)" if kind == "model" else ""
     APP.set_status(f"Model loaded: {fname}{extra}", OK)
-
-
-@_safe_action
-def model_chosen(sender=None, app_data=None, *r):
-    PS.debug_log("DLG-MODEL", str(sorted((app_data or {}).keys()))[:200],
-                 "selections=", str((app_data or {}).get("selections"))[:200])
-    path = dialog_pick(app_data)
-    if not path:
-        APP.set_status("No file selected", WARN)
-        return
-    _custom_chosen(path, "model")
-
-
-@_safe_action
-def image_chosen(sender=None, app_data=None, *r):
-    PS.debug_log("DLG-IMAGE", str(sorted((app_data or {}).keys()))[:200])
-    path = dialog_pick(app_data)
-    if not path:
-        APP.set_status("No file selected", WARN)
-        return
-    _custom_chosen(path, "image")
 
 
 @_safe_action
