@@ -131,12 +131,28 @@ try:
     try:
         got = S.custom_mesh_tris()
         assert got and len(got) == 2, got
+        md = S.mesh_frame(app, 400, 300, 21)
+        assert md is not None
+        mtris, mtex, mproj = md
+        assert len(mtris) == 2
+        # hoisted projector is bit-identical to App.proj
+        for pt in ((5.0, -3.0, 2.0, 0.3, -0.4, 0.7, 9.0),
+                  (0.0, 0.0, 0.0, -1.0, 1.0, -1.0, 4.0)):
+            wx, wy, wz, lx, ly, lz, ws = pt
+            a = mproj(wx, wy, wz, lx, ly, lz, ws)
+            b = app.proj(wx + lx * ws, wy + ly * ws, wz + lz * ws, 400, 300)
+            assert abs(a[0] - b[0]) < 1e-9 and abs(a[1] - b[1]) < 1e-9, \
+                (a, b)
+        # LOD budget: many particles -> stride-capped triangles
+        md_big = S.mesh_frame(app, 400, 300, 500)
+        assert md_big is not None and len(md_big[0]) <= max(
+            8, S.MESH_FRAME_BUDGET // 500) + 1, len(md_big[0])
         calls = []
         real_poly = dpg.draw_polygon
         dpg.draw_polygon = lambda pts, **kw: calls.append(list(pts))
         try:
-            ok = S.draw_custom_mesh_3d("vp_draw", app, 0.0, 0.0, 0.0,
-                                      10.0, [255, 170, 0, 255], 400, 300)
+            ok = S.draw_custom_mesh_3d("vp_draw", md, 0.0, 0.0, 0.0,
+                                      10.0, [255, 170, 0, 255])
         finally:
             dpg.draw_polygon = real_poly
         assert ok is True
@@ -147,8 +163,9 @@ try:
         st["customModel"] = {"file": "gone.glb", "path": glb + ".gone",
                              "node": "", "kind": "model", "nodes": []}
         assert S.custom_mesh_tris() is None
-        assert S.draw_custom_mesh_3d("vp_draw", app, 0, 0, 0, 10,
-                                    [255, 0, 0, 255], 400, 300) is False
+        assert S.mesh_frame(app, 400, 300, 21) is None
+        assert S.draw_custom_mesh_3d("vp_draw", None, 0, 0, 0, 10,
+                                    [255, 0, 0, 255]) is False
         # tint: white shows natural texels, red multiplies over them
         st["customModel"] = {"file": "skin.glb", "path": tglb,
                              "node": "Skin", "kind": "model",
@@ -156,18 +173,18 @@ try:
         fills = []
         dpg.draw_polygon = lambda pts, **kw: fills.append(kw.get("fill"))
         try:
-            assert S.draw_custom_mesh_3d("vp_draw", app, 0.0, 0.0, 0.0,
-                                        10.0, [255, 255, 255, 255],
-                                        400, 300) is True
+            md = S.mesh_frame(app, 400, 300, 21)
+            assert S.draw_custom_mesh_3d("vp_draw", md, 0.0, 0.0, 0.0,
+                                        10.0, [255, 255, 255, 255]) is True
         finally:
             dpg.draw_polygon = real_poly
         assert fills == [[255, 255, 255, 255], [255, 0, 0, 255]], fills
         fills.clear()
         dpg.draw_polygon = lambda pts, **kw: fills.append(kw.get("fill"))
         try:
-            assert S.draw_custom_mesh_3d("vp_draw", app, 0.0, 0.0, 0.0,
-                                        10.0, [255, 0, 0, 255], 400, 300) \
-                is True
+            md = S.mesh_frame(app, 400, 300, 21)
+            assert S.draw_custom_mesh_3d("vp_draw", md, 0.0, 0.0, 0.0,
+                                        10.0, [255, 0, 0, 255]) is True
         finally:
             dpg.draw_polygon = real_poly
         assert fills == [[255, 0, 0, 255], [255, 0, 0, 255]], fills
