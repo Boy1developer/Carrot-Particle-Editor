@@ -52,6 +52,74 @@ try:
     assert mesh_cache.load_mesh_tris(glb, "Nope") is None
     assert mesh_cache.load_mesh_tris(glb + ".missing", "") is None
 
+    # 1b) materials: stdlib PNG decode + baseColorFactor + texture sample
+    import zlib
+    png_rows = [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 255, 255)]]
+    raw = b"".join(b"\x00" + b"".join(bytes(px) for px in row)
+                   for row in png_rows)
+
+
+    def _chunk(t, d):
+        c = t + d
+        return (struct.pack(">I", len(d)) + c
+                + struct.pack(">I", zlib.crc32(c) & 0xffffffff))
+
+
+    png = (b"\x89PNG\r\n\x1a\n"
+           + _chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+           + _chunk(b"IDAT", zlib.compress(raw)) + _chunk(b"IEND", b""))
+    w, h, flat = mesh_cache._decode_png(png)
+    assert (w, h) == (2, 2), (w, h)
+    assert flat[0:3] == [255, 0, 0] and flat[9:12] == [255, 255, 255], flat
+    assert mesh_cache._sample((2, 2, flat), 0.667, 0.333) == (255, 255, 255)
+    assert mesh_cache._sample((2, 2, flat), 0.1, 0.9) == (255, 0, 0)
+
+    tverts = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+    tuvs = [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+    tbin = (struct.pack("<12f", *tverts) + struct.pack("<6H", *idx)
+            + struct.pack("<8f", *tuvs) + png)
+    tdoc = {
+        "asset": {"version": "2.0"},
+        "nodes": [{"name": "Skin", "mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0,
+                                                   "TEXCOORD_0": 2},
+                                    "indices": 1, "material": 0,
+                                    "mode": 4}]}],
+        "materials": [{"pbrMetallicRoughness": {
+            "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+            "baseColorTexture": {"index": 0}}}],
+        "textures": [{"source": 0}],
+        "images": [{"bufferView": 3, "mimeType": "image/png"}],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 4,
+             "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5123, "count": 6,
+             "type": "SCALAR"},
+            {"bufferView": 2, "componentType": 5126, "count": 4,
+             "type": "VEC2"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 48},
+            {"buffer": 0, "byteOffset": 48, "byteLength": 12},
+            {"buffer": 0, "byteOffset": 60, "byteLength": 32},
+            {"buffer": 0, "byteOffset": 92, "byteLength": len(png)},
+        ],
+        "buffers": [{"byteLength": 92 + len(png)}],
+    }
+    tjs = json.dumps(tdoc).encode()
+    tjs += b" " * ((4 - len(tjs) % 4) % 4)
+    tglb = os.path.join(tmp, "skin.glb")
+    with open(tglb, "wb") as f:
+        f.write(b"glTF" + struct.pack("<II", 2, 12 + 8 + len(tjs) + 8
+                                      + len(tbin))
+                + struct.pack("<II", len(tjs), 0x4E4F534A) + tjs
+                + struct.pack("<II", len(tbin), 0x004E4942) + tbin)
+    ttris, ttex = mesh_cache.load_mesh(tglb, "Skin")
+    assert ttris and len(ttris) == 2 and len(ttex) == 2, (ttris, ttex)
+    # tri1 uv-centroid (0.667,0.333) -> white texel; tri2 -> red texel
+    assert ttex[0] == (255, 255, 255), ttex
+    assert ttex[1] == (255, 0, 0), ttex
+
     # 2) integration: custom-shaped state resolves its mesh, draws polys
     S.build_ui()
     app = S.APP
@@ -81,6 +149,28 @@ try:
         assert S.custom_mesh_tris() is None
         assert S.draw_custom_mesh_3d("vp_draw", app, 0, 0, 0, 10,
                                     [255, 0, 0, 255], 400, 300) is False
+        # tint: white shows natural texels, red multiplies over them
+        st["customModel"] = {"file": "skin.glb", "path": tglb,
+                             "node": "Skin", "kind": "model",
+                             "nodes": ["Skin"]}
+        fills = []
+        dpg.draw_polygon = lambda pts, **kw: fills.append(kw.get("fill"))
+        try:
+            assert S.draw_custom_mesh_3d("vp_draw", app, 0.0, 0.0, 0.0,
+                                        10.0, [255, 255, 255, 255],
+                                        400, 300) is True
+        finally:
+            dpg.draw_polygon = real_poly
+        assert fills == [[255, 255, 255, 255], [255, 0, 0, 255]], fills
+        fills.clear()
+        dpg.draw_polygon = lambda pts, **kw: fills.append(kw.get("fill"))
+        try:
+            assert S.draw_custom_mesh_3d("vp_draw", app, 0.0, 0.0, 0.0,
+                                        10.0, [255, 0, 0, 255], 400, 300) \
+                is True
+        finally:
+            dpg.draw_polygon = real_poly
+        assert fills == [[255, 0, 0, 255], [255, 0, 0, 255]], fills
     finally:
         st["shape"] = old_shape
         if old_cm is None:

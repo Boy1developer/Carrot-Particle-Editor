@@ -720,8 +720,8 @@ def _find_model_file(base):
     return ""
 
 
-def custom_mesh_tris():
-    """Normalized mesh triangles for custom-shaped particles, or None.
+def custom_mesh():
+    """(normalized tris, per-tri material (r,g,b)) or (None, None).
 
     Prefers the selected state, else the first custom-shaped state carrying
     a model. Pure display data: never mutates APP.
@@ -742,32 +742,47 @@ def custom_mesh_tris():
                 path = _find_model_file(cm.get("file") or "")
             if not path:
                 continue
-            tris = mesh_cache.load_mesh_tris(path, cm.get("node") or "")
+            tris, texels = mesh_cache.load_mesh(path, cm.get("node") or "")
             if tris:
-                return tris
+                return tris, texels
         except Exception:
             continue
-    return None
+    return None, None
+
+
+def custom_mesh_tris():
+    """Normalized mesh triangles or None (see custom_mesh)."""
+    tris, _tex = custom_mesh()
+    return tris
 
 
 def draw_custom_mesh_3d(dl, app, wx, wy, wz, ws_world, col, cx, cy):
     """Draw one particle as its uploaded mesh, camera-projected.
 
-    ws_world is the mesh half-extent in world units. Returns True when
-    drawn, False to let the caller fall back to the placeholder box.
+    Each triangle is filled with its material color; the particle color
+    acts as a tint (white = natural materials). ws_world is the mesh
+    half-extent in world units. Returns True when drawn, False to let
+    the caller fall back to the placeholder box.
     """
-    tris = custom_mesh_tris()
+    tris, texels = custom_mesh()
     if not tris or ws_world <= 0:
         return False
     try:
-        for tri in tris:
+        tr, tg, tb = (int(col[0]), int(col[1]), int(col[2]))
+        natural = (tr == 255 and tg == 255 and tb == 255)
+        for tri, (mr, mg, mb) in zip(tris, texels):
             pts = []
             for lx, ly, lz in tri:
                 sx, sy, _, _ = app.proj(wx + lx * ws_world,
                                        wy + ly * ws_world,
                                        wz + lz * ws_world, cx, cy)
                 pts.append([sx, sy])
-            dpg.draw_polygon(pts, color=[0, 0, 0, 0], fill=col, parent=dl)
+            if natural:
+                fill = [mr, mg, mb, 255]
+            else:
+                fill = [mr * tr // 255, mg * tg // 255, mb * tb // 255,
+                        255]
+            dpg.draw_polygon(pts, color=[0, 0, 0, 0], fill=fill, parent=dl)
     except Exception:
         return False
     return True

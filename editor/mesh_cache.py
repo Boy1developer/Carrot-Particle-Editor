@@ -56,7 +56,7 @@ def _load_doc(path):
                         bufs.append(None)
                 else:
                     bufs.append(None)
-            return doc, bufs
+            return doc, bufs, base
         with open(path, "rb") as f:
             data = f.read()
         if len(data) < 12 or data[:4] != b"glTF":
@@ -72,7 +72,7 @@ def _load_doc(path):
             off += 8 + clen
         if js is None:
             return None
-        return json.loads(js.decode("utf-8", "replace")), bins
+        return json.loads(js.decode("utf-8", "replace")), bins, None
     except Exception:
         return None
 
@@ -134,8 +134,60 @@ def _node_local(node):
             ] + [[0.0, 0.0, 0.0, 1.0]]
 
 
-def _collect_tris(doc, bufs, mesh_idxs, world_of):
-    tris = []
+def _image_bytes(doc, bufs, base, img):
+    """Raw bytes of a glTF image dict (bufferView / data-uri / file)."""
+    try:
+        if "bufferView" in img:
+            bv = doc["bufferViews"][img["bufferView"]]
+            raw = bufs[bv["buffer"]]
+            if raw is None:
+                return None
+            off = int(bv.get("byteOffset", 0))
+            ln = int(bv.get("byteLength", len(raw) - off))
+            return raw[off:off + ln]
+        uri = img.get("uri") or ""
+        if uri.startswith("data:"):
+            return base64.b64decode(uri.split(",", 1)[1])
+        if uri and base:
+            p = os.path.normpath(os.path.join(base, uri))
+            with open(p, "rb") as f:
+                return f.read()
+        return None
+    except Exception:
+        return None
+
+
+def _mat_of(doc, bufs, base, prim):
+    """-> ((fr,fg,fb) factor 0-1, decoded image or None) for a primitive."""
+    factor, img = (1.0, 1.0, 1.0), None
+    try:
+        mats = doc.get("materials", [])
+        m = mats[int(prim.get("material", -1))]
+        pbr = m.get("pbrMetallicRoughness", {})
+        fc = pbr.get("baseColorFactor", [1.0, 1.0, 1.0, 1.0])
+        factor = (float(fc[0]), float(fc[1]), float(fc[2]))
+        tex = pbr.get("baseColorTexture")
+        if isinstance(tex, dict):
+            tx = doc.get("textures", [])[int(tex.get("index", -1))]
+            src = tx.get("source")
+            images = doc.get("images", [])
+            if src is not None and 0 <= int(src) < len(images):
+                im = images[int(src)]
+                hint = ""
+                mt = str(im.get("mimeType", ""))
+                if "png" in mt:
+                    hint = "png"
+                data = _image_bytes(doc, bufs, base, im)
+                if data:
+                    img = _decode_image(data, hint)
+    except Exception:
+        pass
+    return factor, img
+
+
+def _collect_tris(doc, bufs, base, mesh_idxs, world_of):
+    """-> list of (tri, (u, v, factor, img)) keeping material data paired."""
+    out = []
     for mi in mesh_idxs:
         try:
             mesh = doc["meshes"][mi]
@@ -148,6 +200,10 @@ def _collect_tris(doc, bufs, mesh_idxs, world_of):
                 pos = _read_acc(doc, bufs, prim["attributes"]["POSITION"])
                 if not pos:
                     continue
+                uv_acc = (prim.get("attributes", {}).get("TEXCOORD_0"))
+                uvs = _read_acc(doc, bufs, uv_acc) if uv_acc is not None \
+                    else None
+                factor, img = _mat_of(doc, bufs, base, prim)
                 if "indices" in prim:
                     idx = _read_acc(doc, bufs, prim["indices"])
                     if not idx:
@@ -156,39 +212,170 @@ def _collect_tris(doc, bufs, mesh_idxs, world_of):
                 else:
                     idx = list(range(len(pos)))
                 mesh_node = world_of.get(mi)
+                nuv = len(uvs) if uvs else 0
                 for t in range(0, len(idx) - 2, 3):
                     try:
-                        tri = []
-                        for k in idx[t:t + 3]:
+                        tri, uvt = [], []
+                        for n, k in enumerate(idx[t:t + 3]):
                             v = pos[int(k)]
                             v = _mat_vec(mesh_node, (float(v[0]),
                                                      float(v[1]),
                                                      float(v[2])))
                             tri.append(v)
-                        tris.append(tuple(tri))
+                            if uvs and int(k) < nuv:
+                                uv = uvs[int(k)]
+                                uvt.append((float(uv[0]), float(uv[1])))
+                        uu = sum(u for u, _ in uvt) / len(uvt) if uvt \
+                            else 0.5
+                        vv = sum(v for _, v in uvt) / len(uvt) if uvt \
+                            else 0.5
+                        out.append((tuple(tri), (uu, vv, factor, img)))
                     except Exception:
                         continue
             except Exception:
                 continue
-    return tris
+    return out
 
 
-def _normalize(tris, max_tris):
-    if not tris:
+def _decode_png(data):
+    """Minimal stdlib PNG decoder -> (w, h, [r,g,b]*w*h) or None.
+
+    8-bit non-interlaced only (covers virtually all glTF textures);
+    color types 0/2/3/4/6. Anything fancier returns None.
+    """
+    try:
+        if data[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        off, w, h, depth, ctype, comp, filt, inter = 0, 0, 0, 0, 0, 0, 0, 0
+        plte, trns, raws = None, None, []
+        off = 8
+        import zlib
+        while off + 8 <= len(data):
+            ln = struct.unpack(">I", data[off:off + 4])[0]
+            typ = data[off + 4:off + 8]
+            chunk = data[off + 8:off + 8 + ln]
+            if typ == b"IHDR":
+                w, h, depth, ctype, comp, filt, inter = \
+                    struct.unpack(">IIBBBBB", chunk)
+            elif typ == b"PLTE":
+                plte = chunk
+            elif typ == b"tRNS":
+                trns = chunk
+            elif typ == b"IDAT":
+                raws.append(chunk)
+            elif typ == b"IEND":
+                break
+            off += 12 + ln
+        if depth != 8 or inter != 0 or ctype not in (0, 2, 3, 4, 6):
+            return None
+        ch = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
+        raw = zlib.decompress(b"".join(raws))
+        stride, px = w * ch, []
+        pos = 0
+        prev = bytearray(stride)
+        for _ in range(h):
+            f = raw[pos]
+            pos += 1
+            cur = bytearray(raw[pos:pos + stride])
+            pos += stride
+            if f == 1:
+                for i in range(ch, stride):
+                    cur[i] = (cur[i] + cur[i - ch]) & 255
+            elif f == 2:
+                for i in range(stride):
+                    cur[i] = (cur[i] + prev[i]) & 255
+            elif f == 3:
+                for i in range(stride):
+                    a = cur[i - ch] if i >= ch else 0
+                    cur[i] = (cur[i] + ((a + prev[i]) >> 1)) & 255
+            elif f == 4:
+                for i in range(stride):
+                    a = cur[i - ch] if i >= ch else 0
+                    b = prev[i]
+                    c = prev[i - ch] if i >= ch else 0
+                    p = a + b - c
+                    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    pr = a if (pa <= pb and pa <= pc) else \
+                        (b if pb <= pc else c)
+                    cur[i] = (cur[i] + pr) & 255
+            elif f != 0:
+                return None
+            px.append(bytes(cur))
+            prev = cur
+        out = []
+        for row in px:
+            for x in range(w):
+                o = x * ch
+                if ctype == 0:
+                    out += [row[o]] * 3
+                elif ctype == 2:
+                    out += [row[o], row[o + 1], row[o + 2]]
+                elif ctype == 3:
+                    if plte is None or o >= len(plte) // 3 * 3:
+                        return None
+                    out += [plte[o * 3], plte[o * 3 + 1], plte[o * 3 + 2]]
+                elif ctype == 4:
+                    out += [row[o]] * 3
+                else:
+                    out += [row[o], row[o + 1], row[o + 2]]
+        return w, h, out
+    except Exception:
         return None
-    if len(tris) > max_tris:
-        step = len(tris) / max_tris
-        tris = [tris[int(i * step)] for i in range(max_tris)]
-    xs = [v[0] for t in tris for v in t]
-    ys = [v[1] for t in tris for v in t]
-    zs = [v[2] for t in tris for v in t]
+
+
+def _decode_image(data, hint=""):
+    """-> (w, h, flat [r,g,b]) or None. PIL first, stdlib PNG fallback."""
+    if not data:
+        return None
+    try:
+        from PIL import Image as _Im
+        try:
+            im = _Im.open(__import__("io").BytesIO(bytes(data)))
+            im = im.convert("RGB")
+            w, h = im.size
+            flat = []
+            for p in im.getdata():
+                flat += [p[0], p[1], p[2]]
+            return w, h, flat
+        except Exception:
+            pass
+    except Exception:
+        pass
+    if hint == "png" or (bytes(data[:4]).startswith(b"\x89PNG")):
+        return _decode_png(bytes(data))
+    return None
+
+
+def _sample(img, u, v):
+    """Nearest texel, v-flipped to GL convention. img=(w,h,flat)."""
+    try:
+        w, h, flat = img
+        x = min(w - 1, max(0, int(u * w)))
+        y = min(h - 1, max(0, int((1.0 - v) * h)))
+        o = (y * w + x) * 3
+        return flat[o], flat[o + 1], flat[o + 2]
+    except Exception:
+        return 255, 255, 255
+
+
+def _normalize(pairs, max_tris):
+    """Downsample + center/scale geometry, keeping material data paired."""
+    if not pairs:
+        return None
+    if len(pairs) > max_tris:
+        step = len(pairs) / max_tris
+        pairs = [pairs[int(i * step)] for i in range(max_tris)]
+    xs = [v[0] for t, _ in pairs for v in t]
+    ys = [v[1] for t, _ in pairs for v in t]
+    zs = [v[2] for t, _ in pairs for v in t]
     cx, cy, cz = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
                   (min(zs) + max(zs)) / 2)
     ext = max(max(xs) - min(xs), max(ys) - min(ys),
               max(zs) - min(zs), 1e-9)
     k = 2.0 / ext
-    return [tuple((round((v[0] - cx) * k, 5), round((v[1] - cy) * k, 5),
-                  round((v[2] - cz) * k, 5)) for v in t) for t in tris]
+    return [((tuple((round((v[0] - cx) * k, 5), round((v[1] - cy) * k, 5),
+                    round((v[2] - cz) * k, 5)) for v in t)), m)
+            for t, m in pairs]
 
 
 def _parse_obj(ap):
@@ -220,41 +407,48 @@ def _parse_obj(ap):
     return tris or None
 
 
-def load_mesh_tris(path, node="", max_tris=MAX_TRIS):
-    """Normalized triangle soup for preview, or None.
+def load_mesh(path, node="", max_tris=MAX_TRIS):
+    """(normalized tris, per-tri (r,g,b) material colors) or (None, None).
 
-    Triangles are centered and scaled so the longest bounding-box extent
-    is 2.0 (half-extent 1.0). Supports GLB/GLTF (node selects a subtree
-    by name; empty means the whole file) and Wavefront OBJ (node ignored).
-    Results (including None) are cached.
+    Material color = texture texel at the triangle UV centroid times the
+    baseColorFactor (white when untextured). Same cache as load_mesh_tris.
     """
     try:
         ap = os.path.abspath(path)
         key = (ap, os.path.getmtime(ap), node, int(max_tris))
     except OSError:
-        return None
+        return None, None
     if key in _cache:
         return _cache[key]
     if ap.lower().endswith(".obj"):
-        tris = _normalize(_parse_obj(ap) or [], max_tris)
+        pairs = _normalize([(t, (0.5, 0.5, (1.0, 1.0, 1.0), None))
+                            for t in (_parse_obj(ap) or [])], max_tris)
+        result = ([t for t, _ in pairs], [(255, 255, 255)] * len(pairs)) \
+            if pairs else (None, None)
     else:
-        tris = _parse(ap, node, max_tris)
+        result = _parse(ap, node, max_tris)
     if len(_cache) >= _CACHE_MAX:
         _cache.pop(next(iter(_cache)))
-    _cache[key] = tris
+    _cache[key] = result
+    return result
+
+
+def load_mesh_tris(path, node="", max_tris=MAX_TRIS):
+    """Normalized triangle soup for preview, or None (see load_mesh)."""
+    tris, _tex = load_mesh(path, node, max_tris)
     return tris
 
 
 def _parse(ap, node, max_tris):
     loaded = _load_doc(ap)
     if loaded is None:
-        return None
-    doc, bufs = loaded
+        return None, None
+    doc, bufs, base = loaded
     try:
         nodes = doc.get("nodes", [])
         meshes = doc.get("meshes", [])
         if not nodes or not meshes:
-            return None
+            return None, None
         parent = {}
         for ni, nd in enumerate(nodes):
             for ch in nd.get("children", []):
@@ -287,7 +481,7 @@ def _parse(ap, node, max_tris):
                 if str(nd.get("name", "")) == node:
                     targets.append(ni)
             if not targets:
-                return None
+                return None, None
         else:
             targets = list(range(len(nodes)))
 
@@ -312,7 +506,22 @@ def _parse(ap, node, max_tris):
             for mi in subtree_meshes(root):
                 world_of.setdefault(mi, mat)
 
-        tris = _collect_tris(doc, bufs, sorted(world_of), world_of)
-        return _normalize(tris, max_tris)
+        pairs = _normalize(_collect_tris(doc, bufs, base,
+                                           sorted(world_of), world_of),
+                           max_tris)
+        if not pairs:
+            return None, None
+        tris, texels = [], []
+        for t, (u, v, factor, img) in pairs:
+            tris.append(t)
+            if img is not None:
+                pr, pg, pb = _sample(img, u, v)
+            else:
+                pr, pg, pb = 255, 255, 255
+            fr, fg, fb = factor
+            texels.append((max(0, min(255, int(round(pr * fr)))),
+                           max(0, min(255, int(round(pg * fg)))),
+                           max(0, min(255, int(round(pb * fb))))))
+        return tris, texels
     except Exception:
-        return None
+        return None, None
