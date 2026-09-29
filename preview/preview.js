@@ -61,6 +61,7 @@ export class ParticleEngine {
         this.kf = [];
         this.kfLife = 1.0;
         this.effectRev = 0;
+        this.modelBlobs = {};
         this.accum = 0;
         this.bursted = false;
         this.remaining = 0;
@@ -124,8 +125,23 @@ export class ParticleEngine {
                 minSpd: Number(mv.minSpeed ?? 0),
                 maxSpd: Number(mv.maxSpeed ?? mv.minSpeed ?? 0),
                 easing: String(s.easing ?? "linear"),
+                modelRef: String(s.modelRefs?.[0] ?? ""),
             };
         });
+        // Embedded GLB/GLTF blobs for custom-model states. Replace (never merge
+        // implicitly): the key is present only when the model set changed, and
+        // an empty object clears previously cached blobs. Absent key keeps cache
+        // so the 500ms live poll (which omits blobs when unchanged) never wipes.
+        const md = eff.modelsData;
+        if (md !== undefined && md !== null && typeof md === "object") {
+            const next = {};
+            for (const k of Object.keys(md)) {
+                const v = md[k];
+                if (v && typeof v.data === "string" && v.data.length > 0)
+                    next[k] = { mime: String(v.mime ?? ""), data: v.data };
+            }
+            this.modelBlobs = next;
+        }
         // life excludes the death duration (extension semantics)
         this.kfLife = Math.max(0.1, this.kf.slice(0, -1).reduce((a, k) => a + k.dur, 0));
         this.count = 0;
@@ -387,6 +403,27 @@ export class ParticleEngine {
             this.py[i] += this.vy[i] * dt;
             this.pz[i] += this.vz[i] * dt;
         }
+    }
+    /** Model ref sampled like shape (mid-segment flip), "" when none. */
+    modelRefAt(age) {
+        if (!this.kf.length)
+            return "";
+        const [k, , raw] = this.locate(age);
+        const a = this.kf[k], b = this.kf[Math.min(k + 1, this.kf.length - 1)];
+        return raw >= 0.5 ? b.modelRef : a.modelRef;
+    }
+    /** Distinct non-empty model refs across keyframes. */
+    customRefs() {
+        const out = [];
+        for (const k of this.kf)
+            if (k.modelRef && out.indexOf(k.modelRef) < 0)
+                out.push(k.modelRef);
+        return out;
+    }
+    /** Embedded blob for a ref, if the studio shipped one. */
+    modelBlob(ref) {
+        const b = this.modelBlobs[ref];
+        return b ? { mime: b.mime, data: b.data } : null;
     }
     /** Sampled appearance at age (morph across keyframes; shape flips mid-segment). */
     sampleAt(age, i) {

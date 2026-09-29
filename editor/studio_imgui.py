@@ -390,6 +390,7 @@ class App:
         self._cache_t = 0.0
         self._cached_eff = None
         self._last_edit = 0.0
+        self._models_fp = None
         self._live_push_on = False
         self._last_push = 0.0
         self._status = "Ready"
@@ -2196,6 +2197,9 @@ _preview_port = 0
 def open_fast_preview():
     global _preview_server, _preview_port
     eff = gather()
+    blobs = PS.model_blobs_for_states(APP.states)
+    if blobs:
+        eff["modelsData"] = blobs
     base = PS.app_base_dir()
     pv_dir = os.path.join(base, "preview")
     try:
@@ -2810,6 +2814,10 @@ def frame():
             APP._last_push = now
             try:
                 ce = APP.current_effect()
+                fp = PS.model_fingerprint(APP.states)
+                if fp != APP._models_fp:
+                    APP._models_fp = fp
+                    ce["modelsData"] = PS.model_blobs_for_states(APP.states)
                 with open(os.path.join(PS.app_base_dir(), "preview",
                                        "last_effect.json"), "w",
                           encoding="utf-8") as f:

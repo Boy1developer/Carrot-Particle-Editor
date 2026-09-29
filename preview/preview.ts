@@ -25,6 +25,7 @@ interface Keyframe {
   dur: number; shape: string;
   size: number; sizeMax: number; color: RGB; opacity: number;
   minSpd: number; maxSpd: number; easing: string;
+  modelRef: string;
 }
 
 const MAX_POOL = 4000;
@@ -81,6 +82,7 @@ export class ParticleEngine {
   private kf: Keyframe[] = [];
   private kfLife = 1.0;
   private effectRev = 0;
+  private modelBlobs: Record<string, { mime: string; data: string }> = {};
 
   /** Bumped on every loadEffect — render layers rebuild guides on change. */
   get effectVersion(): number { return this.effectRev; }
@@ -152,8 +154,23 @@ export class ParticleEngine {
         minSpd: Number(mv.minSpeed ?? 0),
         maxSpd: Number(mv.maxSpeed ?? mv.minSpeed ?? 0),
         easing: String(s.easing ?? "linear"),
+        modelRef: String((s.modelRefs as unknown[] | undefined)?.[0] ?? ""),
       };
     });
+    // Embedded GLB/GLTF blobs for custom-model states. Replace (never merge
+    // implicitly): the key is present only when the model set changed, and
+    // an empty object clears previously cached blobs. Absent key keeps cache
+    // so the 500ms live poll (which omits blobs when unchanged) never wipes.
+    const md: unknown = (eff as { modelsData?: unknown }).modelsData;
+    if (md !== undefined && md !== null && typeof md === "object") {
+      const next: Record<string, { mime: string; data: string }> = {};
+      for (const k of Object.keys(md as Record<string, unknown>)) {
+        const v = (md as Record<string, any>)[k];
+        if (v && typeof v.data === "string" && v.data.length > 0)
+          next[k] = { mime: String(v.mime ?? ""), data: v.data };
+      }
+      this.modelBlobs = next;
+    }
     // life excludes the death duration (extension semantics)
     this.kfLife = Math.max(0.1, this.kf.slice(0, -1).reduce((a, k) => a + k.dur, 0));
     this.count = 0; this.accum = 0; this.bursted = false;
@@ -336,6 +353,27 @@ export class ParticleEngine {
       this.vz[i] = this.dz[i] * spd + this.gz[i];
       this.px[i] += this.vx[i] * dt; this.py[i] += this.vy[i] * dt; this.pz[i] += this.vz[i] * dt;
     }
+  }
+
+  /** Model ref sampled like shape (mid-segment flip), "" when none. */
+  modelRefAt(age: number): string {
+    if (!this.kf.length) return "";
+    const [k, , raw] = this.locate(age);
+    const a: Keyframe = this.kf[k], b: Keyframe = this.kf[Math.min(k + 1, this.kf.length - 1)];
+    return raw >= 0.5 ? b.modelRef : a.modelRef;
+  }
+
+  /** Distinct non-empty model refs across keyframes. */
+  customRefs(): string[] {
+    const out: string[] = [];
+    for (const k of this.kf) if (k.modelRef && out.indexOf(k.modelRef) < 0) out.push(k.modelRef);
+    return out;
+  }
+
+  /** Embedded blob for a ref, if the studio shipped one. */
+  modelBlob(ref: string): { mime: string; data: string } | null {
+    const b = this.modelBlobs[ref];
+    return b ? { mime: b.mime, data: b.data } : null;
   }
 
   /** Sampled appearance at age (morph across keyframes; shape flips mid-segment). */

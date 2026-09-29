@@ -7,9 +7,11 @@
  * - Orbit camera driven by engine.cam (drag/wheel handled in preview.html)
  */
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { ParticleEngine } from "./preview.js";
 
 const CAP = 4000; // per-shape instance cap (matches engine MAX_POOL)
+const MODEL_POOL_CAP = 150; // pooled model clones (overflow falls back to squares)
 const BASE_DIST = 560;
 
 function starShape2D(outer: number, inner: number): THREE.Shape {
@@ -60,6 +62,12 @@ export class ThreeScene {
   private tmpColor: THREE.Color = new THREE.Color();
   private lastW = 0;
   private lastH = 0;
+  // uploaded-model rendering (custom shape): normalized templates + clone pool
+  private modelCache = new Map<string, THREE.Group>();
+  private modelLoading = new Set<string>();
+  private modelPool: { ref: string; obj: THREE.Object3D;
+    mats: THREE.Material[]; used: boolean }[] = [];
+  private modelRev = -1;
 
   // flat shapes billboard toward the camera; solids tumble slowly with age
   private flat: Set<string> = new Set(
@@ -164,9 +172,106 @@ export class ThreeScene {
     return Object.prototype.hasOwnProperty.call(this.byShape, s) ? s : "sphere";
   }
 
+  /** Drop pools whose ref vanished; kick off async loads for new blobs. */
+  private syncModels(): void {
+    const live = new Set<string>(this.engine.customRefs());
+    for (let i = this.modelPool.length - 1; i >= 0; i--) {
+      if (!live.has(this.modelPool[i].ref)) {
+        const p = this.modelPool[i];
+        this.scene.remove(p.obj);
+        for (const m of p.mats) m.dispose();
+        this.modelPool.splice(i, 1);
+      }
+    }
+    for (const ref of live) {
+      if (this.modelCache.has(ref) || this.modelLoading.has(ref)) continue;
+      const blob = this.engine.modelBlob(ref);
+      if (!blob) continue; // no bytes shipped -> square fallback stays
+      this.modelLoading.add(ref);
+      this.loadModel(ref, blob).finally(() => this.modelLoading.delete(ref));
+    }
+  }
+
+  private async loadModel(ref: string,
+    blob: { mime: string; data: string }): Promise<void> {
+    try {
+      const bin = Uint8Array.from(atob(blob.data), (c) => c.charCodeAt(0));
+      const isBin: boolean = blob.mime.indexOf("json") < 0;
+      const payload: ArrayBuffer | string = isBin
+        ? bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength)
+        : new TextDecoder().decode(bin);
+      const gltf = await new GLTFLoader().parseAsync(payload, "");
+      const root: THREE.Group = gltf.scene;
+      const box = new THREE.Box3().setFromObject(root);
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const r: number = Math.max(1e-6, sphere.radius);
+      root.position.sub(sphere.center);
+      const norm = new THREE.Group();
+      norm.add(root);
+      norm.scale.setScalar(1 / r); // unit bounding sphere like other shapes
+      this.modelCache.set(ref, norm);
+    } catch (e) { /* draco/ktx2/foreign data -> square fallback stays */ }
+  }
+
+  /** Draw one particle as its uploaded model. False -> use square bucket. */
+  private drawModel(ref: string, x: number, y: number, z: number, s: number,
+    age: number, r: number, g: number, b: number, a: number): boolean {
+    const tpl = this.modelCache.get(ref);
+    if (!tpl) return false;
+    let slot = -1;
+    for (let i = 0; i < this.modelPool.length; i++) {
+      const p = this.modelPool[i];
+      if (p.ref === ref && !p.used) { slot = i; break; }
+    }
+    if (slot < 0) {
+      if (this.modelPool.length >= MODEL_POOL_CAP) return false;
+      const obj: THREE.Object3D = tpl.clone(true);
+      const mats: THREE.Material[] = [];
+      obj.traverse((o: THREE.Object3D): void => {
+        const anyObj = o as unknown as {
+          material?: THREE.Material | THREE.Material[];
+          isMesh?: boolean; castShadow?: boolean;
+        };
+        if (!anyObj.isMesh) return;
+        if (anyObj.castShadow !== undefined) anyObj.castShadow = true;
+        const ms: THREE.Material[] = Array.isArray(anyObj.material)
+          ? anyObj.material : anyObj.material ? [anyObj.material] : [];
+        if (!ms.length) return; // material-less mesh: shared default stays
+        const own: THREE.Material[] = ms.map((m) => m.clone());
+        anyObj.material = Array.isArray(anyObj.material) ? own : own[0];
+        for (const m of own) {
+          m.transparent = true;
+          mats.push(m);
+        }
+      });
+      this.scene.add(obj);
+      this.modelPool.push({ ref, obj, mats, used: true });
+      slot = this.modelPool.length - 1;
+    }
+    const p = this.modelPool[slot];
+    p.used = true;
+    p.obj.position.set(x, y, z);
+    p.obj.rotation.set(age * 0.7, age * 0.9, 0);
+    p.obj.scale.set(s, s, s);
+    p.obj.updateMatrix();
+    // white particle color = natural materials, else tint over them
+    const tinted: boolean = !(r === 255 && g === 255 && b === 255);
+    for (const m of p.mats) {
+      const mc = m as unknown as {
+        color?: { setRGB(r: number, g: number, b: number): void };
+        opacity?: number;
+      };
+      if (mc.color) {
+        if (tinted) mc.color.setRGB(r / 255, g / 255, b / 255);
+        else mc.color.setRGB(1, 1, 1);
+      }
+      if (typeof mc.opacity === "number") mc.opacity = a;
+    }
+    return true;
+  }
+
   /** Rebuild zone + cone wireframes when a new effect is loaded. */
-  private rebuildGuides(): void {
-    while (this.guides.children.length) {
+  private rebuildGuides(): void {    while (this.guides.children.length) {
       const c = this.guides.children.pop() as THREE.Object3D | undefined;
       if (!c) break;
       this.guides.remove(c);
@@ -253,6 +358,11 @@ export class ThreeScene {
       this.guideRev = this.engine.effectVersion;
       this.rebuildGuides();
     }
+    if (this.modelRev !== this.engine.effectVersion) {
+      this.modelRev = this.engine.effectVersion;
+      this.syncModels();
+    }
+    for (const p of this.modelPool) p.used = false;
     // orbit camera from the shared engine.cam state
     const cam = this.engine.cam;
     const d: number = BASE_DIST / Math.max(0.3, cam.zoom);
@@ -267,6 +377,11 @@ export class ThreeScene {
       const st = this.engine.particleState(i);
       const sm = this.engine.sampleAt(st.age, i);
       const key: string = this.normShape(sm.shape);
+      if (key === "custom") {
+        const ref: string = this.engine.modelRefAt(st.age);
+        if (ref && this.drawModel(ref, st.x, st.y, st.z,
+          Math.max(0.01, sm.size), st.age, sm.r, sm.g, sm.b, sm.a)) continue;
+      }
       const mi: number = this.byShape[key];
       const slot: number = counts[mi]++;
       if (slot >= CAP) continue;
@@ -290,6 +405,13 @@ export class ThreeScene {
       this.meshes[m].instanceMatrix.needsUpdate = true;
       const ic = this.meshes[m].instanceColor;
       if (ic) ic.needsUpdate = true;
+    }
+    for (const p of this.modelPool) {
+      if (!p.used) {
+        p.obj.position.set(0, 0, 0);
+        p.obj.scale.set(0.0001, 0.0001, 0.0001);
+        p.obj.updateMatrix();
+      }
     }
     this.renderer.render(this.scene, this.camera);
   }

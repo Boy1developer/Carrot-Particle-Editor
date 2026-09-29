@@ -263,6 +263,63 @@ def model_nodes_from_file(path):
         return []
 
 
+def model_blobs_for_states(states, cap_mb=8):
+    """{ref: {mime, file, data64}} for custom-model states (preview embed).
+
+    Reads GLB/GLTF bytes for states carrying a customModel with a real
+    file path; skips missing files, unsupported extensions, and files
+    over cap_mb. ref follows current_effect()'s modelRefs convention so
+    the browser preview can match blobs to states.
+    """
+    out = {}
+    cap = max(1, int(cap_mb)) * 1024 * 1024
+    for s in states or []:
+        try:
+            cm = s.get("customModel") or {}
+            path = cm.get("path") or ""
+            if not path or not os.path.isfile(path):
+                continue
+            ext = os.path.splitext(path)[1].lower()
+            if ext == ".glb":
+                mime = "model/gltf-binary"
+            elif ext == ".gltf":
+                mime = "model/gltf+json"
+            else:
+                continue
+            if os.path.getsize(path) > cap:
+                continue
+            ref = ((s.get("modelRefs") or [""])[0]
+                   or cm.get("node")
+                   or os.path.splitext(os.path.basename(path))[0])
+            if not ref or ref in out:
+                continue
+            with open(path, "rb") as f:
+                data = f.read()
+            if not data or len(data) > cap:
+                continue
+            out[ref] = {"mime": mime, "file": os.path.basename(path),
+                        "data": base64.b64encode(data).decode("ascii")}
+        except Exception:
+            continue
+    return out
+
+
+def model_fingerprint(states):
+    """Cheap (path, mtime, size) snapshot to detect model-set changes."""
+    fp = []
+    for s in states or []:
+        cm = s.get("customModel") or {}
+        p = cm.get("path") or ""
+        if not p:
+            continue
+        try:
+            st = os.stat(p)
+            fp.append((p, st.st_mtime_ns, st.st_size))
+        except OSError:
+            fp.append((p, -1, -1))
+    return tuple(fp)
+
+
 def default_state(role="intermediate", idx=0):
     if role == "birth":
         return {
@@ -2773,6 +2830,9 @@ class StudioApp(tk.Tk):
         eff = self._gather()
         if eff is None:
             return
+        blobs = model_blobs_for_states(self.states)
+        if blobs:
+            eff["modelsData"] = blobs
         base = app_base_dir()
         pv_dir = os.path.join(base, "preview")
         try:
@@ -2834,6 +2894,10 @@ class StudioApp(tk.Tk):
         try:
             eff = self.current_effect(silent=True)
             if eff is not None:
+                fp = model_fingerprint(self.states)
+                if getattr(self, "_models_fp", None) != fp:
+                    self._models_fp = fp
+                    eff["modelsData"] = model_blobs_for_states(self.states)
                 with open(os.path.join(app_base_dir(), "preview", "last_effect.json"),
                           "w", encoding="utf-8") as f:
                     json.dump(eff, f, ensure_ascii=False)
