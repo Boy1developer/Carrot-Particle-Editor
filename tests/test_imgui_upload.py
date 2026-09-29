@@ -31,7 +31,8 @@ try:
     # skinned exports (e.g. Godot robot) carry ~300K of JSON.
     import particle_studio as PS
     big = {"asset": {"version": "2.0"},
-           "nodes": [{"name": "Alpha"}, {"name": "Beta"}],
+           "nodes": [{"name": "Alpha", "mesh": 0}, {"name": "Beta"}],
+           "meshes": [{"primitives": []}],
            "extras": {"pad": "x" * (100 * 1024)}}
     bjs = json.dumps(big).encode()
     bjs += b" " * ((4 - len(bjs) % 4) % 4)
@@ -40,7 +41,8 @@ try:
     with open(bglb, "wb") as f:
         f.write(b"glTF" + struct.pack("<II", 2, 12 + 8 + len(bjs))
                 + struct.pack("<II", len(bjs), 0x4E4F534A) + bjs)
-    assert PS.model_nodes_from_file(bglb) == ["Alpha", "Beta"], \
+    # big JSON chunk parses AND bone-only Beta is excluded from the picker
+    assert PS.model_nodes_from_file(bglb) == ["Alpha"], \
         PS.model_nodes_from_file(bglb)
     assert PS.model_nodes_from_file(obj) == []
 
@@ -72,6 +74,43 @@ try:
         dpg.get_value("status_text")
     # mesh resolves for the viewport
     assert S.custom_mesh_tris() is not None
+
+    # 2b) bone-only node falls back to whole file with a warning
+    vbin = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0)
+    vbin += struct.pack("<3H", 0, 1, 2)
+    vdoc = {"asset": {"version": "2.0"},
+            "nodes": [{"name": "Meshy", "mesh": 0}, {"name": "Bony"}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0},
+                                        "indices": 1, "mode": 4}]}],
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3,
+                 "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3,
+                 "type": "SCALAR"}],
+            "bufferViews": [
+                {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                {"buffer": 0, "byteOffset": 36, "byteLength": 6}],
+            "buffers": [{"byteLength": 42}]}
+    vjs = json.dumps(vdoc).encode()
+    vjs += b" " * ((4 - len(vjs) % 4) % 4)
+    vglb = os.path.join(tmp, "parts.glb")
+    with open(vglb, "wb") as f:
+        f.write(b"glTF" + struct.pack("<II", 2, 12 + 8 + len(vjs) + 8
+                                      + len(vbin))
+                + struct.pack("<II", len(vjs), 0x4E4F534A) + vjs
+                + struct.pack("<II", len(vbin), 0x004E4942) + vbin)
+    assert PS.model_nodes_from_file(vglb) == ["Meshy"]
+    st["customModel"] = {"file": "parts.glb", "path": vglb, "node": "Bony",
+                         "kind": "model", "nodes": ["Meshy", "Bony"]}
+    st["modelRefs"] = ["Bony"]
+    assert S._validate_custom_node(st) is False
+    assert st["customModel"]["node"] == ""
+    assert st.get("modelRefs") == ["parts"], st.get("modelRefs")
+    assert "no mesh" in dpg.get_value("status_text"), \
+        dpg.get_value("status_text")
+    st["customModel"]["node"] = "Meshy"
+    assert S._validate_custom_node(st) is True
+    assert st["customModel"]["node"] == "Meshy"
 
     # 3) picker cancel: no crash, no state change, status untouched
     before = dict(st.get("customModel"))

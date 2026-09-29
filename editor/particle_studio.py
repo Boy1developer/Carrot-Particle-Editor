@@ -242,13 +242,63 @@ def build_app_icon_png(size=64):
             chunk(b"IEND", b""))
 
 
+def _mesh_bearing_names(g):
+    """Named nodes whose subtree holds >= 1 mesh (bone-only nodes excluded).
+
+    Riggers (Godot robot: 30 bones, 0 mesh-bearing) would otherwise fill
+    the picker with nodes that can never render anything.
+    """
+    try:
+        nodes = g.get("nodes", [])
+        if not isinstance(nodes, list) or not nodes:
+            return []
+        mesh_at = [False] * len(nodes)
+        for i, n in enumerate(nodes):
+            if isinstance(n, dict) and n.get("mesh") is not None:
+                try:
+                    m = int(n["mesh"])
+                    if 0 <= m < len(g.get("meshes", [])):
+                        mesh_at[i] = True
+                except (ValueError, TypeError):
+                    pass
+        out = []
+        for i, n in enumerate(nodes):
+            if not isinstance(n, dict) or not n.get("name"):
+                continue
+            stack, hit = [i], False
+            while stack and not hit:
+                cur = stack.pop()
+                if not (0 <= cur < len(nodes)):
+                    continue
+                if mesh_at[cur]:
+                    hit = True
+                    break
+                try:
+                    ch = nodes[cur].get("children", [])
+                except AttributeError:
+                    continue
+                stack.extend(c for c in ch if isinstance(c, int))
+            if hit:
+                out.append(str(n["name"]))
+            if len(out) >= 64:
+                break
+        return out
+    except Exception:
+        return []
+
+
 def model_nodes_from_file(path):
-    """GLB/GLTF node names via stdlib (struct+json). Returns list (maybe empty)."""
+    """GLB/GLTF node names via stdlib (struct+json). Returns list (maybe empty).
+
+    Only mesh-bearing nodes (see _mesh_bearing_names); the full JSON
+    chunk is read (some rigged exports carry ~350K of node JSON, far
+    past the old 64K peek window).
+    """
     try:
         if path.lower().endswith(".gltf"):
             with open(path, encoding="utf-8") as f:
                 g = json.load(f)
-            return [str(n["name"]) for n in g.get("nodes", []) if n.get("name")][:64]
+            return _mesh_bearing_names(g)
         with open(path, "rb") as f:
             head = f.read(20)
             if head[:4] != b"glTF" or head[16:20] != b"JSON":
@@ -260,7 +310,7 @@ def model_nodes_from_file(path):
             if len(js) != jlen:
                 return []
         g = json.loads(js.decode("utf-8", "replace"))
-        return [str(n["name"]) for n in g.get("nodes", []) if n.get("name")][:64]
+        return _mesh_bearing_names(g)
     except Exception:
         return []
 

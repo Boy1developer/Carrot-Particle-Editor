@@ -1781,6 +1781,7 @@ def cb_st_node(sender=None, app_data=None, *r):
     cm = s.setdefault("customModel", {"file": "", "node": "", "kind": "model",
                                       "nodes": list(APP._custom_nodes)})
     cm["node"] = v
+    _validate_custom_node(s)  # bone node -> whole file + warning
     APP.mark_dirty()
 
 
@@ -2336,6 +2337,41 @@ def _native_pick(kind):
         return ("", f"Could not open file picker:\n{e}")
 
 
+def _validate_custom_node(s):
+    """Fall back to whole file when the picked node holds no mesh.
+
+    Bone-only nodes (robot Head/foot.R) resolve to zero triangles, which
+    renders as the placeholder forever. Returns True when the selection
+    is usable; otherwise clears the node (+stale ref) and warns.
+    """
+    try:
+        cm = s.get("customModel") or {}
+        node = str(cm.get("node") or "")
+        if not node:
+            return True
+        path = cm.get("path") or ""
+        if not path or not os.path.isfile(path):
+            path = _find_model_file(cm.get("file") or "")
+        if not path:
+            return True
+        tris, _, _ = mesh_cache.load_mesh(path, node)
+        if tris:
+            return True
+        cm["node"] = ""
+        fname = cm.get("file") or ""
+        stem = os.path.splitext(fname)[0] if fname else ""
+        if stem and (s.get("modelRefs") or [""])[0] not in ("", stem):
+            s["modelRefs"] = [stem]
+        rebuild_node_combo(list(cm.get("nodes") or []), keep="")
+        refresh_custom_row()
+        APP.set_status(f"Node '{node}' has no mesh — whole file shown",
+                       WARN)
+        APP.mark_dirty()
+        return False
+    except Exception:
+        return True
+
+
 def _custom_chosen(path, kind):
     if not path:
         return
@@ -2361,6 +2397,8 @@ def _custom_chosen(path, kind):
     APP.history_commit()
     extra = f" ({len(nodes)} nodes)" if kind == "model" else ""
     APP.set_status(f"Model loaded: {fname}{extra}", OK)
+    if kind == "model":
+        _validate_custom_node(s)  # stale/bone node -> whole file + warning
 
 
 @_safe_action
