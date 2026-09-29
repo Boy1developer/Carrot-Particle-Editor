@@ -66,7 +66,8 @@ export class ThreeScene {
   private modelCache = new Map<string, THREE.Group>();
   private modelLoading = new Set<string>();
   private modelPool: { ref: string; obj: THREE.Object3D;
-    mats: THREE.Material[]; used: boolean }[] = [];
+    mats: { m: THREE.Material; base: { r: number; g: number; b: number } }[];
+    used: boolean }[] = [];
   private modelRev = -1;
 
   // flat shapes billboard toward the camera; solids tumble slowly with age
@@ -179,7 +180,7 @@ export class ThreeScene {
       if (!live.has(this.modelPool[i].ref)) {
         const p = this.modelPool[i];
         this.scene.remove(p.obj);
-        for (const m of p.mats) m.dispose();
+        for (const e of p.mats) e.m.dispose();
         this.modelPool.splice(i, 1);
       }
     }
@@ -226,7 +227,8 @@ export class ThreeScene {
     if (slot < 0) {
       if (this.modelPool.length >= MODEL_POOL_CAP) return false;
       const obj: THREE.Object3D = tpl.clone(true);
-      const mats: THREE.Material[] = [];
+      const mats: { m: THREE.Material;
+        base: { r: number; g: number; b: number } }[] = [];
       obj.traverse((o: THREE.Object3D): void => {
         const anyObj = o as unknown as {
           material?: THREE.Material | THREE.Material[];
@@ -241,7 +243,14 @@ export class ThreeScene {
         anyObj.material = Array.isArray(anyObj.material) ? own : own[0];
         for (const m of own) {
           m.transparent = true;
-          mats.push(m);
+          const mc = m as unknown as {
+            color?: { r: number; g: number; b: number };
+          };
+          mats.push({
+            m, base: mc.color
+              ? { r: mc.color.r, g: mc.color.g, b: mc.color.b }
+              : { r: 1, g: 1, b: 1 },
+          });
         }
       });
       this.scene.add(obj);
@@ -254,16 +263,18 @@ export class ThreeScene {
     p.obj.rotation.set(age * 0.7, age * 0.9, 0);
     p.obj.scale.set(s, s, s);
     p.obj.updateMatrix();
-    // white particle color = natural materials, else tint over them
+    // white particle color = natural materials, else tint over the base
     const tinted: boolean = !(r === 255 && g === 255 && b === 255);
-    for (const m of p.mats) {
-      const mc = m as unknown as {
+    for (const e of p.mats) {
+      const mc = e.m as unknown as {
         color?: { setRGB(r: number, g: number, b: number): void };
         opacity?: number;
       };
       if (mc.color) {
-        if (tinted) mc.color.setRGB(r / 255, g / 255, b / 255);
-        else mc.color.setRGB(1, 1, 1);
+        if (tinted)
+          mc.color.setRGB(e.base.r * r / 255, e.base.g * g / 255,
+            e.base.b * b / 255);
+        else mc.color.setRGB(e.base.r, e.base.g, e.base.b);
       }
       if (typeof mc.opacity === "number") mc.opacity = a;
     }

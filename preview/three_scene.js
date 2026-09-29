@@ -169,8 +169,8 @@ export class ThreeScene {
             if (!live.has(this.modelPool[i].ref)) {
                 const p = this.modelPool[i];
                 this.scene.remove(p.obj);
-                for (const m of p.mats)
-                    m.dispose();
+                for (const e of p.mats)
+                    e.m.dispose();
                 this.modelPool.splice(i, 1);
             }
         }
@@ -236,7 +236,12 @@ export class ThreeScene {
                 anyObj.material = Array.isArray(anyObj.material) ? own : own[0];
                 for (const m of own) {
                     m.transparent = true;
-                    mats.push(m);
+                    const mc = m;
+                    mats.push({
+                        m, base: mc.color
+                            ? { r: mc.color.r, g: mc.color.g, b: mc.color.b }
+                            : { r: 1, g: 1, b: 1 },
+                    });
                 }
             });
             this.scene.add(obj);
@@ -249,15 +254,15 @@ export class ThreeScene {
         p.obj.rotation.set(age * 0.7, age * 0.9, 0);
         p.obj.scale.set(s, s, s);
         p.obj.updateMatrix();
-        // white particle color = natural materials, else tint over them
+        // white particle color = natural materials, else tint over the base
         const tinted = !(r === 255 && g === 255 && b === 255);
-        for (const m of p.mats) {
-            const mc = m;
+        for (const e of p.mats) {
+            const mc = e.m;
             if (mc.color) {
                 if (tinted)
-                    mc.color.setRGB(r / 255, g / 255, b / 255);
+                    mc.color.setRGB(e.base.r * r / 255, e.base.g * g / 255, e.base.b * b / 255);
                 else
-                    mc.color.setRGB(1, 1, 1);
+                    mc.color.setRGB(e.base.r, e.base.g, e.base.b);
             }
             if (typeof mc.opacity === "number")
                 mc.opacity = a;
