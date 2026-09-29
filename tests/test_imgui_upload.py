@@ -70,6 +70,14 @@ try:
     assert P({}) == ""
     assert P(None) == ""
     assert P("junk") == ""
+
+    # 5) Cancel handler: never touches state or status
+    st_before = dict(st.get("customModel"))
+    status_before = dpg.get_value("status_text")
+    S._dialog_cancelled("dlg_model", {})
+    S._dialog_cancelled()
+    assert st.get("customModel") == st_before
+    assert dpg.get_value("status_text") == status_before
     print("UPLOAD-OK")
 finally:
     dpg.destroy_context()

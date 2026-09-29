@@ -1777,20 +1777,36 @@ def build_chooser():
         dpg.add_text("press 2 / 3", color=list(MUTED) + [255])
 
 
+def _dialog_cancelled(sender=None, app_data=None, *r):
+    """Fires only when a file dialog is dismissed via Cancel.
+
+    Lets empty main-callback fires be told apart from real cancellations
+    in the debug log (a Cancel must never look like a failed OK).
+    """
+    try:
+        PS.debug_log("DLG-CANCEL", str(sender))
+    except Exception:
+        pass
+
+
 def build_dialogs():
     with dpg.file_dialog(tag="dlg_open", show=False, width=600, height=400,
-                         callback=open_chosen):
+                         callback=open_chosen,
+                         cancel_callback=_dialog_cancelled):
         dpg.add_file_extension(".json")
     with dpg.file_dialog(tag="dlg_save", show=False, width=600, height=400,
-                         callback=save_chosen):
+                         callback=save_chosen,
+                         cancel_callback=_dialog_cancelled):
         dpg.add_file_extension(".json")
     with dpg.file_dialog(tag="dlg_model", show=False, width=600, height=400,
-                         callback=model_chosen):
+                         callback=model_chosen,
+                         cancel_callback=_dialog_cancelled):
         dpg.add_file_extension(".glb")
         dpg.add_file_extension(".gltf")
         dpg.add_file_extension(".obj")
     with dpg.file_dialog(tag="dlg_image", show=False, width=600, height=400,
-                         callback=image_chosen):
+                         callback=image_chosen,
+                         cancel_callback=_dialog_cancelled):
         for ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"):
             dpg.add_file_extension(ext)
     with dpg.window(tag="msg_win", label="Message", modal=True, show=False,
