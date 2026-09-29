@@ -58,6 +58,18 @@ try:
     S.model_chosen("dlg_model", {})
     assert st.get("customModel") == before
     assert dpg.get_value("status_text") == "No file selected"
+
+    # 4) dialog_pick accepts every known payload shape
+    P = S.dialog_pick
+    assert P({"selections": {"a.glb": "/x/a.glb"}}) == "/x/a.glb"
+    assert P({"selections": ["/y/b.glb"]}) == "/y/b.glb"
+    assert P({"file_path_name": "/z/c.glb"}) == "/z/c.glb"
+    assert P({"file_path": "/z/c.glb"}) == "/z/c.glb"
+    assert P({"file_name": "d.glb",
+              "current_path": "/w"}) == os.path.join("/w", "d.glb")
+    assert P({}) == ""
+    assert P(None) == ""
+    assert P("junk") == ""
     print("UPLOAD-OK")
 finally:
     dpg.destroy_context()

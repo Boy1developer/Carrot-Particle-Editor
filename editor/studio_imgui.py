@@ -1929,6 +1929,38 @@ def _apply_loaded_effect(eff, path):
     APP.history_commit()
 
 
+def dialog_pick(app_data):
+    """Extract a picked file path from a DPG file-dialog payload.
+
+    Key names vary across DPG versions and selections may arrive as a
+    dict or a list, so accept every known shape. Returns "" when nothing
+    usable was delivered (e.g. the dialog was cancelled).
+    """
+    try:
+        if not isinstance(app_data, dict):
+            return ""
+        sels = app_data.get("selections") or {}
+        if isinstance(sels, dict):
+            for v in sels.values():
+                if v:
+                    return str(v)
+        elif isinstance(sels, (list, tuple)):
+            for v in sels:
+                if v:
+                    return str(v)
+        for k in ("file_path_name", "file_path", "path", "file"):
+            v = app_data.get(k)
+            if v:
+                return str(v)
+        fn = app_data.get("file_name") or app_data.get("filename")
+        cp = app_data.get("current_path") or app_data.get("current_dir")
+        if fn and cp:
+            return os.path.join(str(cp), str(fn))
+        return ""
+    except Exception:
+        return ""
+
+
 def do_open():
     dpg.show_item("dlg_open")
 
@@ -1936,9 +1968,9 @@ def do_open():
 @_safe_action
 def open_chosen(sender=None, app_data=None, *r):
     try:
-        app_data = app_data or {}
-        sels = app_data.get("selections") or {}
-        p = next(iter(sels.values()), None) or app_data.get("file_path_name")
+        PS.debug_log("DLG-OPEN",
+                     str(sorted((app_data or {}).keys()))[:200])
+        p = dialog_pick(app_data)
         if not p:
             return
         with open(p, encoding="utf-8") as f:
@@ -1979,9 +2011,9 @@ def do_save_as():
 @_safe_action
 def save_chosen(sender=None, app_data=None, *r):
     try:
-        app_data = app_data or {}
-        sels = app_data.get("selections") or {}
-        p = next(iter(sels.values()), None) or app_data.get("file_path_name")
+        PS.debug_log("DLG-SAVE",
+                     str(sorted((app_data or {}).keys()))[:200])
+        p = dialog_pick(app_data)
         if not p:
             return
         if not p.lower().endswith(".json"):
@@ -2030,12 +2062,10 @@ def _custom_chosen(path, kind):
 
 @_safe_action
 def model_chosen(sender=None, app_data=None, *r):
-    app_data = app_data or {}
-    sels = app_data.get("selections") or {}
-    path = next(iter(sels.values()), None) or app_data.get("file_path_name")
+    PS.debug_log("DLG-MODEL", str(sorted((app_data or {}).keys()))[:200],
+                 "selections=", str((app_data or {}).get("selections"))[:200])
+    path = dialog_pick(app_data)
     if not path:
-        PS.debug_log("MODEL-EMPTY",
-                     str(sorted(app_data.keys()))[:200])
         APP.set_status("No file selected", WARN)
         return
     _custom_chosen(path, "model")
@@ -2043,10 +2073,12 @@ def model_chosen(sender=None, app_data=None, *r):
 
 @_safe_action
 def image_chosen(sender=None, app_data=None, *r):
-    app_data = app_data or {}
-    sels = app_data.get("selections") or {}
-    _custom_chosen(next(iter(sels.values()), None) or
-                   app_data.get("file_path_name"), "image")
+    PS.debug_log("DLG-IMAGE", str(sorted((app_data or {}).keys()))[:200])
+    path = dialog_pick(app_data)
+    if not path:
+        APP.set_status("No file selected", WARN)
+        return
+    _custom_chosen(path, "image")
 
 
 @_safe_action
