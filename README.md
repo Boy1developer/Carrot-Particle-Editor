@@ -17,15 +17,13 @@
 | --- | --- |
 | ![2D viewport](docs/screenshots/viewport-2d.png) | ![2D fast preview](docs/screenshots/fast-preview-2d.png) |
 
-| Emitter + propagation cone | States + templates |
-| --- | --- |
-| ![Emitter panel](docs/screenshots/emitter-panel.png) | ![States panel](docs/screenshots/states-panel.png) |
+| Emitter + propagation cone | States + templates (3D) | States + templates (2D) |
+| --- | --- | --- |
+| ![Emitter panel](docs/screenshots/emitter-panel.png) | ![States panel](docs/screenshots/states-panel.png) | ![States panel 2D](docs/screenshots/states-panel-2d.png) |
 
-| 3D shape list | Custom shape (uploaded 3D model) |
-| --- | --- |
-| ![3D shapes 1](docs/screenshots/shapes-list-1.png) ![3D shapes 2](docs/screenshots/shapes-list-2.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
-
-> 2D shape list screenshots go in the same table once provided.
+| 3D shape list | 2D shape list | Custom shape (uploaded 3D model) |
+| --- | --- | --- |
+| ![3D shapes 1](docs/screenshots/shapes-list-1.png) ![3D shapes 2](docs/screenshots/shapes-list-2.png) | ![2D shapes](docs/screenshots/shapes-list-2d.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
 
 ---
 
