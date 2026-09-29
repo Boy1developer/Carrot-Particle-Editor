@@ -9,7 +9,7 @@ Logic reused from particle_studio (defaults / validation / templates /
 sim math); only the UI layer is ImGui: sidebar form, drawlist viewport
 (replaces tkinter Canvas), file/color dialogs, modal chooser.
 
-Run: python studio_imgui.py
+Run: python editor/studio_imgui.py
 """
 import copy
 import json
@@ -22,6 +22,14 @@ import time
 import traceback
 import webbrowser
 from functools import partial
+
+# Repo layout: this file lives in editor/ next to particle_studio.py;
+# the repo root (particle_core.pyd) is added to sys.path when running
+# from source. Frozen exe bundles everything, so skip the tweak there.
+if not getattr(sys, "frozen", False):
+    _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
 
 import dearpygui.dearpygui as dpg
 

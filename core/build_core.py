@@ -2,7 +2,7 @@
 """Build the C++ simulation core (particle_core.pyd) with zero manual setup.
 
 Compiler pick order: MSVC (cl) > g++ > clang++ > Zig (auto-installed via pip).
-Output: particle_core.pyd next to particle_studio.py.
+Output: particle_core.pyd at the repo root (imported by editor/ via bootstrap).
 Usage: python core/build_core.py [--clean]
 """
 import os

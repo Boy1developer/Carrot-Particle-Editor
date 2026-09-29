@@ -1,5 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
+# PyInstaller spec for Carrot Particle Editor (Dear PyGui edition).
+# Layout: this file lives in packaging/; every path below is anchored at
+# the repo root so the build works no matter the invoking CWD.
 import os as _os
+
+_SPEC_DIR = _os.path.dirname(_os.path.abspath(__file__))
+_ROOT = _os.path.dirname(_SPEC_DIR)
 
 _glfw_datas = []
 try:
@@ -13,11 +19,15 @@ except Exception:
     pass
 
 
+def _data(src, dst=None):
+    return (_os.path.join(_ROOT, src), dst or src)
+
+
 a = Analysis(
-    ['studio_imgui.py'],
-    pathex=[],
+    [_os.path.join(_ROOT, 'editor', 'studio_imgui.py')],
+    pathex=[_ROOT],
     binaries=[],
-    datas=[('preview', 'preview'), ('assets', 'assets'), ('render', 'render'), ('node_modules/three/build/three.module.js', 'node_modules/three/build'), ('node_modules/pixi.js/dist/pixi.mjs', 'node_modules/pixi.js/dist')] + _glfw_datas,
+    datas=[_data('preview'), _data('assets'), _data('render'), _data('node_modules/three/build/three.module.js', 'node_modules/three/build'), _data('node_modules/pixi.js/dist/pixi.mjs', 'node_modules/pixi.js/dist')] + _glfw_datas,
     hiddenimports=['particle_core', 'render.gl_view', 'glfw', 'dearpygui',
                    'particle_studio'],
     hookspath=[],
@@ -48,5 +58,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets/app_icon.ico'],
+    icon=[_os.path.join(_ROOT, 'assets', 'app_icon.ico')],
 )

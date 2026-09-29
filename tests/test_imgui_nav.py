@@ -1,4 +1,5 @@
 # Headless nav test: wheel-anchor zoom, focus, WASD math.
+import bootstrap  # tests/ sys.path setup (repo root + editor/)
 import dearpygui.dearpygui as dpg
 
 dpg.create_context()

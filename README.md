@@ -35,14 +35,20 @@ Built independently to plug into **[Carrots Engine](https://github.com/Carrotstu
 ## Project structure
 
 ```
-studio_imgui.py                 # Desktop editor (Dear PyGui edition, drawlist viewport)
-particle_studio.py              # Tk edition (fallback, shares the logic layer)
-test_imgui_nav.py               # Headless nav/splitter/type-switch tests
-test_imgui_logic.py             # Headless sim/C++ parity tests
-test_imgui_build.py             # Headless UI-build test
-test_imgui_color.py             # Color editing regression test (widget==state, engine colors)
-rebuild_app.py                  # One-command build pipeline
-CarrotParticleEditor.spec       # PyInstaller spec (icon, datas, hidden imports)
+editor/
+├── studio_imgui.py              # Desktop editor (Dear PyGui edition, drawlist viewport)
+└── particle_studio.py           # Tk edition (fallback, shares the logic layer)
+tests/
+├── bootstrap.py                 # sys.path setup (repo root + editor/)
+├── test_imgui_nav.py            # Headless nav/splitter/type-switch tests
+├── test_imgui_logic.py          # Headless sim/C++ parity tests
+├── test_imgui_build.py          # Headless UI-build test
+└── test_imgui_color.py          # Color editing regression test (widget==state, engine colors)
+tools/
+├── rebuild_app.py               # One-command build pipeline
+└── make_icon.py                 # Icon builder (assets/download.png -> app_icon.*)
+packaging/
+└── CarrotParticleEditor.spec    # PyInstaller spec (icon, datas, hidden imports)
 AdvancedParticleEmitter.json    # GDevelop extension (2D/3D particle system)
 sample_effect.json              # Example export
 carrots-runtime/                # Typed TS loader for the effect JSON (Carrots Engine)
@@ -82,7 +88,7 @@ dist/CarrotParticleEditor.exe    # Packaged app (regenerated on every rebuild)
 ### Build
 
 ```
-python rebuild_app.py
+python tools/rebuild_app.py
 ```
 
 This runs the full pipeline: compiles and validates the app, rebuilds the C++ core if it's stale, packages the executable with PyInstaller, runs a smoke boot test, and regenerates the Windows shortcut.

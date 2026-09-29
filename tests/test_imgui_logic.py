@@ -1,4 +1,5 @@
 # Headless logic test for studio_imgui (no window needed).
+import bootstrap  # tests/ sys.path setup (repo root + editor/)
 import dearpygui.dearpygui as dpg
 
 dpg.create_context()

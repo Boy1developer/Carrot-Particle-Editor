@@ -1,5 +1,6 @@
 # Repro: user picks teal on birth, switches states.
 # Widget must ALWAYS show the selected state's real color (no global override).
+import bootstrap  # tests/ sys.path setup (repo root + editor/)
 import dearpygui.dearpygui as dpg
 
 dpg.create_context()

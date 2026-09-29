@@ -3,18 +3,18 @@
 
 Does: py_compile gate -> refresh C++ core if stale -> PyInstaller (spec has
 icon + datas + hiddenimports) -> smoke-boot exe -> (re)create shortcut ->
-cleanup. Usage: python rebuild_app.py
+cleanup. Usage: python tools/rebuild_app.py (run from the repo root)
 """
 import os
 import subprocess
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "dist", "CarrotParticleEditor.exe")
 LNK = os.path.join(ROOT, "Carrot Particle Editor.lnk")
 ICO = os.path.join(ROOT, "assets", "app_icon.ico")
-SPEC = os.path.join(ROOT, "CarrotParticleEditor.spec")
+SPEC = os.path.join(ROOT, "packaging", "CarrotParticleEditor.spec")
 
 
 def run(cmd, **kw):
@@ -34,8 +34,8 @@ def exe_running():
 
 def main():
     # 0) syntax gate (ImGui app + Tk fallback share the logic layer)
-    run([sys.executable, "-m", "py_compile", "studio_imgui.py"])
-    run([sys.executable, "-m", "py_compile", "particle_studio.py"])
+    run([sys.executable, "-m", "py_compile", "editor/studio_imgui.py"])
+    run([sys.executable, "-m", "py_compile", "editor/particle_studio.py"])
     # 1) refresh C++ core when its source is newer than the built .pyd
     src = os.path.join(ROOT, "core", "particle_core.cpp")
     pyd = os.path.join(ROOT, "particle_core.pyd")
@@ -70,7 +70,9 @@ def main():
           f"$sc.Description = 'Carrot Particle Editor'; $sc.Save()")
     run(["powershell", "-NoProfile", "-Command", ps])
     # 6) cleanup
-    for d in ("build", "__pycache__"):
+    for d in ("build", "__pycache__", "editor/__pycache__",
+              "tools/__pycache__", "tests/__pycache__",
+              "core/__pycache__", "render/__pycache__"):
         p_ = os.path.join(ROOT, d)
         if os.path.isdir(p_):
             import shutil

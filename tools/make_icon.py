@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Build transparent Explorer icon from download.png (white background art).
+"""Build transparent Explorer icon from assets/download.png (white background art).
 
 - Keys out the white background (border flood-fill, tolerance + edge feather).
 - assets/logo_full.png : whole logo (card + text), transparent.
 - assets/app_icon.png  : square 1024 artwork-only mark (no text, icon-legible).
-- assets/app_icon.ico  : multi-size ICO wired into CarrotParticleEditor.spec.
-Usage: python make_icon.py
+- assets/app_icon.ico  : multi-size ICO wired into packaging/CarrotParticleEditor.spec.
+Usage: python tools/make_icon.py (run from the repo root)
 Requires: pillow
 """
 import os
@@ -13,8 +13,8 @@ from collections import deque
 
 from PIL import Image, ImageFilter
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(ROOT, "download.png")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, "assets", "download.png")
 ART_BOTTOM = 790  # white gap row between card artwork and CARROT text
 BG = 245  # min-channel threshold for background candidates
 ICON_SIZE = 1024

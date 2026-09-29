@@ -1,23 +1,30 @@
 # بنية تطبيق Carrot Particle Editor — كاملة
 
-> مولّد آليًا من فحص الملفات على القرص بتاريخ 2026-09-27.
-> الجذر: `C:\Users\pc\Downloads\partical system` (ليس git repo — كل التعديلات ملفات محلية غير ملتزمة).
+> محدّثة بعد التنظيم الاحترافي (مجلدات `editor/` `tests/` `tools/` `packaging/`).
 
 ## 1) شجرة الملفات (بدون `node_modules` / `dist` / `__pycache__`)
 
 ```
-partical system/
-├── particle_studio.py              # التطبيق كله: UI + محاكاة + GPU + سيرفر المعاينة (2683 سطر)
-├── rebuild_app.py                  # أمر البناء الواحد: compile → C++ → PyInstaller → smoke → shortcut (71 سطر)
-├── CarrotParticleEditor.spec       # وصفة الـ exe: أيقونة + datas + hiddenimports (47 سطر)
-├── AdvancedParticleEmitter.json    # إكستنشن GDevelop (v1.0, type 2d/3d — ~13k سطر)
-├── AdvancedParticleEmitter.json.bak# نسخة احتياطية قبل إصلاح Flow
-├── sample_effect.json              # مثال export جاهز (83 سطر)
-├── download.png                    # الأرت الأصلي (مصدر أيقونات assets)
-├── carrot_debug.log                # تليمتري رنّات المستخدم (boot/gl-init/tickstat/exceptions)
+Carrot-Particle-Editor/
+├── editor/
+│   ├── studio_imgui.py             # الإديتور الرئيسي (Dear PyGui/ImGui + drawlist viewport)
+│   └── particle_studio.py          # نسخة Tk الاحتياطية + طبقة اللوجيك المشتركة
+├── tests/
+│   ├── bootstrap.py                # إعداد sys.path (الجذر + editor/)
+│   ├── test_imgui_nav.py           # نافيجيشن/سبلتر/تحويل النوع
+│   ├── test_imgui_logic.py         # لوجيك المحاكاة + parity مع C++
+│   ├── test_imgui_build.py         # بناء الواجهة كاملة headless
+│   └── test_imgui_color.py         # ألوان per-state + ألوان المحرك
+├── tools/
+│   ├── rebuild_app.py              # أمر البناء الواحد: compile → C++ → PyInstaller → smoke → shortcut
+│   └── make_icon.py                # توليد الأيقونات الشفافة من assets/download.png
+├── packaging/
+│   └── CarrotParticleEditor.spec   # وصفة الـ exe (مسارات مطلقة من جذر الريبو)
+├── AdvancedParticleEmitter.json    # إكستنشن GDevelop (v1.0, type 2d/3d)
+├── sample_effect.json              # مثال export جاهز
 ├── package.json / package-lock.json# اعتماديات المعاينة (three + pixi + typescript + esbuild)
-├── particle_core.pyd/.lib/.pdb     # نواة C++ المبنية (الـ .pyd هو المستخدم فعليًا)
-├── Carrot Particle Editor.lnk      # شورتكت الويندوز (يُعاد توليده كل rebuild)
+├── particle_core.pyd/.lib/.pdb     # نواة C++ المبنية (غير ملتزمة — تُبنى عبر core/build_core.py)
+├── Carrot Particle Editor.lnk      # شورتكت الويندوز (غير ملتزم — يُعاد توليده كل rebuild)
 │
 ├── core/
 │   ├── particle_core.cpp           # نواة المحاكاة C++ (مطابقة Python حرفيًا — 516 سطر)
@@ -59,29 +66,30 @@ partical system/
 
 ## 2) جدول الملفات: الدور + الحجم + السطور
 
-### الجذر
+### الجذر + المجلدات الجديدة
 
-| الملف | الدور | الحجم | سطور |
-|---|---|---:|---:|
-| `particle_studio.py` | كل شيء: واجهة tkinter الداكنة، محاكاة Python الاحتياطية، ربط C++، فريمات GPU، سيرفر المعاينة، تصدير JSON، undo/redo، لوج `carrot_debug.log` | 137KB | 2683 |
-| `rebuild_app.py` | `python rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` | 3KB | 71 |
-| `CarrotParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` | 1.3KB | 47 |
-| `AdvancedParticleEmitter.json` | إكستنشن GDevelop كما هو (بدون إعادة تسمية `Avanced*`) — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) | 525KB | ~13k |
-| `AdvancedParticleEmitter.json.bak` | نسخة ما قبل الإصلاح (كانت تالفة وتم ترميمها) | 523KB | — |
-| `sample_effect.json` | مثال export متوافق v1.0 | 1.7KB | 83 |
-| `download.png` | الأرت الأصلي المرفوع من المستخدم — مصدر `assets/app_icon.*` | 1.4MB | — |
-| `carrot_debug.log` | تليمتري: `boot b20260927-gl3` / `gl-init-ok` / `tickstat` / استثناءات — في `%TEMP%` عند المستخدم | 3.8KB | — |
-| `package.json` | `three@0.186 + pixi.js@8.21 + typescript@7 + esbuild@0.28` | 191B | 11 |
-| `particle_core.pyd` | نواة C++ المبنية فعليًا (يستخدمها `_tick` مع مؤشر C++/PY) | 461KB | — |
-| `particle_core.lib/.pdb` | مخلفات بناء MSVC (غير مطلوبة للتشغيل) | — | — |
-| `Carrot Particle Editor.lnk` | شورتكت: Target=`dist\CarrotParticleEditor.exe` + Icon=`assets\app_icon.ico` | 1.8KB | — |
+| المسار | الدور |
+|---|---|
+| `editor/studio_imgui.py` | الإديتور الرئيسي: Dear PyGui/ImGui + drawlist viewport + C++/Python sim + سيرفر المعاينة + تصدير JSON + undo/redo |
+| `editor/particle_studio.py` | نسخة Tk الاحتياطية + طبقة اللوجيك المشتركة (defaults/templates/validation/sim) + `app_base_dir()` لجذر الريبو |
+| `tests/test_imgui_*.py` | اختبارات headless: nav/splitter/type-switch + logic/parity + build + color |
+| `tools/rebuild_app.py` | `python tools/rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` |
+| `tools/make_icon.py` | توليد الأيقونات الشفافة من `assets/download.png` |
+| `packaging/CarrotParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` |
+| `AdvancedParticleEmitter.json` | إكستنشن GDevelop كما هو — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) |
+| `sample_effect.json` | مثال export متوافق v1.0 |
+| `assets/download.png` | الأرت الأصلي — مصدر `assets/app_icon.*` |
+| `package.json` | `three@0.186 + pixi.js@8.21 + typescript@7 + esbuild@0.28` |
+| `particle_core.pyd` | نواة C++ المبنية فعليًا (غير ملتزمة) |
+| `particle_core.lib/.pdb` | مخلفات بناء MSVC (غير مطلوبة للتشغيل) |
+| `Carrot Particle Editor.lnk` | شورتكت: Target=`dist\CarrotParticleEditor.exe` + Icon=`assets\app_icon.ico` (غير ملتزم) |
 
 ### `core/` — نواة المحاكاة
 
 | الملف | الدور | سطور |
 |---|---|---:|
 | `particle_core.cpp` | `step()` يخرج `x,y,z,r,color,shape,depth + alpha,wx,wy` — نفس `SHAPE_ORDER` (12 شكل) ونفس semantics الـ morph | 516 |
-| `build_core.py` | ترتيب الكومبايلر: `cl > g++ > clang++ > Zig` (تثبيت تلقائي) — الخرج `particle_core.pyd` بجانب `particle_studio.py` | 83 |
+| `build_core.py` | ترتيب الكومبايلر: `cl > g++ > clang++ > Zig` (تثبيت تلقائي) — الخرج `particle_core.pyd` في جذر الريبو | 83 |
 | `test_parity.py` | تطابق عددي Python↔C++ (99/99 ناجح) | 56 |
 | `test_behavior.py` | سلوك + أداء (~4ms عند 2000 جسيم) | 96 |
 
@@ -110,7 +118,7 @@ partical system/
 | المسار | الدور |
 |---|---|
 | `assets/app_icon.png/.ico` | براند Carrot — أيقونة النافذة + الـ exe + الشورتكت |
-| `dist/CarrotParticleEditor.exe` | التطبيق المتجمد (windowed) — يحمل كل تغيير بعد كل `rebuild_app.py` |
+| `dist/CarrotParticleEditor.exe` | التطبيق المتجمد (windowed) — يحمل كل تغيير بعد كل `tools/rebuild_app.py` |
 
 ## 3) ثوابت مشتركة (عقود بين المكونات)
 
@@ -125,14 +133,14 @@ partical system/
 ## 4) تدفق البيانات والبناء
 
 ```
-core/particle_core.cpp --build_core.py--> particle_core.pyd --step()--> particle_studio.py
+core/particle_core.cpp --build_core.py--> particle_core.pyd --step()--> editor/particle_studio.py + editor/studio_imgui.py
                                                                               ├─ canvas (خلفية+شبكة tkinter)
                                                                               ├─ render/gl_view.py (GPU subrect → PPM → PhotoImage)
                                                                               ├─ preview/last_effect.json → live_effect.html (poll)
                                                                               └─ AdvancedParticleEmitter.json (export v1.0)
-particle_studio.py + preview/ + assets/ + render/ --rebuild_app.py + .spec--> dist/CarrotParticleEditor.exe + .lnk
+editor/ + preview/ + assets/ + render/ --tools/rebuild_app.py + packaging/.spec--> dist/CarrotParticleEditor.exe + .lnk
 ```
 
 ## 5) سير العمل المعتمد
 
-1. عدّل أي ملف → 2. `python rebuild_app.py` (إجباري — الـ exe والشورتكت يحملان كل تغيير) → 3. جرّب من الشورتكت → 4. للمعاينة: من داخل الإديتور (القالب مضمّن، لا كاش قديم).
+1. عدّل أي ملف → 2. `python tools/rebuild_app.py` (إجباري — الـ exe والشورتكت يحملان كل تغيير) → 3. جرّب من الشورتكت → 4. للمعاينة: من داخل الإديتور (القالب مضمّن، لا كاش قديم).

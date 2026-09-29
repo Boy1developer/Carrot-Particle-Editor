@@ -1,4 +1,5 @@
 # Headless UI-build test: constructs every widget, syncs state.
+import bootstrap  # tests/ sys.path setup (repo root + editor/)
 import dearpygui.dearpygui as dpg
 
 dpg.create_context()

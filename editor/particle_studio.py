@@ -2,7 +2,7 @@
 """
 Particle Studio Pro - Python GUI exporter (ParticleFX-style dark UI)
 Compatible with AdvancedParticleEmitter GDevelop extension, format v1.0 type 2d/3d.
-Stdlib only (tkinter). Run: python particle_studio.py
+Stdlib only (tkinter). Run: python editor/particle_studio.py
 """
 import base64
 import copy
@@ -20,6 +20,14 @@ import tkinter as tk
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, colorchooser
+
+# Repo layout: this file lives in editor/; the repo root (particle_core.pyd,
+# render/, preview/, assets/) is added to sys.path when running from source.
+# Frozen exe bundles everything, so skip the tweak there.
+if not getattr(sys, "frozen", False):
+    _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
 
 try:
     import particle_core as _CPP_MOD  # C++ sim core (optional, built via core/build_core.py)
@@ -54,14 +62,17 @@ def debug_log(*parts):
 
 def app_base_dir():
     """Bundle dir holding preview/assets: frozen exe -> sys._MEIPASS,
-    else the script dir. (Frozen __file__/CWD are unreliable.)"""
+    else the repo root (parent of editor/). (Frozen __file__/CWD are
+    unreliable.)"""
     try:
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass and os.path.isdir(meipass):
             return meipass
     except Exception:
         pass
-    return os.path.dirname(os.path.abspath(__file__))
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)  # editor/ -> repo root
+    return root if os.path.isdir(os.path.join(root, "preview")) else here
 
 EASINGS = ["linear", "ease-in", "ease-out", "ease-in-out"]
 MODES = ["Infinite", "Burst", "One Shot"]
