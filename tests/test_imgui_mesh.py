@@ -235,6 +235,40 @@ try:
         finally:
             dpg.draw_polygon = real_poly
         assert seen == [[0, 0, 255, 255], [255, 0, 0, 255]], seen
+        # single custom state (no morph): viewport draws the mesh itself,
+        # not the placeholder primitive (whole file, ref unknown outside
+        # the blend window -> selected-state fallback in _mesh_entry)
+        import particle_studio as PS
+        st["shape"] = "custom"
+        st["customModel"] = {"file": "quad.glb", "path": glb, "node": "",
+                            "kind": "model", "nodes": ["Body"]}
+        st["modelRefs"] = ["quad"]
+        app.sel_state = app.states.index(st)
+        polys, prims = [], []
+        real_poly = dpg.draw_polygon
+        real_s3d = S.draw_shape_3d
+        dpg.draw_polygon = lambda pts, **kw: polys.append(list(pts))
+        S.draw_shape_3d = lambda *a, **k: prims.append(a[4] if len(a) > 4
+                                                     else k.get("shape"))
+        try:
+            n = 3
+            out = {"x": [400.0] * n, "y": [300.0] * n, "r": [30.0] * n,
+                   "color": [0xFFFFFF] * n,
+                   "shape": [PS.SHAPE_ORDER.index("custom")] * n,
+                   "depth": [0.0] * n, "z": [0.0] * n,
+                   "wx": [0.0] * n, "wy": [0.0] * n,
+                   "bseg": [-1] * n, "bt": [0.0] * n}
+            app.sim._cpp_out = out
+            em = {"emissionZone": {"showZone": False},
+                  "propagationCone": {"showCone": False}}
+            S.draw_view_3d(app, "vp_draw", 800, 600, 400, 312, em, None)
+        finally:
+            dpg.draw_polygon = real_poly
+            S.draw_shape_3d = real_s3d
+            app.sim._cpp_out = None
+            st.pop("modelRefs", None)
+        assert len(polys) == n * 2, (len(polys), len(prims))
+        assert not prims, prims
     finally:
         st["shape"] = old_shape
         if old_cm is None:

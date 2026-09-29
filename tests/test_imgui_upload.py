@@ -27,6 +27,23 @@ try:
     assert abs((max(xs) - min(xs)) - 2.0) < 1e-6
     assert mesh_cache.load_mesh_tris(obj + ".missing", "") is None
 
+    # 1b) node names survive a big JSON chunk (> the old 64K peek window):
+    # skinned exports (e.g. Godot robot) carry ~300K of JSON.
+    import particle_studio as PS
+    big = {"asset": {"version": "2.0"},
+           "nodes": [{"name": "Alpha"}, {"name": "Beta"}],
+           "extras": {"pad": "x" * (100 * 1024)}}
+    bjs = json.dumps(big).encode()
+    bjs += b" " * ((4 - len(bjs) % 4) % 4)
+    assert len(bjs) > 64 * 1024, len(bjs)
+    bglb = os.path.join(tmp, "bigjson.glb")
+    with open(bglb, "wb") as f:
+        f.write(b"glTF" + struct.pack("<II", 2, 12 + 8 + len(bjs))
+                + struct.pack("<II", len(bjs), 0x4E4F534A) + bjs)
+    assert PS.model_nodes_from_file(bglb) == ["Alpha", "Beta"], \
+        PS.model_nodes_from_file(bglb)
+    assert PS.model_nodes_from_file(obj) == []
+
     # 2) upload chain via the native picker (monkeypatched path)
     S.build_ui()
     S.APP.sync_all()

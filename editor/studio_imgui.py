@@ -916,17 +916,31 @@ def _draw_morph_2d(dl, x, y, r, col, shp_a, shp_b, bt, glow_col):
 
 
 def _mesh_entry(fm, ref):
-    """Assemble a draw-ready mesh tuple from frame_meshes() output."""
+    """Assemble a draw-ready mesh tuple from frame_meshes() output.
+
+    Falls back to the selected state's model (classic single-model
+    behavior) and then to the sole entry, so particles outside the
+    morph window — where no blend ref is known — still draw the mesh
+    instead of the placeholder primitive.
+    """
     if fm is None:
         return None
     entries, proj = fm
     e = entries.get(ref)
+    if e is None:
+        try:
+            selref = state_model_ref(APP.states[APP.sel_state])
+        except Exception:
+            selref = ""
+        e = entries.get(selref)
+    if e is None and len(entries) == 1:
+        e = next(iter(entries.values()))
     return (e[0], e[1], e[2], proj) if e else None
 
 
 def _draw_side_3d(dl, mctx, shape, mesh_entry, col, sx, sy, r):
     """One morph side in 3D: mesh when resolved, else primitive."""
-    if shape == "custom" and mesh_entry is not None:
+    if shape == "custom" and mesh_entry is not None and mctx is not None:
         wx, wy, wz, ws = mctx
         if draw_custom_mesh_3d(dl, mesh_entry, wx, wy, wz, ws, col):
             return

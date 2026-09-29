@@ -45,7 +45,7 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = "1.0"
-BUILD_ID = "b20260930-morph"  # bump on every shipped change; shown in title
+BUILD_ID = "b20260930-robotfix"  # bump on every shipped change; shown in title
 
 
 def debug_log(*parts):
@@ -250,14 +250,16 @@ def model_nodes_from_file(path):
                 g = json.load(f)
             return [str(n["name"]) for n in g.get("nodes", []) if n.get("name")][:64]
         with open(path, "rb") as f:
-            d = f.read(64 * 1024)  # JSON chunk is at the start; 64K is plenty
-        if d[:4] != b"glTF":
-            return []
-        jlen = struct.unpack("<I", d[12:16])[0]
-        jtype = d[16:20]
-        if jtype != b"JSON":
-            return []
-        g = json.loads(d[20:20 + jlen].decode("utf-8", "replace"))
+            head = f.read(20)
+            if head[:4] != b"glTF" or head[16:20] != b"JSON":
+                return []
+            jlen = struct.unpack("<I", head[12:16])[0]
+            if jlen <= 0 or jlen > 200 * 1024 * 1024:
+                return []
+            js = f.read(jlen)
+            if len(js) != jlen:
+                return []
+        g = json.loads(js.decode("utf-8", "replace"))
         return [str(n["name"]) for n in g.get("nodes", []) if n.get("name")][:64]
     except Exception:
         return []
