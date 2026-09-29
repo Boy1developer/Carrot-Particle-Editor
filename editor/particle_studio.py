@@ -44,7 +44,8 @@ try:
 except Exception:
     HAS_GL_VIEW = False
 
-VERSION = "1.0"
+VERSION = "1.0"  # effect JSON format (extension contract — do NOT bump with the app)
+APP_VERSION = "0.1.1"  # Carrot Particle Editor release version (title bar)
 BUILD_ID = "b20260930-extcompat"  # bump on every shipped change; shown in title
 
 
@@ -568,7 +569,7 @@ class _PreviewHTTPServer(ThreadingHTTPServer):
 class StudioApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f"Carrot Particle Editor [{BUILD_ID}]")
+        self.title(f"Carrot Particle Editor v{APP_VERSION} [{BUILD_ID}]")
         debug_log("boot", BUILD_ID, "frozen=", getattr(sys, "frozen", False))
         self.geometry("1280x800")
         self.configure(bg=CHOOSER_BG)

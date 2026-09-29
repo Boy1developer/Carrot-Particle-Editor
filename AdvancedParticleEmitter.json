@@ -10,7 +10,7 @@
   "name": "AdvancedParticleEmitter",
   "previewIconUrl": "https://asset-resources.gdevelop.io/public-resources/Icons/4ea42069d08966f8c7983d8e5707d932dd3749b06a4549d08df38b77455be1c8_grain.svg",
   "shortDescription": "Advanced 2D & 3D particle system with keyframe animations, v2 format — JSON + optional atlas PNG / GLB.",
-  "version": "2.1.0",
+  "version": "0.1.1",
   "description": [
     "## Overview",
     "Complete particle system for GDevelop with **2D** (custom 2D object) and **3D** (custom 3D object) support. Design effects in the Particle Studio Pro and import them via JSON.",

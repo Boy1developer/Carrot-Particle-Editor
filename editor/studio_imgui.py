@@ -44,6 +44,7 @@ except Exception:
     HAS_CPP_CORE = False
 
 BUILD_ID = getattr(PS, "BUILD_ID", "b-imgui") + "-imgui"
+APP_VERSION = getattr(PS, "APP_VERSION", "?")
 
 # ---------- ImGui dark theme (matches Tk palette) ----------
 BG = (26, 27, 34)
@@ -3056,7 +3057,7 @@ def frame():
 def main():
     PS.debug_log("boot-imgui", BUILD_ID)
     dpg.create_context()
-    dpg.create_viewport(title=f"Carrot Particle Editor [{BUILD_ID}]",
+    dpg.create_viewport(title=f"Carrot Particle Editor v{APP_VERSION} [{BUILD_ID}]",
                         width=1280, height=800)
     _pos = os.environ.get("CARROT_WINPOS", "")
     try:
