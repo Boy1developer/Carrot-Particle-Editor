@@ -356,6 +356,32 @@ export class ThreeScene {
     }
   }
 
+  /** One morph side (or a whole particle): model pool first, else bucket. */
+  private placeParticle(st: { x: number; y: number; z: number; age: number },
+    sm: { size: number; r: number; g: number; b: number; shape: string },
+    shape: string, ref: string, alpha: number, counts: number[]): void {
+    const key: string = this.normShape(shape);
+    if (key === "custom" && ref && this.drawModel(ref, st.x, st.y, st.z,
+      Math.max(0.01, sm.size), st.age, sm.r, sm.g, sm.b, alpha)) return;
+    const mi: number = this.byShape[key];
+    const slot: number = counts[mi]++;
+    if (slot >= CAP) return;
+    const s: number = Math.max(0.01, sm.size);
+    this.dummy.position.set(st.x, st.y, st.z);
+    if (this.flat.has(key)) {
+      this.dummy.quaternion.copy(this.camera.quaternion);
+    } else {
+      this.dummy.rotation.set(st.age * 0.7, st.age * 0.9, 0);
+    }
+    this.dummy.scale.set(s, s, s);
+    this.dummy.updateMatrix();
+    this.meshes[mi].setMatrixAt(slot, this.dummy.matrix);
+    // additive blending: bake alpha into RGB (matches 2D preview look)
+    this.tmpColor.setRGB(
+      (sm.r / 255) * alpha, (sm.g / 255) * alpha, (sm.b / 255) * alpha);
+    this.meshes[mi].setColorAt(slot, this.tmpColor);
+  }
+
   render(): void {
     const W: number = Math.max(1, Math.round(this.canvas.clientWidth || 1));
     const H: number = Math.max(1, Math.round(this.canvas.clientHeight || 1));
@@ -387,29 +413,16 @@ export class ThreeScene {
     for (let i = 0; i < n; i++) {
       const st = this.engine.particleState(i);
       const sm = this.engine.sampleAt(st.age, i);
-      const key: string = this.normShape(sm.shape);
-      if (key === "custom") {
-        const ref: string = this.engine.modelRefAt(st.age);
-        if (ref && this.drawModel(ref, st.x, st.y, st.z,
-          Math.max(0.01, sm.size), st.age, sm.r, sm.g, sm.b, sm.a)) continue;
-      }
-      const mi: number = this.byShape[key];
-      const slot: number = counts[mi]++;
-      if (slot >= CAP) continue;
-      const s: number = Math.max(0.01, sm.size);
-      this.dummy.position.set(st.x, st.y, st.z);
-      if (this.flat.has(key)) {
-        this.dummy.quaternion.copy(this.camera.quaternion);
+      const mp = this.engine.morphAt(st.age);
+      if (mp && (mp.aShape !== mp.bShape ||
+          (mp.aShape === "custom" && mp.aRef !== mp.bRef))) {
+        this.placeParticle(st, sm, mp.aShape, mp.aRef, sm.a * (1 - mp.t),
+          counts);
+        this.placeParticle(st, sm, mp.bShape, mp.bRef, sm.a * mp.t, counts);
       } else {
-        this.dummy.rotation.set(st.age * 0.7, st.age * 0.9, 0);
+        this.placeParticle(st, sm, sm.shape,
+          this.engine.modelRefAt(st.age), sm.a, counts);
       }
-      this.dummy.scale.set(s, s, s);
-      this.dummy.updateMatrix();
-      this.meshes[mi].setMatrixAt(slot, this.dummy.matrix);
-      // additive blending: bake alpha into RGB (matches 2D preview look)
-      this.tmpColor.setRGB(
-        (sm.r / 255) * sm.a, (sm.g / 255) * sm.a, (sm.b / 255) * sm.a);
-      this.meshes[mi].setColorAt(slot, this.tmpColor);
     }
     for (let m = 0; m < this.meshes.length; m++) {
       this.meshes[m].count = counts[m];

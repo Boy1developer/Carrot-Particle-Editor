@@ -1,7 +1,9 @@
 // particle_core — C++ simulation core for Particle Studio.
 // Mirrors particle_studio.py semantics EXACTLY (extension semantics):
-//  life excludes the death duration, shape flips at raw>=0.5, per-particle
-//  jitter/sizeRatio/speedRatio, gravity accumulators, reverse spawn.
+//  life excludes the death duration, shape flips at raw>=0.5 with a
+//  cross-fade window on raw in (0.25, 0.75) reported per particle as
+//  (bseg, bt), per-particle jitter/sizeRatio/speedRatio, gravity
+//  accumulators, reverse spawn.
 // Raw CPython API, no third-party deps. Build: python core/build_core.py
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -399,7 +401,8 @@ static PyObject *py_sample(PyEngine *self, PyObject *args) {
 }
 
 // step(dt, cx, cy, ex, ey, ez, gx, gy, gz, maxp, yaw, pitch, zoom, ox, oy, focal, vcx, vcy)
-// returns {x:[],y:[],z:[],r:[],color:[],shape:[],depth:[]}
+// returns {x:[],y:[],z:[],r:[],color:[],shape:[],depth:[],alpha:[],wx:[],wy>[],
+//          bseg:[] (blend segment or -1), bt:[] (0..1 blend toward next keyframe)}
 static PyObject *py_step(PyEngine *self, PyObject *args) {
     double dt, cx, cy, ex, ey, ez, gxv, gyv, gzv;
     long maxp;
@@ -449,7 +452,8 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
     PyObject *lx = PyList_New(n), *ly = PyList_New(n), *lz = PyList_New(n);
     PyObject *lr = PyList_New(n), *lc = PyList_New(n), *ls = PyList_New(n), *ld = PyList_New(n);
     PyObject *la = PyList_New(n), *lwx = PyList_New(n), *lwy = PyList_New(n);
-    if (!lx || !ly || !lz || !lr || !lc || !ls || !ld || !la || !lwx || !lwy) return nullptr;
+    PyObject *lbg = PyList_New(n), *lbt = PyList_New(n);
+    if (!lx || !ly || !lz || !lr || !lc || !ls || !ld || !la || !lwx || !lwy || !lbg || !lbt) return nullptr;
     int nk = (int)e.kf.size();
     for (size_t i = 0; i < n; i++) {
         int k; double ev, raw;
@@ -465,6 +469,14 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
         int bl = (int)std::nearbyint(c0.b + (c1.b - c0.b) * ev);
         double alpha = (a.opacity + (b.opacity - a.opacity) * ev) / 255.0;
         int shp = shape_index(raw >= 0.5 ? b.shape : a.shape);
+        int bseg = -1; double bt = 0.0;
+        if (nk > 1 && raw > 0.25 && raw < 0.75) {
+            int kk = k;
+            if (kk < 0) kk = 0;
+            if (kk > nk - 2) kk = nk - 2;
+            bseg = kk;
+            bt = (raw - 0.25) / 0.5;
+        }
         double rad = std::max(1.5, size * 0.45);
         double sx = e.x[i], syv = e.y[i], rad2 = rad, depth = 0;
         if (is3d) {
@@ -488,6 +500,8 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
         PyList_SET_ITEM(la, i, PyFloat_FromDouble(alpha < 0 ? 0 : (alpha > 1 ? 1 : alpha)));
         PyList_SET_ITEM(lwx, i, PyFloat_FromDouble(e.x[i]));
         PyList_SET_ITEM(lwy, i, PyFloat_FromDouble(e.y[i]));
+        PyList_SET_ITEM(lbg, i, PyLong_FromLong(bseg));
+        PyList_SET_ITEM(lbt, i, PyFloat_FromDouble(bt));
     }
     PyObject *d = PyDict_New();
     PyDict_SetItemString(d, "x", lx); PyDict_SetItemString(d, "y", ly);
@@ -496,9 +510,11 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
     PyDict_SetItemString(d, "depth", ld);
     PyDict_SetItemString(d, "alpha", la);
     PyDict_SetItemString(d, "wx", lwx); PyDict_SetItemString(d, "wy", lwy);
+    PyDict_SetItemString(d, "bseg", lbg); PyDict_SetItemString(d, "bt", lbt);
     Py_DECREF(lx); Py_DECREF(ly); Py_DECREF(lz); Py_DECREF(lr);
     Py_DECREF(lc); Py_DECREF(ls); Py_DECREF(ld);
     Py_DECREF(la); Py_DECREF(lwx); Py_DECREF(lwy);
+    Py_DECREF(lbg); Py_DECREF(lbt);
     return d;
 }
 

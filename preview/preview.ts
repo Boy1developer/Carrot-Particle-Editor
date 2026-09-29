@@ -363,6 +363,22 @@ export class ParticleEngine {
     return raw >= 0.5 ? b.modelRef : a.modelRef;
   }
 
+  /** Shape cross-fade companion during the flip window, else null.
+   * Mirrors the desktop/C++ window: raw segment time in (0.25, 0.75). */
+  morphAt(age: number): {
+    aShape: string; bShape: string; aRef: string; bRef: string; t: number;
+  } | null {
+    if (this.kf.length < 2) return null;
+    const [k, , raw] = this.locate(age);
+    if (!(raw > 0.25 && raw < 0.75) || k < 0 || k + 1 >= this.kf.length)
+      return null;
+    const a: Keyframe = this.kf[k], b: Keyframe = this.kf[k + 1];
+    return {
+      aShape: a.shape, bShape: b.shape, aRef: a.modelRef, bRef: b.modelRef,
+      t: (raw - 0.25) / 0.5,
+    };
+  }
+
   /** Distinct non-empty model refs across keyframes. */
   customRefs(): string[] {
     const out: string[] = [];

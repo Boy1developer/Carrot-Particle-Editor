@@ -170,6 +170,24 @@ class SimEngine:
             acc += d
         return segs - 1, 1.0, 1.0
 
+    # Shape cross-fade window around the mid-segment flip point. Inside
+    # (0.25, 0.75) of raw segment time the next keyframe's shape fades in
+    # while the current one fades out (mirrors the C++ core, which reports
+    # the same window per particle as (bseg, bt)).
+    BLEND_LO = 0.25
+    BLEND_HI = 0.75
+
+    @staticmethod
+    def blend_window(tracks, age):
+        """(seg, t) morph companion, or (-1, 0.0) outside the window."""
+        if len(tracks) < 2:
+            return -1, 0.0
+        k, _e, raw = SimEngine._locate(tracks, age)
+        if SimEngine.BLEND_LO < raw < SimEngine.BLEND_HI:
+            return k, ((raw - SimEngine.BLEND_LO)
+                       / (SimEngine.BLEND_HI - SimEngine.BLEND_LO))
+        return -1, 0.0
+
     @staticmethod
     def _lerp_color(c0, c1, t):
         a, b = hex_to_rgb(c0), hex_to_rgb(c1)
@@ -723,19 +741,19 @@ def _find_model_file(base):
     return ""
 
 
-def custom_mesh():
-    """(normalized tris, per-tri material (r,g,b), per-tri cullable).
+def state_model_ref(s):
+    """Model ref for a state (matches current_effect()'s convention)."""
+    try:
+        cm = s.get("customModel") or {}
+        return (str((s.get("modelRefs") or [""])[0] or "")
+                or str(cm.get("node") or ""))
+    except Exception:
+        return ""
 
-    Nones when no model resolves. Prefers the selected state, else the
-    first custom-shaped state carrying a model. Never mutates APP.
-    """
-    states = APP.states
-    ordered = []
-    if 0 <= APP.sel_state < len(states):
-        ordered.append(states[APP.sel_state])
-    ordered.extend(s for s in states if
-                   not any(s is o for o in ordered))
-    for s in ordered:
+
+def _iter_custom_meshes(states):
+    """Yield (ref, tris, texels, culls) for custom states with models."""
+    for s in states or []:
         try:
             if str(s.get("shape", "")).lower() != "custom":
                 continue
@@ -747,10 +765,28 @@ def custom_mesh():
                 continue
             tris, texels, culls = mesh_cache.load_mesh(path,
                                                        cm.get("node") or "")
-            if tris:
-                return tris, texels, culls
+            if not tris:
+                continue
+            yield state_model_ref(s), tris, texels, culls
         except Exception:
             continue
+
+
+def custom_mesh():
+    """(normalized tris, per-tri material (r,g,b), per-tri cullable).
+
+    Nones when no model resolves. Prefers the selected state, else the
+    first custom-shaped state carrying a model. Never mutates APP.
+    """
+    states = APP.states
+    if 0 <= APP.sel_state < len(states):
+        ordered = [states[APP.sel_state]]
+        ordered.extend(s for s in states if
+                       not any(s is o for o in ordered))
+    else:
+        ordered = list(states)
+    for _ref, tris, texels, culls in _iter_custom_meshes(ordered):
+        return tris, texels, culls
     return None, None, None
 
 
@@ -760,25 +796,8 @@ def custom_mesh_tris():
     return tris
 
 
-def mesh_frame(app, cx, cy, n_total):
-    """Frame-hoisted custom-mesh data: (tris, texels, culls, proj) or None.
-
-    Resolves the mesh once, stride-downsamples it to the frame polygon
-    budget, and builds a projector with camera trig hoisted out of the
-    per-vertex loop (App.proj recomputes 4 sin/cos per call). The
-    projector returns (sx, sy, z2) with screen mapping bit-identical to
-    App.proj (z2 is camera depth, used for painter sorting).
-    """
-    tris, texels, culls = custom_mesh()
-    if not tris:
-        return None
-    keep = max(8, MESH_FRAME_BUDGET // max(1, int(n_total)))
-    if len(tris) > keep:
-        step = len(tris) / keep
-        idx = [int(i * step) for i in range(keep)]
-        tris = [tris[i] for i in idx]
-        texels = [texels[i] for i in idx]
-        culls = [culls[i] for i in idx]
+def _mesh_projector(app, cx, cy):
+    """Camera projector with trig hoisted (screen map of App.proj)."""
     cam = app.cam
     syaw, cyaw = math.sin(cam["yaw"]), math.cos(cam["yaw"])
     spit, cpit = math.sin(cam["pitch"]), math.cos(cam["pitch"])
@@ -797,7 +816,44 @@ def mesh_frame(app, cx, cy, n_total):
         sc = zoom * focal / (focal + z2)
         return (cx + ox + x1 * sc, cy + oy - y2 * sc, z2)
 
-    return (tris, texels, culls, proj)
+    return proj
+
+
+def _lod_tris(tris, texels, culls, n_total):
+    keep = max(8, MESH_FRAME_BUDGET // max(1, int(n_total)))
+    if len(tris) <= keep:
+        return tris, texels, culls
+    step = len(tris) / keep
+    idx = [int(i * step) for i in range(keep)]
+    return ([tris[i] for i in idx], [texels[i] for i in idx],
+            [culls[i] for i in idx])
+def mesh_frame(app, cx, cy, n_total):
+    """Frame-hoisted custom-mesh data: (tris, texels, culls, proj) or None.
+
+    Resolves the preferred mesh once and stride-downsamples it to the
+    frame polygon budget (see frame_meshes() for the multi-ref variant).
+    """
+    tris, texels, culls = custom_mesh()
+    if not tris:
+        return None
+    tris, texels, culls = _lod_tris(tris, texels, culls, n_total)
+    return (tris, texels, culls, _mesh_projector(app, cx, cy))
+
+
+def frame_meshes(app, cx, cy, n_total):
+    """({ref: (tris, texels, culls)}, proj) for custom states with models.
+
+    One entry per model ref (LOD applied); (None, None) when nothing
+    resolves. Used by the morph renderer so each blend side draws its
+    own mesh.
+    """
+    entries = {}
+    for ref, tris, texels, culls in _iter_custom_meshes(app.states):
+        if ref not in entries:
+            entries[ref] = _lod_tris(tris, texels, culls, n_total)
+    if not entries:
+        return None, None
+    return entries, _mesh_projector(app, cx, cy)
 
 
 def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
@@ -816,6 +872,7 @@ def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
     try:
         tris, texels, culls, proj = mesh_data
         tr, tg, tb = (int(col[0]), int(col[1]), int(col[2]))
+        a = max(0, min(255, int(col[3])))
         natural = (tr == 255 and tg == 255 and tb == 255)
         poly = dpg.draw_polygon
         items = []
@@ -827,10 +884,9 @@ def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
             if cull and (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) >= 0:
                 continue  # backface in screen space (y-down)
             if natural:
-                fill = [mr, mg, mb, 255]
+                fill = [mr, mg, mb, a]
             else:
-                fill = [mr * tr // 255, mg * tg // 255, mb * tb // 255,
-                        255]
+                fill = [mr * tr // 255, mg * tg // 255, mb * tb // 255, a]
             items.append(((z0 + z1 + z2) / 3.0, [[x0, y0], [x1, y1],
                                                  [x2, y2]], fill))
         items.sort(key=lambda t: t[0], reverse=True)
@@ -839,6 +895,62 @@ def draw_custom_mesh_3d(dl, mesh_data, wx, wy, wz, ws_world, col):
     except Exception:
         return False
     return True
+
+
+def _split_alpha(bt):
+    t = max(0.0, min(1.0, float(bt)))
+    return (max(0, min(255, int(round(255 * (1.0 - t))))),
+            max(0, min(255, int(round(255 * t)))))
+
+
+def _draw_morph_2d(dl, x, y, r, col, shp_a, shp_b, bt, glow_col):
+    """Cross-fade companion shape; single draw outside the window."""
+    if bt <= 0.0 or not shp_b or shp_b == shp_a:
+        draw_shape_2d(dl, x, y, r, shp_a, col, glow_col)
+        return
+    aA, aB = _split_alpha(bt)
+    draw_shape_2d(dl, x, y, r, shp_a,
+                  [col[0], col[1], col[2], aA], None)
+    draw_shape_2d(dl, x, y, r, shp_b,
+                  [col[0], col[1], col[2], aB], None)
+
+
+def _mesh_entry(fm, ref):
+    """Assemble a draw-ready mesh tuple from frame_meshes() output."""
+    if fm is None:
+        return None
+    entries, proj = fm
+    e = entries.get(ref)
+    return (e[0], e[1], e[2], proj) if e else None
+
+
+def _draw_side_3d(dl, mctx, shape, mesh_entry, col, sx, sy, r):
+    """One morph side in 3D: mesh when resolved, else primitive."""
+    if shape == "custom" and mesh_entry is not None:
+        wx, wy, wz, ws = mctx
+        if draw_custom_mesh_3d(dl, mesh_entry, wx, wy, wz, ws, col):
+            return
+    draw_shape_3d(dl, sx, sy, r, shape, col)
+
+
+def _draw_morph_3d(dl, mctx, sx, sy, r, col, side_a, side_b, bt, fm):
+    """Cross-fade companion side; sides are (shape, ref) tuples."""
+    shp_a, ref_a = side_a
+    shp_b, ref_b = side_b
+    same = (not shp_b or shp_b == shp_a) and not (
+        shp_a == "custom" and ref_a != ref_b)
+    if bt <= 0.0 or same:
+        _draw_side_3d(dl, mctx, shp_a,
+                      _mesh_entry(fm, ref_a) if shp_a == "custom" else None,
+                      col, sx, sy, r)
+        return
+    aA, aB = _split_alpha(bt)
+    _draw_side_3d(dl, mctx, shp_a,
+                  _mesh_entry(fm, ref_a) if shp_a == "custom" else None,
+                  [col[0], col[1], col[2], aA], sx, sy, r)
+    _draw_side_3d(dl, mctx, shp_b,
+                  _mesh_entry(fm, ref_b) if shp_b == "custom" else None,
+                  [col[0], col[1], col[2], aB], sx, sy, r)
 
 
 def dot_style(app, p):
@@ -860,7 +972,7 @@ def dot_style(app, p):
     return (_c(col), r0, shp if shp in ok else ok[0])
 
 
-def draw_view_2d(app, dl, W, H, cx, cy, eff):
+def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[22, 23, 31, 255], parent=dl)
     gx, gy = cx + app.cam["ox"], cy + app.cam["oy"]
@@ -918,6 +1030,9 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff):
     if out is not None:
         xs, ys, rs, cs, ss = out["x"], out["y"], out["r"], out["color"], out["shape"]
         n = len(xs)
+        bseg_arr = out.get("bseg") if isinstance(out, dict) else None
+        bt_arr = out.get("bt") if isinstance(out, dict) else None
+        same_len = tracks is not None and len(tracks) == len(APP.states)
         glow = app.glow and n <= 450
         for i in range(n):
             col = _c("#%06x" % cs[i])
@@ -929,20 +1044,44 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff):
                                       col[2] * 35 // 100, 255], parent=dl,
                                 segments=16)
         for i in range(n):
-            draw_shape_2d(dl, xs[i], ys[i], rs[i],
-                          PS.SHAPE_ORDER[ss[i]], _c("#%06x" % cs[i]))
+            col_i = _c("#%06x" % cs[i])
+            shp = PS.SHAPE_ORDER[ss[i]]
+            shpA, shpB, bt = shp, None, 0.0
+            if bseg_arr is not None and bt_arr is not None and same_len:
+                try:
+                    bs, t = int(bseg_arr[i]), float(bt_arr[i])
+                except (ValueError, TypeError):
+                    bs, t = -1, 0.0
+                if 0 <= bs and bs + 1 < len(tracks) and 0.0 <= t <= 1.0:
+                    shpA = tracks[bs]["shape"]
+                    shpB = tracks[bs + 1]["shape"]
+                    bt = t
+            _draw_morph_2d(dl, xs[i], ys[i], rs[i], col_i,
+                           shpA, shpB, bt, None)
     else:
         dots = []
+        grad = (app.colormode == "gradient")
         for p in app.sim.parts:
             fill, r, shape = dot_style(app, p)
-            dots.append((p[0], p[1], r, shape, fill))
+            shpA, shpB, bt = shape, None, 0.0
+            if grad:
+                try:
+                    bs, t = SimEngine.blend_window(p[13], p[4])
+                except Exception:
+                    bs, t = -1, 0.0
+                tr = p[13]
+                if 0 <= bs and bs + 1 < len(tr) and 0.0 <= t <= 1.0:
+                    shpA = tr[bs].get("shape", shape)
+                    shpB = tr[bs + 1].get("shape", shape)
+                    bt = t
+            dots.append((p[0], p[1], r, shpA, shpB, bt, fill))
         glow = app.glow and len(dots) <= 450
-        for x, y, r, shape, fill in dots:
+        for x, y, r, a, b, bt, fill in dots:
             gc = None
             if glow:
                 gc = [fill[0] * 35 // 100, fill[1] * 35 // 100,
                       fill[2] * 35 // 100, 255]
-            draw_shape_2d(dl, x, y, r, shape, fill, gc)
+            _draw_morph_2d(dl, x, y, r, fill, a, b, bt, gc)
     # vignette strips + gizmo
     m = min(W, H)
     t = max(14, m * 0.07)
@@ -960,7 +1099,7 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff):
                     segments=20)
 
 
-def draw_view_3d(app, dl, W, H, cx, cy, em):
+def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[20, 21, 28, 255], parent=dl)
     app.cam["focal"] = ((max(100, H) * 0.5) /
@@ -1033,46 +1172,80 @@ def draw_view_3d(app, dl, W, H, cx, cy, em):
     focal = app.cam.get("focal", 620.0)
     if out is not None:
         order = sorted(range(len(out["x"])), key=out["depth"].__getitem__)
-        mesh_data, mesh_checked = None, False
+        fm, fm_done = None, False
+        bseg_arr = out.get("bseg") if isinstance(out, dict) else None
+        bt_arr = out.get("bt") if isinstance(out, dict) else None
+        same_len = tracks is not None and len(tracks) == len(APP.states)
         for i in order:
             col = PS.StudioApp._depth_shade("#%06x" % out["color"][i],
                                             out["depth"][i], focal)
             sh = PS.SHAPE_ORDER[out["shape"][i]]
-            if sh == "custom" and out["r"][i] >= MESH_MIN_R:
-                if not mesh_checked:
-                    mesh_checked = True
-                    if len(out["x"]) <= MESH_MAX_PARTICLES:
-                        mesh_data = mesh_frame(app, cx, cy, len(out["x"]))
-                if mesh_data is not None:
+            colA = _c(col)
+            shpA, shpB, refA, refB, bt = sh, None, "", "", 0.0
+            if bseg_arr is not None and bt_arr is not None and same_len:
+                try:
+                    bs, t = int(bseg_arr[i]), float(bt_arr[i])
+                except (ValueError, TypeError):
+                    bs, t = -1, 0.0
+                if 0 <= bs and bs + 1 < len(tracks) and 0.0 <= t <= 1.0:
+                    shpA = tracks[bs]["shape"]
+                    shpB = tracks[bs + 1]["shape"]
+                    refA = state_model_ref(APP.states[bs])
+                    refB = state_model_ref(APP.states[bs + 1])
+                    bt = t
+            mctx = None
+            if (shpA == "custom" or shpB == "custom") and \
+                    out["r"][i] >= MESH_MIN_R and \
+                    len(out["x"]) <= MESH_MAX_PARTICLES:
+                if not fm_done:
+                    fm_done = True
+                    fm = frame_meshes(app, cx, cy, len(out["x"]))
+                if fm is not None:
                     _, _, sc0, _ = app.proj(out["wx"][i], out["wy"][i],
                                            out["z"][i], cx, cy)
-                    if sc0 > 1e-6 and draw_custom_mesh_3d(
-                            dl, mesh_data, out["wx"][i], out["wy"][i],
-                            out["z"][i], out["r"][i] / sc0, _c(col)):
-                        continue
-            draw_shape_3d(dl, out["x"][i], out["y"][i], out["r"][i],
-                          sh, _c(col))
+                    if sc0 > 1e-6:
+                        mctx = (out["wx"][i], out["wy"][i], out["z"][i],
+                                out["r"][i] / sc0)
+            _draw_morph_3d(dl, mctx, out["x"][i], out["y"][i], out["r"][i],
+                           colA, (shpA, refA), (shpB, refB), bt, fm)
     else:
         projs = []
         for p in app.sim.parts:
             sx, sy, sc, depth = P(p[0], p[1], p[10])
             projs.append((depth, sx, sy, sc, p))
         projs.sort(key=lambda t: t[0])
-        mesh_data, mesh_checked = None, False
+        fm, fm_done = None, False
+        grad = (app.colormode == "gradient")
         for depth, sx, sy, sc, p in projs:
             fill, r, shape = dot_style(app, p)
             shaded = PS.StudioApp._depth_shade(
                 "#%02x%02x%02x" % tuple(fill[:3]), depth, focal)
+            colA = _c(shaded)
             rs = max(1.0, r * sc)
-            if shape == "custom" and rs >= MESH_MIN_R:
-                if not mesh_checked:
-                    mesh_checked = True
-                    if len(projs) <= MESH_MAX_PARTICLES:
-                        mesh_data = mesh_frame(app, cx, cy, len(projs))
-                if mesh_data is not None and draw_custom_mesh_3d(
-                        dl, mesh_data, p[0], p[1], p[10], r, _c(shaded)):
-                    continue
-            draw_shape_3d(dl, sx, sy, rs, shape, _c(shaded))
+            shpA, shpB, refA, refB, bt = shape, None, "", "", 0.0
+            if grad:
+                try:
+                    bs, t = SimEngine.blend_window(p[13], p[4])
+                except Exception:
+                    bs, t = -1, 0.0
+                tr = p[13]
+                if 0 <= bs and bs + 1 < len(tr) and 0.0 <= t <= 1.0 \
+                        and bs + 1 < len(APP.states):
+                    shpA = tr[bs].get("shape", shape)
+                    shpB = tr[bs + 1].get("shape", shape)
+                    refA = state_model_ref(APP.states[bs])
+                    refB = state_model_ref(APP.states[bs + 1])
+                    bt = t
+            mctx = None
+            if (shpA == "custom" or shpB == "custom") and \
+                    rs >= MESH_MIN_R and len(projs) <= MESH_MAX_PARTICLES:
+                if not fm_done:
+                    fm_done = True
+                    fm = frame_meshes(app, cx, cy, len(projs))
+                if fm is not None:
+                    mctx = (p[0], p[1], p[10], r)
+            _draw_morph_3d(dl, mctx, sx, sy, rs, colA,
+                           (shpA, refA), (shpB, refB), bt, fm)
     m = min(W, H)
     t = max(14, m * 0.07)
     vc = [14, 16, 22, 255]
@@ -2634,6 +2807,7 @@ def frame():
         else:
             scx, scy = cx, cy
         cpp_n, cpp_active = 0, False
+        tracks = None
         if eff is not None:
             em = eff["emitter"]
             # NOTE: correct axis mapping (Tk edition had gx/gy swapped).
@@ -2764,9 +2938,10 @@ def frame():
             is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
                     eff.get("emitter", {}).get("propagationCone", {}))
             if is3d:
-                draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"])
+                draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"],
+                             tracks)
             else:
-                draw_view_2d(APP, "vp_draw", W, H, cx, cy, eff)
+                draw_view_2d(APP, "vp_draw", W, H, cx, cy, eff, tracks)
             if APP._split is not None or APP._split_hover:
                 dpg.draw_line([2, 0], [2, H], color=[123, 97, 255, 255],
                               thickness=3, parent="vp_draw")

@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Behavioral smoke (RNG streams differ by design — check invariants) + perf."""
+import os
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import particle_core as core
 
 # --- burst spawn count mirrors Python: min(maxp, 150) ---
@@ -42,6 +46,31 @@ assert all(0 <= c <= 0xFFFFFF for c in o["color"])
 assert all(0 <= s <= 11 for s in o["shape"])
 assert all(r >= 1.0 for r in o["r"])
 print("ranges: OK")
+
+# --- morph window keys: bseg/bt present, bounded, and hit over time ---
+e5 = core.Engine()
+e5.configure({"flow": 1000, "maxParticles": 500, "mode": "Infinite",
+              "emissionZone": {"shape": "Circle", "radius": 5, "mode": "Surface"},
+              "propagationCone": {"direction": 0, "spread": 10}},
+             [{"dur": 0.5, "shape": "circle", "size": 8, "sizeMax": 8,
+               "color": "#ffffff", "opacity": 255, "minSpd": 10, "maxSpd": 10,
+               "easing": "linear"},
+              {"dur": 0.5, "shape": "square", "size": 8, "sizeMax": 8,
+               "color": "#ffffff", "opacity": 255, "minSpd": 10, "maxSpd": 10,
+               "easing": "linear"}], False)
+e5.set_seed(7)
+seen_blend = False
+for _ in range(120):
+    m = e5.step(1 / 60.0, 400, 300, 0, 0, 0, 0, 0, 0, 500,
+                0.7, 0.42, 1.0, 0, 0, 620, 400, 300)
+    assert set(("bseg", "bt")) <= set(m)
+    for bs, bt in zip(m["bseg"], m["bt"]):
+        assert bs in (-1, 0), bs
+        assert 0.0 <= bt <= 1.0, bt
+        if bs == 0:
+            seen_blend = True
+assert seen_blend, "no particle entered the morph window"
+print("morph keys: OK")
 
 # --- reverse spawn: particles start away from center ---
 e3 = core.Engine()

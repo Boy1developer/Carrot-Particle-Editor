@@ -3,6 +3,11 @@
 Deterministic parts must match: size/speed/opacity (1e-9), color (exact),
 shape (exact). RNG streams differ by design — tested separately."""
 import itertools
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "editor"))
 import particle_studio as ps
 import particle_core as core
 
