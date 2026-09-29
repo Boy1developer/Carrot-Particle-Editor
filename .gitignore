@@ -20,6 +20,7 @@ preview/last_effect.json
 
 # Incoming dropbox for the agent (never pushed to GitHub)
 incoming/
+incoming-2d/
 
 # Backups
 *.bak

@@ -21,9 +21,11 @@
 | --- | --- |
 | ![Emitter panel](docs/screenshots/emitter-panel.png) | ![States panel](docs/screenshots/states-panel.png) |
 
-| Shape list | Custom shape (uploaded 3D model) |
+| 3D shape list | Custom shape (uploaded 3D model) |
 | --- | --- |
-| ![Shapes 1](docs/screenshots/shapes-list-1.png) ![Shapes 2](docs/screenshots/shapes-list-2.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
+| ![3D shapes 1](docs/screenshots/shapes-list-1.png) ![3D shapes 2](docs/screenshots/shapes-list-2.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
+
+> 2D shape list screenshots go in the same table once provided.
 
 ---
 
