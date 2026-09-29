@@ -539,15 +539,9 @@ class App:
             states.append(ns)
         eff = PS.build_effect(self.ptype, em, states)
         if self.ptype == "3d":
-            for src, st in zip(self.states, states):
-                cm = src.get("customModel") or {}
-                if cm.get("file"):
-                    ref = (st.get("modelRefs") or [""])[0] or cm.get("node") or ""
-                    node = cm.get("node") or ref
-                    eff["models"] = {"file": cm["file"],
-                                     "nodes": list(cm.get("nodes") or []),
-                                     "map": {ref: node} if ref else {}}
-                    break
+            block = PS.effect_models_block(self.states, states)
+            if block is not None:
+                eff["models"] = block
         return eff
 
     def cached_effect(self):

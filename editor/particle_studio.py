@@ -45,7 +45,7 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = "1.0"
-BUILD_ID = "b20260930-prevskin"  # bump on every shipped change; shown in title
+BUILD_ID = "b20260930-extcompat"  # bump on every shipped change; shown in title
 
 
 def debug_log(*parts):
@@ -433,6 +433,29 @@ def default_emitter(ptype="2d"):
 
 def build_effect(ptype, emitter, states):
     return {"version": VERSION, "type": ptype, "emitter": emitter, "states": states}
+
+
+def effect_models_block(src_states, out_states):
+    """Top-level `models` block for the GDevelop extension, or None.
+
+    Maps ref -> GLB node name; whole-file picks map to "" and the
+    extension resolves those to the full scene (a bogus node name would
+    only warn in-game). First custom-model state wins (single GLB).
+    """
+    for src, st in zip(src_states or [], out_states or []):
+        try:
+            cm = src.get("customModel") or {}
+            if not cm.get("file"):
+                continue
+            ref = (st.get("modelRefs") or [""])[0] or cm.get("node") or ""
+            if not ref:
+                continue
+            return {"file": cm["file"],
+                    "nodes": list(cm.get("nodes") or []),
+                    "map": {ref: cm.get("node") or ""}}
+        except Exception:
+            continue
+    return None
 
 
 def validate_effect(eff):
@@ -1636,16 +1659,9 @@ class StudioApp(tk.Tk):
             states.append(ns)
         eff = build_effect(self.ptype, em, states)
         if self.ptype == "3d":
-            # extension contract: top-level models block maps ref -> GLB node
-            for src, st in zip(self.states, states):
-                cm = src.get("customModel") or {}
-                if cm.get("file"):
-                    ref = (st.get("modelRefs") or [""])[0] or cm.get("node") or ""
-                    node = cm.get("node") or ref
-                    eff["models"] = {"file": cm["file"],
-                                     "nodes": list(cm.get("nodes") or []),
-                                     "map": {ref: node} if ref else {}}
-                    break
+            block = effect_models_block(self.states, states)
+            if block is not None:
+                eff["models"] = block
         return eff
 
     # ---- states ----

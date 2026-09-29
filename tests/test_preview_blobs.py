@@ -40,4 +40,16 @@ fp1 = PS.model_fingerprint(states)
 assert PS.model_fingerprint(states) == fp1
 assert PS.model_fingerprint([]) != fp1
 assert PS.model_fingerprint([]) == ()
+
+# export models block: whole-file -> "" node, named node kept as-is
+src = [{"customModel": {"file": "r.glb", "node": "", "kind": "model",
+                        "nodes": ["A"]}}]
+out = [{"modelRefs": ["r"]}]
+assert PS.effect_models_block(src, out) == {
+    "file": "r.glb", "nodes": ["A"], "map": {"r": ""}}, \
+    PS.effect_models_block(src, out)
+src[0]["customModel"]["node"] = "A"
+out[0]["modelRefs"] = ["A"]
+assert PS.effect_models_block(src, out)["map"] == {"A": "A"}
+assert PS.effect_models_block([{}], [{}]) is None
 print("BLOBS-OK")
