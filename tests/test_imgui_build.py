@@ -28,6 +28,14 @@ try:
     assert eff["emitter"].get("blendingMode") == "Screen"
     assert PS.validate_effect(eff) == []
     assert PS.validate_against_schema(eff) == []
+    # seed box round-trips into the effect + export (v1.1)
+    dpg.set_value("em_seed", 4242)
+    S.cb_em_seed("em_seed", 4242)
+    assert S.APP.em.get("seed") == 4242
+    eff = S.APP.current_effect()
+    assert eff["emitter"].get("seed") == 4242
+    assert eff["version"] == "1.1"
+    assert PS.validate_effect(eff) == []
     print("UI-BUILD-OK")
 finally:
     dpg.destroy_context()

@@ -56,6 +56,8 @@ export class ParticleEngine {
         this.sizeRatio = new Float32Array(MAX_POOL);
         this.spdRatio = new Float32Array(MAX_POOL);
         this.count = 0;
+        // Deterministic RNG (mulberry32): nonzero emitter.seed replays identically.
+        this.randState = 0;
         this.cam = { yaw: 0.7, pitch: 0.42, zoom: 1.0, auto: true };
         this.is3D = false;
         this.kf = [];
@@ -65,6 +67,16 @@ export class ParticleEngine {
         this.accum = 0;
         this.bursted = false;
         this.remaining = 0;
+    }
+    rnd() {
+        if (!this.randState)
+            return Math.random();
+        let x = (this.randState |= 0);
+        x = (x + 0x6d2b79f5) | 0;
+        this.randState = x;
+        let t = Math.imul(x ^ (x >>> 15), 1 | x);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
     /** Bumped on every loadEffect — render layers rebuild guides on change. */
     get effectVersion() { return this.effectRev; }
@@ -95,6 +107,7 @@ export class ParticleEngine {
             mode: normMode(raw.mode),
             reverse: Boolean(raw.reverse),
             blending: String(raw.blendingMode ?? "Normal"),
+            seed: Math.floor(Number(raw.seed ?? 0)),
             gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
             zone: {
                 shape: normZone(z.shape),
@@ -112,6 +125,7 @@ export class ParticleEngine {
                 spread: Number(pc.spread ?? 90),
             },
         };
+        this.randState = this.emitter.seed | 0;
         const states = Array.isArray(eff.states) ? eff.states : [];
         let prevShape = this.is3D ? "sphere" : "circle";
         this.kf = states.map((s) => {
@@ -182,8 +196,8 @@ export class ParticleEngine {
         const by = Math.sin(el);
         const bz = Math.cos(el) * Math.sin(az);
         const half = (this.emitter.cone.spread / 2) * Math.PI / 180;
-        const th = Math.random() * Math.PI * 2;
-        const r = Math.tan(half) * Math.sqrt(Math.random());
+        const th = this.rnd() * Math.PI * 2;
+        const r = Math.tan(half) * Math.sqrt(this.rnd());
         let ux = 0, uy = 1, uz = 0;
         if (Math.abs(by) > 0.95) {
             ux = 1;
@@ -209,10 +223,10 @@ export class ParticleEngine {
             return;
         const e = this.emitter;
         const i = this.count++;
-        const jitter = 0.9 + Math.random() * 0.2;
+        const jitter = 0.9 + this.rnd() * 0.2;
         this.life[i] = this.kfLife * jitter;
-        this.sizeRatio[i] = Math.random();
-        this.spdRatio[i] = Math.random();
+        this.sizeRatio[i] = this.rnd();
+        this.spdRatio[i] = this.rnd();
         this.gx[i] = 0;
         this.gy[i] = 0;
         this.gz[i] = 0;
@@ -223,23 +237,23 @@ export class ParticleEngine {
             const cr = Math.cos(rot), sr = Math.sin(rot);
             let sx = 0, sy = 0, sz = 0;
             if (z.shape === "sphere" || z.shape === "circle") {
-                const th = Math.random() * Math.PI * 2;
-                const ph = Math.acos(2 * Math.random() - 1);
-                const rr = z.radius * Math.cbrt(Math.random());
+                const th = this.rnd() * Math.PI * 2;
+                const ph = Math.acos(2 * this.rnd() - 1);
+                const rr = z.radius * Math.cbrt(this.rnd());
                 sx = rr * Math.sin(ph) * Math.cos(th);
                 sy = rr * Math.cos(ph);
                 sz = rr * Math.sin(ph) * Math.sin(th);
             }
             else if (z.shape === "box" || z.shape === "rectangle") {
-                sx = (Math.random() - 0.5) * z.width;
-                sy = (Math.random() - 0.5) * z.height;
-                sz = (Math.random() - 0.5) * z.depth;
+                sx = (this.rnd() - 0.5) * z.width;
+                sy = (this.rnd() - 0.5) * z.height;
+                sz = (this.rnd() - 0.5) * z.depth;
                 const rx = sx * cr - sy * sr, ry = sx * sr + sy * cr;
                 sx = rx;
                 sy = ry;
             }
             else if (z.shape === "line") {
-                sx = (Math.random() - 0.5) * z.length;
+                sx = (this.rnd() - 0.5) * z.length;
                 const rx = sx * cr;
                 sy = sx * sr;
                 sx = rx;
@@ -265,27 +279,27 @@ export class ParticleEngine {
         }
         else {
             const half = e.cone.spread / 2;
-            const ang = (e.cone.direction + (Math.random() * 2 - 1) * half) * Math.PI / 180;
+            const ang = (e.cone.direction + (this.rnd() * 2 - 1) * half) * Math.PI / 180;
             let dx = Math.cos(ang), dy = Math.sin(ang);
             const z = e.zone;
             const rot = (z.rot || 0) * Math.PI / 180;
             const cr = Math.cos(rot), sr = Math.sin(rot);
             let lx = 0, ly = 0;
             if (z.shape === "circle" || z.shape === "sphere") {
-                const a = Math.random() * Math.PI * 2;
+                const a = this.rnd() * Math.PI * 2;
                 if (z.mode === "edge") {
                     lx = Math.cos(a) * z.radius;
                     ly = Math.sin(a) * z.radius;
                 }
                 else {
-                    const r = Math.sqrt(Math.random()) * z.radius;
+                    const r = Math.sqrt(this.rnd()) * z.radius;
                     lx = Math.cos(a) * r;
                     ly = Math.sin(a) * r;
                 }
             }
             else if (z.shape === "rectangle" || z.shape === "box") {
                 if (z.mode === "edge") {
-                    const per = 2 * (z.width + z.height), d = Math.random() * per;
+                    const per = 2 * (z.width + z.height), d = this.rnd() * per;
                     if (d < z.width) {
                         lx = d - z.width / 2;
                         ly = -z.height / 2;
@@ -304,12 +318,12 @@ export class ParticleEngine {
                     }
                 }
                 else {
-                    lx = (Math.random() - 0.5) * z.width;
-                    ly = (Math.random() - 0.5) * z.height;
+                    lx = (this.rnd() - 0.5) * z.width;
+                    ly = (this.rnd() - 0.5) * z.height;
                 }
             }
             else if (z.shape === "line") {
-                lx = (Math.random() - 0.5) * z.length;
+                lx = (this.rnd() - 0.5) * z.length;
             }
             const ox = lx * cr - ly * sr, oy = lx * sr + ly * cr;
             if (e.reverse) {

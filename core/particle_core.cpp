@@ -132,6 +132,9 @@ struct Engine {
     std::vector<double> age, life, sizeRatio, spdRatio, jitter;
     double accum = 0.0;
     bool bursted = false;
+    // Deterministic seed (format 1.1 emitter.seed): reseed only when a
+    // nonzero seed is (re)configured with a new value; 0 = legacy boot.
+    long lastSeed = 0;
 
     double frand() {
         static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
@@ -368,6 +371,10 @@ static PyObject *py_configure(PyEngine *self, PyObject *args) {
         k.ease = ease_enum(sget(t, "easing", "linear"));
         self->eng.kf.push_back(k);
     }
+    long seed = lget(em, "seed", 0);
+    if (seed != 0 && seed != self->eng.lastSeed)
+        self->eng.rng.seed((std::mt19937::result_type)seed);
+    self->eng.lastSeed = seed;
     Py_RETURN_NONE;
 }
 

@@ -12,7 +12,7 @@ interface RGB { r: number; g: number; b: number }
 
 interface EmitterCfg {
   flow: number; maxParticles: number; reservoir: number;
-  mode: string; reverse: boolean; blending: string;
+  mode: string; reverse: boolean; blending: string; seed: number;
   gravity: { x: number; y: number; z: number };
   zone: {
     shape: string; radius: number; width: number; height: number;
@@ -76,6 +76,18 @@ export class ParticleEngine {
   private sizeRatio = new Float32Array(MAX_POOL);
   private spdRatio = new Float32Array(MAX_POOL);
   private count = 0;
+  // Deterministic RNG (mulberry32): nonzero emitter.seed replays identically.
+  private randState = 0;
+
+  private rnd(): number {
+    if (!this.randState) return Math.random();
+    let x: number = (this.randState |= 0);
+    x = (x + 0x6d2b79f5) | 0;
+    this.randState = x;
+    let t: number = Math.imul(x ^ (x >>> 15), 1 | x);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
 
   readonly cam = { yaw: 0.7, pitch: 0.42, zoom: 1.0, auto: true };
   is3D = false;
@@ -125,6 +137,7 @@ export class ParticleEngine {
       mode: normMode(raw.mode),
       reverse: Boolean(raw.reverse),
       blending: String(raw.blendingMode ?? "Normal"),
+      seed: Math.floor(Number(raw.seed ?? 0)),
       gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
       zone: {
         shape: normZone(z.shape),
@@ -142,6 +155,7 @@ export class ParticleEngine {
         spread: Number(pc.spread ?? 90),
       },
     };
+    this.randState = this.emitter.seed | 0;
     const states: any[] = Array.isArray(eff.states) ? eff.states : [];
     let prevShape = this.is3D ? "sphere" : "circle";
     this.kf = states.map((s: any): Keyframe => {
@@ -213,8 +227,8 @@ export class ParticleEngine {
     const by: number = Math.sin(el);
     const bz: number = Math.cos(el) * Math.sin(az);
     const half: number = (this.emitter.cone.spread / 2) * Math.PI / 180;
-    const th: number = Math.random() * Math.PI * 2;
-    const r: number = Math.tan(half) * Math.sqrt(Math.random());
+    const th: number = this.rnd() * Math.PI * 2;
+    const r: number = Math.tan(half) * Math.sqrt(this.rnd());
     let ux = 0, uy = 1, uz = 0;
     if (Math.abs(by) > 0.95) { ux = 1; uy = 0; }
     let cx1: number = by * uz - bz * uy, cy1: number = bz * ux - bx * uz, cz1: number = bx * uy - by * ux;
@@ -234,10 +248,10 @@ export class ParticleEngine {
     if (!this.kf.length) return;
     const e: EmitterCfg = this.emitter;
     const i: number = this.count++;
-    const jitter: number = 0.9 + Math.random() * 0.2;
+    const jitter: number = 0.9 + this.rnd() * 0.2;
     this.life[i] = this.kfLife * jitter;
-    this.sizeRatio[i] = Math.random();
-    this.spdRatio[i] = Math.random();
+    this.sizeRatio[i] = this.rnd();
+    this.spdRatio[i] = this.rnd();
     this.gx[i] = 0; this.gy[i] = 0; this.gz[i] = 0;
     const spd: number = this.sampleSpeed(0, i);
     if (this.is3D) {
@@ -246,16 +260,16 @@ export class ParticleEngine {
       const cr: number = Math.cos(rot), sr: number = Math.sin(rot);
       let sx = 0, sy = 0, sz = 0;
       if (z.shape === "sphere" || z.shape === "circle") {
-        const th: number = Math.random() * Math.PI * 2;
-        const ph: number = Math.acos(2 * Math.random() - 1);
-        const rr: number = z.radius * Math.cbrt(Math.random());
+        const th: number = this.rnd() * Math.PI * 2;
+        const ph: number = Math.acos(2 * this.rnd() - 1);
+        const rr: number = z.radius * Math.cbrt(this.rnd());
         sx = rr * Math.sin(ph) * Math.cos(th); sy = rr * Math.cos(ph); sz = rr * Math.sin(ph) * Math.sin(th);
       } else if (z.shape === "box" || z.shape === "rectangle") {
-        sx = (Math.random() - 0.5) * z.width; sy = (Math.random() - 0.5) * z.height; sz = (Math.random() - 0.5) * z.depth;
+        sx = (this.rnd() - 0.5) * z.width; sy = (this.rnd() - 0.5) * z.height; sz = (this.rnd() - 0.5) * z.depth;
         const rx: number = sx * cr - sy * sr, ry: number = sx * sr + sy * cr;
         sx = rx; sy = ry;
       } else if (z.shape === "line") {
-        sx = (Math.random() - 0.5) * z.length;
+        sx = (this.rnd() - 0.5) * z.length;
         const rx: number = sx * cr; sy = sx * sr; sx = rx;
       }
       const [dx, dy, dz] = this.coneDir3();
@@ -271,26 +285,26 @@ export class ParticleEngine {
       this.vx[i] = this.dx[i] * spd; this.vy[i] = this.dy[i] * spd; this.vz[i] = this.dz[i] * spd;
     } else {
       const half: number = e.cone.spread / 2;
-      const ang: number = (e.cone.direction + (Math.random() * 2 - 1) * half) * Math.PI / 180;
+      const ang: number = (e.cone.direction + (this.rnd() * 2 - 1) * half) * Math.PI / 180;
       let dx: number = Math.cos(ang), dy: number = Math.sin(ang);
       const z = e.zone;
       const rot: number = (z.rot || 0) * Math.PI / 180;
       const cr: number = Math.cos(rot), sr: number = Math.sin(rot);
       let lx = 0, ly = 0;
       if (z.shape === "circle" || z.shape === "sphere") {
-        const a: number = Math.random() * Math.PI * 2;
+        const a: number = this.rnd() * Math.PI * 2;
         if (z.mode === "edge") { lx = Math.cos(a) * z.radius; ly = Math.sin(a) * z.radius; }
-        else { const r: number = Math.sqrt(Math.random()) * z.radius; lx = Math.cos(a) * r; ly = Math.sin(a) * r; }
+        else { const r: number = Math.sqrt(this.rnd()) * z.radius; lx = Math.cos(a) * r; ly = Math.sin(a) * r; }
       } else if (z.shape === "rectangle" || z.shape === "box") {
         if (z.mode === "edge") {
-          const per: number = 2 * (z.width + z.height), d: number = Math.random() * per;
+          const per: number = 2 * (z.width + z.height), d: number = this.rnd() * per;
           if (d < z.width) { lx = d - z.width / 2; ly = -z.height / 2; }
           else if (d < z.width + z.height) { lx = z.width / 2; ly = (d - z.width) - z.height / 2; }
           else if (d < 2 * z.width + z.height) { lx = z.width / 2 - (d - z.width - z.height); ly = z.height / 2; }
           else { lx = -z.width / 2; ly = z.height / 2 - (d - 2 * z.width - z.height); }
-        } else { lx = (Math.random() - 0.5) * z.width; ly = (Math.random() - 0.5) * z.height; }
+        } else { lx = (this.rnd() - 0.5) * z.width; ly = (this.rnd() - 0.5) * z.height; }
       } else if (z.shape === "line") {
-        lx = (Math.random() - 0.5) * z.length;
+        lx = (this.rnd() - 0.5) * z.length;
       }
       const ox: number = lx * cr - ly * sr, oy: number = lx * sr + ly * cr;
       if (e.reverse) { dx = -dx; dy = -dy; }

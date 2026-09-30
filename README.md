@@ -62,11 +62,12 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **Per-state colors** — each birth/mid/death state keeps its own color; white means natural materials, any other color tints over the base.
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
+- **Deterministic seed** — a nonzero emitter `seed` replays the identical effect on every load in the editor (Python + C++), the browser preview, and the GDevelop runtime; `0` keeps legacy unseeded behavior.
 - **Adaptive viewport** — crisp vector drawlist under ~900 particles; above that the particle layer renders offscreen (GL, 320px wide) and uploads as a raw texture while guides/gizmo stay vector. Custom meshes always use the vector path.
 - **Pooled game runtime** — the GDevelop extension reuses meshes/materials from a shape-aware pool (no per-spawn GPU churn), shares geometries, and hoists per-frame temporaries; the browser preview renders 3D as instanced meshes and 2D as pooled tinted sprites.- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
-- **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
+- **Compatible JSON export** — matches the extension's v1.1 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`); v1.0 files migrate automatically with defaults.
 
 ## Blend modes
 
@@ -174,6 +175,8 @@ dist/CarrotParticleEditor.exe
 | `tests/test_gl_blend.py` | Pixel-level GL formulas per blend mode + fallbacks |
 | `tests/test_blend_modes.py` | Blend round-trip, sanitize, sample layers |
 | `preview/test_blend.mjs` | Extension blend mappings + resolution (stubbed runtimes) |
+| `tests/test_seed.py` | Seed replay identical (Python + C++), divergence, seed-0 legacy |
+| `preview/test_seed.mjs` | Preview replay identical + extension RNG extraction |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
@@ -194,7 +197,7 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 - **Particle record layout** — `[x, y, vx, vy, age, c0, c1, s0, s1, life, z, vz, shape, tracks, dx, dy, dz, gx, gy, gz, sizeRatio, speedRatio]`
 - **`SHAPE_ORDER`** — 12 shapes, shared Python ↔ C++ ↔ preview
-- **Export format** — GDevelop extension v1.0 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values; validated against `contracts/gen/schema.json` on save and load, with `migrate_effect()` healing old files (missing version, camelCase easings, missing blend mode)
+- **Export format** — GDevelop extension v1.1 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values; validated against `contracts/gen/schema.json` on save and load, with `migrate_effect()` healing old files (missing version, v1.0→1.1 upgrade, camelCase easings, missing blend mode/seed)
 - **GL coordinates** — sizes are resolved once in the vertex shader; the editor's own projection matrix is numerically matched in tests
 
 ## Roadmap

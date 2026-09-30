@@ -109,6 +109,20 @@ class SimEngine:
         self._cpp_key = None
         self._cpp_out = None
         self._last_sim_mode = None
+        self._rand = random.Random()
+        self._seed = 0
+
+    def seed_sim(self, seed):
+        """Deterministic seed (0 = legacy unseeded behavior).
+
+        Nonzero seeds make every spawn draw from a fresh private stream, so
+        reloading the same effect replays identically in this renderer.
+        """
+        self._seed = int(seed or 0)
+        if self._seed:
+            self._rand.seed(self._seed)
+        else:
+            self._rand.seed()
 
     def reset(self):
         self.parts = []
@@ -218,7 +232,7 @@ class SimEngine:
         }
 
     @staticmethod
-    def _cone_dir3(bx, by, bz, spread_deg):
+    def _cone_dir3(rand, bx, by, bz, spread_deg):
         n = math.sqrt(bx * bx + by * by + bz * bz) or 1.0
         bx, by, bz = bx / n, by / n, bz / n
         ux, uy, uz = (0.0, 1.0, 0.0) if abs(by) < 0.95 else (1.0, 0.0, 0.0)
@@ -226,8 +240,8 @@ class SimEngine:
         n1 = math.sqrt(cx1 * cx1 + cy1 * cy1 + cz1 * cz1) or 1.0
         ux, uy, uz = cx1 / n1, cy1 / n1, cz1 / n1
         vx, vy, vz = by * uz - bz * uy, bz * ux - bx * uz, bx * uy - by * ux
-        a = random.random() * math.pi * 2
-        r = math.tan(math.radians(spread_deg / 2)) * math.sqrt(random.random())
+        a = rand.random() * math.pi * 2
+        r = math.tan(math.radians(spread_deg / 2)) * math.sqrt(rand.random())
         dx = bx + (ux * math.cos(a) + vx * math.sin(a)) * r
         dy = by + (uy * math.cos(a) + vy * math.sin(a)) * r
         dz = bz + (uz * math.cos(a) + vz * math.sin(a)) * r
@@ -239,11 +253,11 @@ class SimEngine:
         zone = em.get("emissionZone", {})
         is3d = "directionZ" in cone
         spread = cone.get("spread", 90)
-        jitter = 0.9 + random.random() * 0.2
+        jitter = 0.9 + self._rand.random() * 0.2
         for tr in tracks:
             tr["dur"] *= jitter
         life = max(0.1, sum(tr["dur"] for tr in tracks[:-1]))
-        sizeRatio, speedRatio = random.random(), random.random()
+        sizeRatio, speedRatio = self._rand.random(), self._rand.random()
         head = self.sample_tracks(tracks, 0.0, sizeRatio, speedRatio)
         spd0 = head["speed"]
         if is3d:
@@ -251,19 +265,19 @@ class SimEngine:
             rot3 = math.radians(zone.get("rotationZ", zone.get("rotation", 0)) or 0)
             cr3, sr3 = math.cos(rot3), math.sin(rot3)
             if zshape == "sphere":
-                th = random.random() * math.pi * 2
-                ph = math.acos(2 * random.random() - 1)
-                rr = (zone.get("radius", 10) or 10) * (random.random() ** (1 / 3))
+                th = self._rand.random() * math.pi * 2
+                ph = math.acos(2 * self._rand.random() - 1)
+                rr = (zone.get("radius", 10) or 10) * (self._rand.random() ** (1 / 3))
                 sx = rr * math.sin(ph) * math.cos(th)
                 sy = rr * math.cos(ph)
                 sz = rr * math.sin(ph) * math.sin(th)
             elif zshape == "box":
-                sx = (random.random() - 0.5) * (zone.get("width", 100) or 100)
-                sy = (random.random() - 0.5) * (zone.get("height", 60) or 60)
-                sz = (random.random() - 0.5) * (zone.get("depth", 60) or 60)
+                sx = (self._rand.random() - 0.5) * (zone.get("width", 100) or 100)
+                sy = (self._rand.random() - 0.5) * (zone.get("height", 60) or 60)
+                sz = (self._rand.random() - 0.5) * (zone.get("depth", 60) or 60)
                 sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
             elif zshape == "line":
-                sx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+                sx = (self._rand.random() - 0.5) * (zone.get("length", 100) or 100)
                 sy, sz = 0.0, 0.0
                 sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
             else:
@@ -272,7 +286,7 @@ class SimEngine:
             el = math.radians(cone.get("directionY", 0))
             base = (math.cos(el) * math.cos(az), math.sin(el),
                     math.cos(el) * math.sin(az))
-            dx, dy, dz = self._cone_dir3(base[0], base[1], base[2], spread)
+            dx, dy, dz = self._cone_dir3(self._rand, base[0], base[1], base[2], spread)
             ex, ey, ez = emitter_pos
             if em.get("reverse"):
                 dist = spd0 * life
@@ -285,24 +299,24 @@ class SimEngine:
                     life, ez + sz, dz * spd0, head["shape"],
                     tracks, dx, dy, dz, 0.0, 0.0, 0.0, sizeRatio, speedRatio]
         ang = math.radians(cone.get("direction", 0) +
-                           random.uniform(-spread / 2, spread / 2))
+                           self._rand.uniform(-spread / 2, spread / 2))
         zshape = str(zone.get("shape", "Circle")).lower()
         rot = math.radians(zone.get("rotation", 0) or 0)
         zmode = str(zone.get("mode", "Surface")).lower()
         lx, ly = 0.0, 0.0
         if zshape == "circle":
             rr = zone.get("radius", 50) or 50
-            a = random.random() * math.pi * 2
+            a = self._rand.random() * math.pi * 2
             if zmode == "edge":
                 lx, ly = math.cos(a) * rr, math.sin(a) * rr
             else:
-                r = math.sqrt(random.random()) * rr
+                r = math.sqrt(self._rand.random()) * rr
                 lx, ly = math.cos(a) * r, math.sin(a) * r
         elif zshape == "rectangle":
             w, h = (zone.get("width", 100) or 100), (zone.get("height", 60) or 60)
             if zmode == "edge":
                 per = 2 * (w + h)
-                d = random.random() * per
+                d = self._rand.random() * per
                 if d < w:
                     lx, ly = d - w / 2, -h / 2
                 elif d < w + h:
@@ -312,9 +326,9 @@ class SimEngine:
                 else:
                     lx, ly = -w / 2, h / 2 - (d - 2 * w - h)
             else:
-                lx, ly = (random.random() - 0.5) * w, (random.random() - 0.5) * h
+                lx, ly = (self._rand.random() - 0.5) * w, (self._rand.random() - 0.5) * h
         elif zshape == "line":
-            lx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+            lx = (self._rand.random() - 0.5) * (zone.get("length", 100) or 100)
         ox = lx * math.cos(rot) - ly * math.sin(rot)
         oy = lx * math.sin(rot) + ly * math.cos(rot)
         dx, dy = math.cos(ang), math.sin(ang)
@@ -497,6 +511,7 @@ class App:
                                                     90))),
                     "showCone": bool(c.get("showCone", True))},
                 "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
+                "seed": int(src.get("seed", 0) or 0),
             }
         zs = str(z.get("shape", "Circle") or "Circle")
         if zs not in PS.ZONE_2D:
@@ -521,6 +536,7 @@ class App:
                 "spread": max(0.0, min(360.0, F(c.get("spread", 90), 90))),
                 "showCone": bool(c.get("showCone", True))},
             "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
+            "seed": int(src.get("seed", 0) or 0),
         }
 
     def current_effect(self):
@@ -1429,6 +1445,15 @@ def cb_em_int(path):
     return _cb
 
 
+def cb_em_seed(sender=None, app_data=None, *r):
+    """Seed box: store the value and reseed the spawn stream immediately."""
+    try:
+        em_set(("seed",), int(app_data))
+        APP.sim.seed_sim(int(app_data))
+    except (ValueError, TypeError):
+        pass
+
+
 def cb_em_combo(path, lower=False):
     def _cb(sender=None, app_data=None, *r):
         em_set(path, str(app_data).lower() if lower else str(app_data))
@@ -1755,6 +1780,7 @@ def sync_emitter_form(self):
     _set("em_rev", bool(e.get("reverse", False)))
     _set("em_align", bool(e.get("alignDir", False)))
     _set("em_blend", str(e.get("blendingMode", "Normal")))
+    _set("em_seed", int(e.get("seed", 0) or 0))
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -1879,6 +1905,10 @@ def build_sidebar():
         dpg.add_text("Blend", color=list(MUTED) + [255])
         dpg.add_combo(tag="em_blend", items=PS.BLEND_MODES, default_value="Normal",
                       width=-1, callback=cb_em_combo(("blendingMode",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Seed", color=list(MUTED) + [255])
+        dpg.add_input_int(tag="em_seed", default_value=0, width=-1,
+                          callback=cb_em_seed)
     dpg.add_text("GRAVITY", color=list(MUTED) + [255])
     num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
@@ -2254,6 +2284,7 @@ def _apply_loaded_effect(eff, path):
     APP.em = eff.get("emitter", PS.default_emitter("2d"))
     APP.sync_all()
     APP.sim.reset()
+    APP.sim.seed_sim((eff.get("emitter") or {}).get("seed", 0))
     APP.mark_dirty()
     APP.history_commit()
     if _warns:

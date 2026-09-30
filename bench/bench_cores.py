@@ -13,7 +13,6 @@ import argparse
 import json
 import os
 import platform
-import random
 import statistics
 import sys
 import time
@@ -52,9 +51,9 @@ def make_world(n):
 
 
 def bench_py(n):
-    random.seed(0)
     em, tracks, cam = make_world(n)
     eng = S.SimEngine()
+    eng.seed_sim(1234)  # instance RNG: comparable streams across runs
     warm = 60 if n <= 10000 else 10
     for _ in range(warm):
         eng.step_py(em, "2d", 400, 300, (0, 0, 0), cam, tracks, DT, n)

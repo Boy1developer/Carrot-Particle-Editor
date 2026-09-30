@@ -1717,10 +1717,11 @@ class StudioApp(tk.Tk):
         return (dx / n2, dy / n2, dz / n2)
 
     def _load_emitter_to_ui(self, em):
-        # Tk has no blend widget (see DPG sidebar): stash the loaded value so
-        # save round-trips preserve it instead of resetting to Normal.
+        # Tk has no blend/seed widgets (see DPG sidebar): stash the loaded
+        # values so save round-trips preserve them instead of resetting.
         bm = em.get("blendingMode")
         self._em_blending = bm if bm in BLEND_MODES else "Normal"
+        self._em_seed = int(em.get("seed", 0) or 0)
         self.v_flow.set(str(em.get("flow", 40)))
         self.v_max.set(str(em.get("maxParticles", 300)))
         self.v_mode.set(em.get("mode", "Infinite"))
@@ -1767,6 +1768,7 @@ class StudioApp(tk.Tk):
                                         "spread": f(self.v_spread),
                                         "showCone": bool(self.v_showcone.get())},
                     "blendingMode": getattr(self, "_em_blending", "Normal"),
+                    "seed": getattr(self, "_em_seed", 0),
                 }
             zshape2 = zraw if zraw in ZONE_2D else "Circle"
             return {
@@ -1784,6 +1786,7 @@ class StudioApp(tk.Tk):
                                     "spread": f(self.v_spread),
                                     "showCone": bool(self.v_showcone.get())},
                 "blendingMode": getattr(self, "_em_blending", "Normal"),
+                "seed": getattr(self, "_em_seed", 0),
             }
         except ValueError:
             if not silent:
@@ -2148,6 +2151,9 @@ class StudioApp(tk.Tk):
                 return
             if _warns:
                 debug_log("MIGRATE", p, " | ".join(_warns))
+            _tk_seed = (eff.get("emitter") or {}).get("seed", 0)
+            if _tk_seed:
+                random.seed(int(_tk_seed))
             self.filepath = p
             self.e_filename.delete(0, "end")
             self.e_filename.insert(0, os.path.splitext(os.path.basename(p))[0])
