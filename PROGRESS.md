@@ -2,8 +2,14 @@
 
 > Branch: `upgrade/master`. This file is the resume point: read it first, continue from the first unfinished phase.
 
-## Final report (filled at the end of the whole run)
-_Not yet — run in progress._
+## Final report (2026-09-30, branch `upgrade/master`, NOT merged into `main`)
+Phases completed: 0, 1, 2, 3, 4 (10x target missed, documented), 5, 6 (6a+6b+6c), 7.0 + 7.5 + 7.3, 8 (bench gate only).
+Skipped/deferred with reasons: Phase 4 10x (marshaling floor ~0.7us/particle makes 0.2us unreachable without a boundary change — proposal recorded); Phase 5 InstancedMesh rewrite + 2D ParticleContainer (unverifiable outside GDevelop, high game-runtime risk); Phase 7.1 trails (needs particle identity + 22-field boundary change), 7.2 curves (evaluators ×4 + gradient UI), 7.4 materials (shader work ×3), 7.6 node tree (recursive format), 7.7 timeline/gallery (specs recorded; timeline unblocked by 7.5); Phase 8 golden images (no browser automation headless — needs DOM/WebGL canvas).
+Before/after benchmarks (DESKTOP-2O3SIPG): C++ core @1k 2.36→0.87ms, @10k 38.5→18.5ms, @100k 452→140ms, behavior @2k ~4→~1.3ms; DPG draw stage @2k 43.2ms drawlist vs 26.1ms new raster path (auto-switch ≥900 particles); current C++ throughput ~1070 particles/ms @1k (CI floor 300).
+Features added: contracts/ + generator + schema + migration (format v1.1, ext v0.1.2), raster viewport, Screen/Lighten/Overlay blend modes with per-emitter resolution + dropdown + GL equations + preview modes + pixel-tested formulas, deterministic seed (Py/C++/preview/extension), force fields (turbulence/vortex/attractor/collision plane) with UI, sample_blend_layers, bench CI gate.
+Decisions taken for you (all in PROGRESS): keep Tk code; TS/extension verify-only contracts; no framework switch; no PBO; no subrect-texture; no multithreading; no output-buffer reuse/fusion; Lighten-2D→Normal, Overlay-3D→Normal; Tk can't edit blend/seed/fields (preserves on round-trip); collision rule y<planeY in native coords; reseeding only on load/seed-change/reset.
+Unverified (needs a running GDevelop game): extension pooling/temps (Ph5), blend mappings + Screen/Lighten custom blending + pool reuse (Ph5/6), seed + fields in-game behavior, Pixi v7.2 SCREEN/OVERLAYenum presence (audit via forum, not runtime), DPG raster image orientation/appearance in-app.
+Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/blend effects; 3) golden images once browser automation exists; 4) Phase 7 deferred items in priority order (timeline, trails needs boundary-v2, curves, materials, tree); 5) cut a Release with dist exe + extension 0.1.2.
 
 ## Phase status
 - [x] Phase 0: Repo hygiene — DONE (`phase-0-done`)
@@ -14,13 +20,7 @@ _Not yet — run in progress._
 - [x] Phase 5: Runtime rendering efficiency — DONE (`phase-5-done`)
 - [x] Phase 6: Blend modes — DONE (`phase-6-done`)
 - [x] Phase 7: Effekseer-class features — DONE (`phase-7-seed`, `phase-7-fields`; trails/curves/materials/tree/UX deferred — see decision)
-- [ ] Phase 2: Single source of truth for contracts
-- [ ] Phase 3: Viewport handoff (Dear PyGui)
-- [ ] Phase 4: Simulation core performance
-- [ ] Phase 5: Runtime rendering efficiency
-- [ ] Phase 6: Blend modes (6a audit, 6b new modes, 6c per-emitter + parity)
-- [ ] Phase 7: Effekseer-class features (1..7)
-- [ ] Phase 8: Final quality gates
+- [x] Phase 8: Final quality gates — DONE (`phase-8-done`; bench gate landed, golden images blocked — see below)
 
 ## Decisions made
 - Phase 0: keep the legacy Tk code in `editor/particle_studio.py` untouched. Rationale: `editor/studio_imgui.py` (Dear PyGui) imports shared logic from it; deleting Tk risks breaking the app for zero hygiene gain. Hygiene scope = docs + ignore + CI only. (Conservative option per autonomy rule 6.)
@@ -36,7 +36,7 @@ _Not yet — run in progress._
 - Phase 3: DPG raw-texture row 0 = top is assumed (matches the numerically verified PPM orientation: canvas-top dot → row 5/214); could not verify visually headless. If the raster image ever appears vertically flipped in-app, flip the row order in `ppm_to_floats`.
 
 ## Test results
-- Phase 7 full run: ALL GREEN (parity 99/99, behavior, seed replay Py+C+++preview+extension-RNG, fields formulas/off/perturb/replay/collision/attractor Py+C+++preview+extension-helpers, all headless UI incl. seed box + fields widgets, GL + clip + cost + pixel blend, preview server, all 10 Node tests, runtime loader, contracts + `--check`, extension `node --check`).
+- FINAL full run: ALL GREEN (parity 99/99, behavior, seed + fields replay Py+C+++preview+extension, all headless UI, GL + clip + cost + pixel blend, preview server, all 11 Node tests, runtime loader, contracts + `--check`, extension `node --check`, perf gate 1069 vs floor 300).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
@@ -71,6 +71,7 @@ _Not yet — run in progress._
 - Phase 6 6c runtime note: single emitter per object makes the existing resolution (JSON→emitter's `_originalBlendingMode`, explicit→force) already per-emitter-correct; `F.resolveEmitterBlend` added tested for the multi-emitter future. Pool key blend-aware since Phase 5; `depthWrite=false` already set; single group → no renderOrder deltas needed.
 - Phase 7 7.3 DONE (`phase-7-fields`): `PS.default_fields/fields_active/field_accel` + SimEngine integration (accumulator fold + accumulator-surgery bounce, mirroring gravity); C++ struct + parse + loop (same); preview `normFields/fieldAccel` + update (stateful-velocity direct response); extension `F.fieldsActive/fieldAccel/fieldCollision` pure + update-loop wiring (`tools/patch_fields.py`, anchored + idempotent, `node --check`); JS helpers match Python to 1e-9; fields-off ≡ legacy proved per renderer; DPG fields section + Tk stash round-trip; schema sub-schema; `sample` files carry `seed: 0`.
 - Phase 7 deferred specs (for a follow-up run): 7.1 trails — needs stable per-particle identity + history buffers in all sims (touches the 22-field boundary; needs boundary-v2 from the Phase 4 proposal); 7.2 curves — per-track Bezier evaluators ×4 codebases + gradient editor UI; 7.4 materials — flipbook atlas UVs + UV scroll + soft particles (shader work in gl_view/extension/preview); 7.6 node tree — recursive emitter format + spawn-on-event wiring; 7.7 timeline scrubbing (unblocked by 7.5: seed_sim + reset + step) + preset gallery UI (templates exist as data).
+- Phase 8: golden-image editor-vs-browser tests BLOCKED (no browser automation in this environment; preview needs DOM + WebGL canvas). Landed instead: `tools/check_perf.py` CI gate (C++ floor 300 particles/ms @1k: ~27% below the original 410 baseline, ~3.7x below current ~1070 — flakesafe, catches catastrophic regressions).
 
 ## Known limitations / unverified
 - Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop. In particular Phase 5's extension pooling/temps patch is syntax-checked (`node --check`) and logic-reviewed but NOT run in GDevelop.

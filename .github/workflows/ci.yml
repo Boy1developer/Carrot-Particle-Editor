@@ -90,3 +90,6 @@ jobs:
           node node_modules/typescript/bin/tsc -p preview/tsconfig.json --noEmit
           node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json
           node carrots-runtime/test_loader.mjs
+
+      - name: Performance gate (fail on large core regressions)
+        run: python tools/check_perf.py
