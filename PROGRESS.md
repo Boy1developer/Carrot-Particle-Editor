@@ -82,4 +82,5 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 
 ## Standing instructions
 - User granted full autonomy (2026-09-30): in all future requests, decide freely and act — no conservative-option fallback, no approval-seeking. Document decisions briefly, keep moving.
+- DPG file dialogs are unusable on this setup (deliver empty payloads: `DLG-SAVE []` in the log) — Save/Export/Open must use OS-native tkinter filedialogs, same as model/image picking already does. The DPG `dlg_open`/`dlg_save` widgets stay defined but unused.
 - Finish protocol (2026-09-30): when any task is done, `push` the branch and open/update a pull request to `main` so the user can accept + merge quickly. Never merge into `main` locally.

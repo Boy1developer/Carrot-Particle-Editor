@@ -2461,7 +2461,23 @@ def dialog_pick(app_data):
 
 
 def do_open():
-    dpg.show_item("dlg_open")
+    p, err = _native_effect_path("open")
+    if err:
+        show_msg("Error", err)
+        return
+    if not p:
+        return  # user cancelled the OS picker
+    try:
+        _load_path(p)
+    except Exception as e:
+        show_msg("Error", str(e))
+
+
+def _load_path(p):
+    """Open + migrate + apply an effect file. Raises on failure."""
+    with open(p, encoding="utf-8") as f:
+        eff = json.load(f)
+    _apply_loaded_effect(eff, p)
 
 
 @_safe_action
@@ -2472,9 +2488,7 @@ def open_chosen(sender=None, app_data=None, *r):
         p = dialog_pick(app_data)
         if not p:
             return
-        with open(p, encoding="utf-8") as f:
-            eff = json.load(f)
-        _apply_loaded_effect(eff, p)
+        _load_path(p)
     except Exception as e:
         show_msg("Error", str(e))
 
@@ -2504,7 +2518,31 @@ def do_save():
 
 @_safe_action
 def do_save_as():
-    dpg.show_item("dlg_save")
+    p, err = _native_effect_path("save")
+    if err:
+        show_msg("Error", err)
+        return
+    if not p:
+        return  # user cancelled the OS picker
+    try:
+        p = _write_path(p)
+    except Exception as e:
+        show_msg("Error", str(e))
+        return
+    show_msg("Done", f"Exported:\n{p}\n\nAdd it in GDevelop as a JSON "
+                     "resource into ParticleJSON.")
+
+
+def _write_path(p):
+    """Validate + write the effect JSON. Raises on failure. Shared by the
+    OS picker and the legacy DPG dialog fallback."""
+    if not p.lower().endswith(".json"):
+        p += ".json"
+    eff = gather()
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(eff, f, indent=2, ensure_ascii=False)
+    APP.filepath = p
+    return p
 
 
 @_safe_action
@@ -2515,12 +2553,7 @@ def save_chosen(sender=None, app_data=None, *r):
         p = dialog_pick(app_data)
         if not p:
             return
-        if not p.lower().endswith(".json"):
-            p += ".json"
-        eff = gather()
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(eff, f, indent=2, ensure_ascii=False)
-        APP.filepath = p
+        p = _write_path(p)
         show_msg("Done", f"Exported:\n{p}\n\nAdd it in GDevelop as a JSON "
                          "resource into ParticleJSON.")
     except Exception as e:
@@ -2541,7 +2574,6 @@ def upload_custom_model():
 
 def _native_pick(kind):
     """OS-native file picker (tkinter): returns (path, error).
-
     Synchronous plain path string — no DPG payload quirks. ("", "") means
     the user cancelled; ("", message) means the picker itself failed.
     """
@@ -2571,6 +2603,50 @@ def _native_pick(kind):
         return (path or "", "")
     except Exception as e:
         PS.debug_log("NATIVE-DLG-EXC", str(e)[:200])
+        return ("", f"Could not open file picker:\n{e}")
+
+
+def _native_effect_path(mode):
+    """OS-native open/save dialog for effect JSON files.
+
+    The Dear PyGui file dialog delivers empty payloads on this setup
+    (see DLG-SAVE [] in the debug log), so Save/Export/Open bypass it
+    exactly like model/image picking already does. Returns (path, error);
+    ("", "") means the user cancelled.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        start = os.path.dirname(APP.filepath) \
+            if getattr(APP, "filepath", None) else os.getcwd()
+        root = tk.Tk()
+        try:
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            if mode == "save":
+                initial = (getattr(APP, "filename", "") or "Default").strip() \
+                    or "Default"
+                path = filedialog.asksaveasfilename(
+                    title="Export effect JSON",
+                    defaultextension=".json",
+                    filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+                    initialdir=start, initialfile=f"{initial}.json")
+            else:
+                path = filedialog.askopenfilename(
+                    title="Open effect JSON",
+                    filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+                    initialdir=start)
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+        return (path or "", "")
+    except Exception as e:
+        PS.debug_log("NATIVE-EFFECT-EXC", str(e)[:200])
         return ("", f"Could not open file picker:\n{e}")
 
 
