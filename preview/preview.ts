@@ -12,7 +12,7 @@ interface RGB { r: number; g: number; b: number }
 
 interface EmitterCfg {
   flow: number; maxParticles: number; reservoir: number;
-  mode: string; reverse: boolean;
+  mode: string; reverse: boolean; blending: string;
   gravity: { x: number; y: number; z: number };
   zone: {
     shape: string; radius: number; width: number; height: number;
@@ -87,6 +87,9 @@ export class ParticleEngine {
   /** Bumped on every loadEffect — render layers rebuild guides on change. */
   get effectVersion(): number { return this.effectRev; }
 
+  /** Emitter blend mode for the render layers (same fallbacks as the game runtime). */
+  blendingMode(): string { return this.emitter.blending; }
+
   /** Copy of the normalized emission-zone config (for guide rendering). */
   zoneInfo(): { shape: string; radius: number; width: number; height: number;
     length: number; depth: number; rot: number; mode: string } {
@@ -121,6 +124,7 @@ export class ParticleEngine {
       reservoir: Number(raw.reservoir ?? 50),
       mode: normMode(raw.mode),
       reverse: Boolean(raw.reverse),
+      blending: String(raw.blendingMode ?? "Normal"),
       gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
       zone: {
         shape: normZone(z.shape),

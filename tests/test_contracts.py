@@ -55,7 +55,7 @@ bad2 = json.loads(json.dumps(sample))
 bad2["states"][0]["easing"] = "easeIn"
 assert any("easing" in e for e in PS.validate_against_schema(bad2))
 bad3 = json.loads(json.dumps(sample))
-bad3["emitter"]["blendingMode"] = "Screen"
+bad3["emitter"]["blendingMode"] = "Bogus"
 assert any("blendingMode" in e for e in PS.validate_against_schema(bad3)), \
     PS.validate_against_schema(bad3)
 print("schema rejects broken effects: OK")

@@ -57,6 +57,7 @@ jobs:
           python tests/test_imgui_morph.py
           python tests/test_imgui_upload.py
           python tests/test_imgui_raster.py
+          python tests/test_blend_modes.py
           python tests/test_preview_blobs.py
 
       - name: Python tests (GL + preview server, headless-tolerant)
@@ -65,6 +66,7 @@ jobs:
           python -m render.test_gl
           python -m render.test_clip
           python -m render.test_cost
+          python tests/test_gl_blend.py
           python preview/test_server.py
 
       - name: Preview JS tests (engine + scenes + models + morph + bake)
@@ -76,6 +78,7 @@ jobs:
           node preview/test_morph.mjs
           node preview/test_bake.mjs
           node preview/test_ext_bake.mjs
+          node preview/test_blend.mjs
 
       - name: Runtime typecheck + loader test
         run: |

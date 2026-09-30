@@ -68,6 +68,22 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
 
+## Blend modes
+
+Per-emitter `blendingMode` (sidebar dropdown; object-level `BlendingMode: 'JSON'` uses each emitter's own mode, any explicit value forces all emitters). Supported values and per-renderer behavior:
+
+| Mode | 2D (PixiJS) | 3D (Three.js) | Desktop GL preview | Browser preview |
+| --- | --- | --- | --- | --- |
+| Normal | normal | normal | `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` | normal |
+| Additive | add | additive | `SRC_ALPHA, ONE` | add |
+| Subtractive | erase (Pixi core has no subtract) | subtractive | reverse-subtract | erase |
+| Multiply | multiply | multiply | `DST_COLOR, ONE_MINUS_SRC_ALPHA` | multiply |
+| Screen | screen | custom (add + `ONE, ONE_MINUS_SRC_COLOR`) | `ONE, ONE_MINUS_SRC_COLOR` | screen |
+| Lighten | → Normal (no core lighten) | custom max-equation | max | → normal |
+| Overlay | overlay | → Normal (no fixed-function overlay) | → Normal | overlay |
+
+Unsupported combinations fall back with a single `console.warn` (never per frame, never throwing). Note: extension versions before 0.1.2 don't know Screen/Lighten/Overlay and render them as Normal.
+
 ## Download
 
 Prebuilt Windows executables are published on the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page.
@@ -155,6 +171,9 @@ dist/CarrotParticleEditor.exe
 | `tests/test_imgui_raster.py` | Raster path: PPM conversion, GL orientation, auto-switch, no-GL fallback |
 | `tests/test_preview_blobs.py` | Model-blob embedding for the browser preview |
 | `tests/test_contracts.py` | Generated bindings = source, C++ order, schema accept/reject, migration |
+| `tests/test_gl_blend.py` | Pixel-level GL formulas per blend mode + fallbacks |
+| `tests/test_blend_modes.py` | Blend round-trip, sanitize, sample layers |
+| `preview/test_blend.mjs` | Extension blend mappings + resolution (stubbed runtimes) |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |

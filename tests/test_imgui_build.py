@@ -18,6 +18,16 @@ try:
     # one Shirtless frame of viewport math (no draw): projection sanity
     x, y, sc, d = S.APP.proj(10, 20, 30, 400, 312)
     assert abs(x - 400) > 0 and sc > 0
+    # per-emitter blend dropdown round-trips into the effect + export
+    import particle_studio as PS
+    assert dpg.get_item_configuration("em_blend")["items"] == PS.BLEND_MODES
+    dpg.set_value("em_blend", "Screen")
+    S.cb_em_combo(("blendingMode",))("em_blend", "Screen")
+    assert S.APP.em.get("blendingMode") == "Screen"
+    eff = S.APP.current_effect()
+    assert eff["emitter"].get("blendingMode") == "Screen"
+    assert PS.validate_effect(eff) == []
+    assert PS.validate_against_schema(eff) == []
     print("UI-BUILD-OK")
 finally:
     dpg.destroy_context()

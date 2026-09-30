@@ -205,7 +205,7 @@ def check_consumers(c):
         enc = json.dumps(want, separators=(",", ":")).replace('"', '\\"')
         if enc not in ext:
             errs.append("extension BlendingMode choices drifted: %s" % (want,))
-    for em in ("pixiBlendMode", "createMesh", "SubtractBlending"):
+    for em in ("pixiBlendMode", "createMesh", "SubtractiveBlending"):
         if em not in ext:
             errs.append("extension missing blend runtime block: %s" % em)
     for ez in c["easings"]:

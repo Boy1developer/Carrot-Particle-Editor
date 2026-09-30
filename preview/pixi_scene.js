@@ -103,6 +103,7 @@ export class PixiScene {
         this.prevN = 0;
         this.lastW = 0;
         this.lastH = 0;
+        this.blend = "";
         this.ready = false;
     }
     async init() {
@@ -131,6 +132,18 @@ export class PixiScene {
     normShape(shape) {
         const s = String(shape ?? "circle").toLowerCase();
         return Object.prototype.hasOwnProperty.call(this.tex, s) ? s : "circle";
+    }
+    /** Pixi blend string for an effect mode (same fallbacks as the extension). */
+    pixiBlend(mode) {
+        switch (String(mode ?? "Normal")) {
+            case "Additive": return "add";
+            case "Multiply": return "multiply";
+            case "Subtractive": return "erase";
+            case "Screen": return "screen";
+            case "Overlay": return "overlay";
+            case "Lighten": return "normal";
+            default: return "normal";
+        }
     }
     drawGrid(W, H) {
         const g = this.grid;
@@ -168,6 +181,11 @@ export class PixiScene {
             this.drawGrid(W, H);
         }
         const n = Math.min(this.engine.activeCount, POOL);
+        const wantBlend = this.pixiBlend(this.engine.blendingMode());
+        if (wantBlend !== this.blend) {
+            this.blend = wantBlend;
+            this.layer.blendMode = wantBlend;
+        }
         // margin cull: fully off-screen sprites stay invisible (no fill cost)
         const M = 96;
         for (let i = 0; i < n; i++) {

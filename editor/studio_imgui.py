@@ -496,7 +496,7 @@ class App:
                     "spread": max(0.0, min(360.0, F(c.get("spread", 90),
                                                     90))),
                     "showCone": bool(c.get("showCone", True))},
-                "blendingMode": "Normal",
+                "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
             }
         zs = str(z.get("shape", "Circle") or "Circle")
         if zs not in PS.ZONE_2D:
@@ -520,7 +520,7 @@ class App:
                 "direction": F(c.get("direction", c.get("directionZ", 0))),
                 "spread": max(0.0, min(360.0, F(c.get("spread", 90), 90))),
                 "showCone": bool(c.get("showCone", True))},
-            "blendingMode": "Normal",
+            "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
         }
 
     def current_effect(self):
@@ -1754,6 +1754,7 @@ def sync_emitter_form(self):
     _set("em_mode", str(e.get("mode", "Infinite")))
     _set("em_rev", bool(e.get("reverse", False)))
     _set("em_align", bool(e.get("alignDir", False)))
+    _set("em_blend", str(e.get("blendingMode", "Normal")))
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -1874,6 +1875,10 @@ def build_sidebar():
         dpg.add_text("Align dir.", color=list(MUTED) + [255])
         dpg.add_checkbox(tag="em_align", default_value=True,
                          callback=cb_em_bool(("alignDir",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Blend", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_blend", items=PS.BLEND_MODES, default_value="Normal",
+                      width=-1, callback=cb_em_combo(("blendingMode",)))
     dpg.add_text("GRAVITY", color=list(MUTED) + [255])
     num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))

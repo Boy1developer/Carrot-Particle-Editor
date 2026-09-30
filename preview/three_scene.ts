@@ -153,6 +153,8 @@ export class ThreeScene {
     mats: { m: THREE.Material; base: { r: number; g: number; b: number } }[];
     used: boolean }[] = [];
   private modelRev = -1;
+  private blendMode = "";
+  private blendRev = -1;
 
   // flat shapes billboard toward the camera; solids tumble slowly with age
   private flat: Set<string> = new Set(
@@ -369,6 +371,38 @@ export class ThreeScene {
     return true;
   }
 
+  /** Apply the effect blend mode to every particle material (same fallbacks as the game runtime). */
+  private syncBlending(): void {
+    const mode: string = String(this.engine.blendingMode() ?? "Normal");
+    if (mode === this.blendMode) return;
+    this.blendMode = mode;
+    let blending: THREE.Blending = THREE.NormalBlending;
+    let equation: THREE.BlendingEquation | null = null;
+    let src: THREE.BlendingSrcFactor | null = null;
+    let dst: THREE.BlendingDstFactor | null = null;
+    if (mode === "Additive") blending = THREE.AdditiveBlending;
+    else if (mode === "Subtractive") blending = THREE.SubtractiveBlending;
+    else if (mode === "Multiply") blending = THREE.MultiplyBlending;
+    else if (mode === "Screen") {
+      blending = THREE.CustomBlending;
+      equation = THREE.AddEquation;
+      src = THREE.OneFactor; dst = THREE.OneMinusSrcColorFactor;
+    } else if (mode === "Lighten") {
+      blending = THREE.CustomBlending;
+      equation = THREE.MaxEquation;
+    }
+    const apply = (m: THREE.Material): void => {
+      m.blending = blending;
+      if (equation !== null) {
+        m.blendEquation = equation;
+        if (src !== null && dst !== null) { m.blendSrc = src; m.blendDst = dst; }
+      }
+      m.needsUpdate = true;
+    };
+    for (const im of this.meshes) apply(im.material as THREE.Material);
+    for (const p of this.modelPool) for (const e of p.mats) apply(e.m);
+  }
+
   /** Rebuild zone + cone wireframes when a new effect is loaded. */
   private rebuildGuides(): void {    while (this.guides.children.length) {
       const c = this.guides.children.pop() as THREE.Object3D | undefined;
@@ -486,6 +520,10 @@ export class ThreeScene {
     if (this.modelRev !== this.engine.effectVersion) {
       this.modelRev = this.engine.effectVersion;
       this.syncModels();
+    }
+    if (this.blendRev !== this.engine.effectVersion) {
+      this.blendRev = this.engine.effectVersion;
+      this.syncBlending();
     }
     for (const p of this.modelPool) p.used = false;
     // orbit camera from the shared engine.cam state

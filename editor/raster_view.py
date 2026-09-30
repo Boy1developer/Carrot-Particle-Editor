@@ -169,10 +169,12 @@ def frame_2d(app, out, W, H):
         gx = (W * 0.5 + app.cam["ox"]) * k
         horizon = (H * 0.42 + app.cam["oy"]) * k
         grid = PS.StudioApp._gl_grid_2d(None, rw, rh, gx, horizon)
+        bm = app.em.get("blendingMode") if isinstance(getattr(app, "em", None), dict) else None
         ppm = gl.render(buckets, glow, rw, rh, ortho=1,
                         clip=_ortho(0, rw, 0, rh, -1000, 1000),
                         zoom=1.0, focal=620.0,
-                        bg=(22 / 255, 23 / 255, 31 / 255), grid=grid)
+                        bg=(22 / 255, 23 / 255, 31 / 255), grid=grid,
+                        blend=bm if bm in PS.BLEND_MODES else "Normal")
         return ppm_to_floats(ppm)
     except Exception:
         return None
@@ -218,7 +220,11 @@ def frame_3d(app, out, W, H, cx, cy):
         ppm = gl.render(buckets, glow, rw, rh, ortho=0, clip=clip,
                         zoom=zoom, focal=focal, right=ru, up=uu,
                         bg=(20 / 255, 21 / 255, 28 / 255),
-                        grid=PS.StudioApp._gl_grid_3d())
+                        grid=PS.StudioApp._gl_grid_3d(),
+                        blend=(app.em.get("blendingMode")
+                               if isinstance(getattr(app, "em", None), dict)
+                               and app.em.get("blendingMode") in PS.BLEND_MODES
+                               else "Normal"))
         return ppm_to_floats(ppm)
     except Exception:
         return None

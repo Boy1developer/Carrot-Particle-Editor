@@ -68,6 +68,8 @@ export class ParticleEngine {
     }
     /** Bumped on every loadEffect — render layers rebuild guides on change. */
     get effectVersion() { return this.effectRev; }
+    /** Emitter blend mode for the render layers (same fallbacks as the game runtime). */
+    blendingMode() { return this.emitter.blending; }
     /** Copy of the normalized emission-zone config (for guide rendering). */
     zoneInfo() {
         return { ...this.emitter.zone };
@@ -92,6 +94,7 @@ export class ParticleEngine {
             reservoir: Number(raw.reservoir ?? 50),
             mode: normMode(raw.mode),
             reverse: Boolean(raw.reverse),
+            blending: String(raw.blendingMode ?? "Normal"),
             gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
             zone: {
                 shape: normZone(z.shape),

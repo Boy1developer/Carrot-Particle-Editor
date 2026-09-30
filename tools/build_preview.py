@@ -23,7 +23,7 @@ def run(cmd):
 
 
 def main():
-    run([sys.executable, TSC, "-p", "preview/tsconfig.json"])
+    run(["node", TSC, "-p", "preview/tsconfig.json"])
     run(["node", ESBUILD, "preview/main.ts", "--bundle", "--minify",
          "--format=esm", "--outfile=preview/live_bundle.js"])
     print("PREVIEW-BUILD-OK")

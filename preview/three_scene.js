@@ -164,6 +164,8 @@ export class ThreeScene {
         this.modelLoading = new Set();
         this.modelPool = [];
         this.modelRev = -1;
+        this.blendMode = "";
+        this.blendRev = -1;
         // flat shapes billboard toward the camera; solids tumble slowly with age
         this.flat = new Set(["square", "billboard", "triangle", "star", "line", "circle", "custom"]);
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -369,6 +371,49 @@ export class ThreeScene {
         }
         return true;
     }
+    /** Apply the effect blend mode to every particle material (same fallbacks as the game runtime). */
+    syncBlending() {
+        const mode = String(this.engine.blendingMode() ?? "Normal");
+        if (mode === this.blendMode)
+            return;
+        this.blendMode = mode;
+        let blending = THREE.NormalBlending;
+        let equation = null;
+        let src = null;
+        let dst = null;
+        if (mode === "Additive")
+            blending = THREE.AdditiveBlending;
+        else if (mode === "Subtractive")
+            blending = THREE.SubtractiveBlending;
+        else if (mode === "Multiply")
+            blending = THREE.MultiplyBlending;
+        else if (mode === "Screen") {
+            blending = THREE.CustomBlending;
+            equation = THREE.AddEquation;
+            src = THREE.OneFactor;
+            dst = THREE.OneMinusSrcColorFactor;
+        }
+        else if (mode === "Lighten") {
+            blending = THREE.CustomBlending;
+            equation = THREE.MaxEquation;
+        }
+        const apply = (m) => {
+            m.blending = blending;
+            if (equation !== null) {
+                m.blendEquation = equation;
+                if (src !== null && dst !== null) {
+                    m.blendSrc = src;
+                    m.blendDst = dst;
+                }
+            }
+            m.needsUpdate = true;
+        };
+        for (const im of this.meshes)
+            apply(im.material);
+        for (const p of this.modelPool)
+            for (const e of p.mats)
+                apply(e.m);
+    }
     /** Rebuild zone + cone wireframes when a new effect is loaded. */
     rebuildGuides() {
         while (this.guides.children.length) {
@@ -491,6 +536,10 @@ export class ThreeScene {
         if (this.modelRev !== this.engine.effectVersion) {
             this.modelRev = this.engine.effectVersion;
             this.syncModels();
+        }
+        if (this.blendRev !== this.engine.effectVersion) {
+            this.blendRev = this.engine.effectVersion;
+            this.syncBlending();
         }
         for (const p of this.modelPool)
             p.used = false;

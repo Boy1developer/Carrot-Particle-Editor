@@ -25,8 +25,20 @@ GL_LINES = 0x0001
 GL_COLOR_BUFFER_BIT = 0x4000
 GL_DEPTH_BUFFER_BIT = 0x0100
 GL_BLEND = 0x0BE2
-GL_SRC_ALPHA = 0x0302
+GL_ZERO = 0
 GL_ONE = 1
+GL_SRC_COLOR = 0x0300
+GL_ONE_MINUS_SRC_COLOR = 0x0301
+GL_SRC_ALPHA = 0x0302
+GL_ONE_MINUS_SRC_ALPHA = 0x0303
+GL_DST_ALPHA = 0x0304
+GL_ONE_MINUS_DST_ALPHA = 0x0305
+GL_DST_COLOR = 0x0306
+GL_ONE_MINUS_DST_COLOR = 0x0307
+GL_FUNC_ADD = 0x8006
+GL_FUNC_SUBTRACT = 0x800A
+GL_FUNC_REVERSE_SUBTRACT = 0x800B
+GL_MAX = 0x8008
 GL_ARRAY_BUFFER = 0x8892
 GL_DYNAMIC_DRAW = 0x88E8
 GL_STATIC_DRAW = 0x88E4
@@ -53,6 +65,7 @@ _FUNCS = {
     "glEnable": (None, (ctypes.c_uint,)),
     "glDisable": (None, (ctypes.c_uint,)),
     "glBlendFunc": (None, (ctypes.c_uint, ctypes.c_uint)),
+    "glBlendEquation": (None, (ctypes.c_uint,)),
     "glDepthMask": (None, (ctypes.c_ubyte,)),
     "glGenVertexArrays": (None, (ctypes.c_int, ctypes.c_void_p)),
     "glBindVertexArray": (None, (ctypes.c_uint,)),
@@ -431,6 +444,19 @@ def mat_ortho(l, r, t, b, n, f):
 SOLIDS = ("sphere", "cube", "pyramid", "torus", "diamond")
 
 
+# Blend mode table (effect blendingMode -> GL factors + equation).
+# Matches the extension/preview fallbacks: Overlay has no GL fixed-function
+# equivalent and degrades to Normal; unknown modes degrade to Normal.
+BLEND_MAP = {
+    "Normal": (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_FUNC_ADD),
+    "Additive": (GL_SRC_ALPHA, GL_ONE, GL_FUNC_ADD),
+    "Screen": (GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_FUNC_ADD),
+    "Multiply": (GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA, GL_FUNC_ADD),
+    "Subtractive": (GL_ONE, GL_ONE, GL_FUNC_REVERSE_SUBTRACT),
+    "Lighten": (GL_ONE, GL_ONE, GL_MAX),
+}
+
+
 class GLView:
     """Offscreen GPU renderer. .ok False => caller uses canvas items."""
 
@@ -463,7 +489,8 @@ class GLView:
         GL["glDisable"](0x0B71)  # DEPTH_TEST: additive order-free
         GL["glDepthMask"](GL_FALSE)
         GL["glEnable"](GL_BLEND)
-        GL["glBlendFunc"](GL_SRC_ALPHA, GL_ONE)
+        self._blend = None
+        self.set_blend("Additive")  # historic default; render() overrides per call
         self.p_solid = _compile(_SOLID_VERT, _SOLID_FRAG)
         self.p_flat = _compile(_BILL_VERT, _FLAT_FRAG)
         self.p_glow = _compile(_BILL_VERT, _GLOW_FRAG)
@@ -601,8 +628,22 @@ class GLView:
         if GL["glCheckFramebufferStatus"](GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
             raise RuntimeError("FBO incomplete")
 
+    def set_blend(self, mode):
+        """Apply an effect blendingMode to the GL state.
+
+        Unknown/unsupported modes (e.g. Overlay) degrade to Normal.
+        Returns the canonical mode actually applied.
+        """
+        key = mode if mode in BLEND_MAP else "Normal"
+        src, dst, eq = BLEND_MAP[key]
+        GL["glBlendFunc"](src, dst)
+        GL["glBlendEquation"](eq)
+        self._blend = key
+        return key
+
     def render(self, buckets, glow_items, W, H, *, ortho, clip, zoom, focal,
-               right=None, up=None, bg=(0.08, 0.08, 0.10), grid=(), vp=None):
+               right=None, up=None, bg=(0.08, 0.08, 0.10), grid=(), vp=None,
+               blend="Additive"):
         """buckets: {shape: [(x,y,z,s,r,g,b,a)...]} (world or px coords).
         grid: [(segments_xyz, (r,g,b)), ...]. vp: optional (x0,y0,w2,h2)
         canvas-coords subrect (dirty-region rendering). Returns raw PPM bytes."""
@@ -616,6 +657,7 @@ class GLView:
         w, h = max(1, int(w2)), max(1, int(h2))
         self._ensure_fbo(max(1, int(W)), max(1, int(H)))  # full canvas FBO
         GL["glBindFramebuffer"](GL_FRAMEBUFFER, self.fbo)
+        self.set_blend(blend)
         GL["glViewport"](x0g, y0g, w, h)
         GL["glClearColor"](bg[0], bg[1], bg[2], 1.0)
         GL["glClear"](GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)

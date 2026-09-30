@@ -12,6 +12,7 @@ _Not yet — run in progress._
 - [x] Phase 3: Viewport handoff (Dear PyGui) — DONE (`phase-3-done`)
 - [x] Phase 4: Simulation core performance — DONE (`phase-4-done`, 10x target MISSED — see below)
 - [x] Phase 5: Runtime rendering efficiency — DONE (`phase-5-done`)
+- [x] Phase 6: Blend modes — DONE (`phase-6-done`)
 - [ ] Phase 2: Single source of truth for contracts
 - [ ] Phase 3: Viewport handoff (Dear PyGui)
 - [ ] Phase 4: Simulation core performance
@@ -34,7 +35,7 @@ _Not yet — run in progress._
 - Phase 3: DPG raw-texture row 0 = top is assumed (matches the numerically verified PPM orientation: canvas-top dot → row 5/214); could not verify visually headless. If the raster image ever appears vertically flipped in-app, flip the row order in `ppm_to_floats`.
 
 ## Test results
-- Phase 5 full run: ALL GREEN (parity 99/99, behavior, all headless UI incl. raster, GL + clip + cost, preview server, all 7 Node preview tests incl. recompiled scenes, runtime loader, contracts + `--check`, extension `node --check` via patch script).
+- Phase 6 full run: ALL GREEN (parity 99/99, behavior, all headless UI incl. raster + blend dropdown, GL + clip + cost + NEW pixel blend test, preview server, all 8 Node tests incl. blend mappings, runtime loader, contracts + `--check`, extension `node --check`).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
@@ -58,6 +59,15 @@ _Not yet — run in progress._
 - Phase 5: extension 3D pool was WRITE-ONLY (`getPooledParticle` had zero call sites) — spawns/flips now reuse pooled meshes (steady-state zero mesh/material churn), pool key includes blendingMode, flipped-away GLB meshes return to the pool (previously leaked). Per-frame THREE temps hoisted (billboard basis, alignToVelocity chain, color scratch). Via `tools/patch_perf.py` (anchored, idempotent) + `node --check`.
 - Phase 5 deferred (conservative): extension InstancedMesh rewrite (one draw call/emitter) and 2D ParticleContainer (incompatible with Graphics children — needs baked-sprite approach + Pixi version audit from 6a). Both are unverifiable outside a running GDevelop game and risk the game runtime; revisit with GDevelop-side profiling.
 - Phase 5 cache-key audit: geoCache=shape (blend-independent ✓), textureCache/modelCache=refId (cloned per use ✓), 3D pool=shape+ref+blend ✓ (fixed), 2D pool=shape+customId with per-frame `blendMode` set (✓ safe).
+
+## Phase 6a audit (2026-09-30)
+- (a) Pixi: GDevelop runtime bundles PixiJS v7.2 (forum); preview pins pixi 8.21.0. Core blend modes (no extra packages): normal/add/multiply/screen/overlay/erase (+npm, min/max). NO subtract (v6+ removed it), NO lighten. Current 2D "Subtractive" silently resolves to ERASE (hole-punching, not subtracting — pre-existing). SCREEN and OVERLAY work in core v7/v8. Three (all modern): CustomBlending + AddEquation + OneFactor/OneMinusSrcColorFactor (Screen) ✓; MaxEquation (Lighten) ✓ WebGL2-core (three enables EXT_blend_minmax on WebGL1 itself); Overlay impossible fixed-function → unsupported in 3D.
+- (b) ONE blendingMode per object per frame (object prop, or emitter default when 'JSON'); passed to every emitter/particle. `_originalBlendingMode` (emitter's own) exists only as the JSON fallback — never applied per emitter. Single emitter per object (`data.emitter`, no `data.emitters`), particles carry no emitter ref.
+- (c) Editor UI: NO blend dropdown (emitter default hardcodes "Normal"). Core sim (Py/C++): no blend (metadata only, not in the 22-field record ✓). GL preview: hardcoded `glBlendFunc(SRC_ALPHA, ONE)`. Browser preview: hardcoded `add`/AdditiveBlending, effect value ignored. Exporter passes `emitter.blendingMode` through (always "Normal" — no UI to change it).
+- (d) Plan: 6b adds Screen (+2D/+3D), Lighten (3D only, MaxEquation), Overlay (2D only); Lighten-2D and Overlay-3D fall back Normal + warn-once. Mappings as pure testable functions; choices/descriptions updated; contracts regen; ext 0.1.1→0.1.2. 6c: per-emitter resolution (JSON→emitter's, explicit→force), editor dropdown, GL equations, preview modes, sample + tests.
+- Phase 6b/c DONE: extension 0.1.2 (`tools/patch_blend.py`, anchored + idempotent, `node --check`); pure mapping fns tested headless (`preview/test_blend.mjs`); editor dropdown (DPG; Tk preserves loaded value, can't edit — documented); `GLView.set_blend` + per-call `blend=`; raster passes emitter mode; preview honors effect mode both scenes; `sample_blend_layers.json` (Additive/Normal/Screen).
+- Phase 6 bugs found & fixed: (1) extension 3D referenced `THREE.SubtractBlending` (does not exist — real name `SubtractiveBlending`), so shipped 3D Subtractive silently rendered Normal; now truly subtractive. (2) My own `GL_ONE_MINUS_SRC_COLOR` was 0x0307 (= ONE_MINUS_DST_COLOR); the new pixel test caught it — correct is 0x0301. All six GL modes now match analytic formulas pixel-exact.
+- Phase 6 6c runtime note: single emitter per object makes the existing resolution (JSON→emitter's `_originalBlendingMode`, explicit→force) already per-emitter-correct; `F.resolveEmitterBlend` added tested for the multi-emitter future. Pool key blend-aware since Phase 5; `depthWrite=false` already set; single group → no renderOrder deltas needed.
 
 ## Known limitations / unverified
 - Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop. In particular Phase 5's extension pooling/temps patch is syntax-checked (`node --check`) and logic-reviewed but NOT run in GDevelop.
