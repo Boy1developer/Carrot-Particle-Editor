@@ -79,3 +79,6 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 - GL tests (`render/test_*.py`) need a GPU/GLFW context; may fail on headless CI — workflow runs them `continue-on-error`.
 - `carrots-runtime/package.json` `build` script references `../../node_modules/typescript` which is wrong standalone (resolves above the repo); use repo-root `node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json` instead (CI does this). Left untouched in Phase 0.
 - Preview Node tests print `MODULE_TYPELESS_PACKAGE_JSON` warnings (root `package.json` has no `"type"` field); harmless, left untouched.
+
+## Standing instructions
+- User granted full autonomy (2026-09-30): in all future requests, decide freely and act — no conservative-option fallback, no approval-seeking. Document decisions briefly, keep moving.
