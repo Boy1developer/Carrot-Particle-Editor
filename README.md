@@ -4,43 +4,9 @@
 
 > Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem. The "Advanced particle editor for stunning VFX" mentioned in the engine's feature list is this project.
 
-## Screenshots
-
-| 3D viewport | 3D fast preview (three.js) |
-| --- | --- |
-| ![3D viewport](docs/screenshots/viewport-3d.png) | ![3D fast preview](docs/screenshots/fast-preview-3d.png) |
-
-| 2D viewport | 2D fast preview (pixi.js) |
-| --- | --- |
-| ![2D viewport](docs/screenshots/viewport-2d.png) | ![2D fast preview](docs/screenshots/fast-preview-2d.png) |
-
-| Emitter + propagation cone | States + templates (3D) | States + templates (2D) |
-| --- | --- | --- |
-| ![Emitter panel](docs/screenshots/emitter-panel.png) | ![States panel](docs/screenshots/states-panel.png) | ![States panel 2D](docs/screenshots/states-panel-2d.png) |
-
-| 3D shape list | 2D shape list | Custom shape (uploaded 3D model) |
-| --- | --- | --- |
-| ![3D shapes 1](docs/screenshots/shapes-list-1.png) ![3D shapes 2](docs/screenshots/shapes-list-2.png) | ![2D shapes](docs/screenshots/shapes-list-2d.png) | ![Custom shape](docs/screenshots/custom-shape.png) |
+![3D viewport](docs/screenshots/viewport-3d.png) ![3D fast preview](docs/screenshots/fast-preview-3d.png) ![2D viewport](docs/screenshots/viewport-2d.png) ![2D fast preview](docs/screenshots/fast-preview-2d.png) ![Emitter panel](docs/screenshots/emitter-panel.png) ![States panel](docs/screenshots/states-panel.png) ![States panel 2D](docs/screenshots/states-panel-2d.png) ![3D shapes 1](docs/screenshots/shapes-list-1.png) ![3D shapes 2](docs/screenshots/shapes-list-2.png) ![2D shapes](docs/screenshots/shapes-list-2d.png) ![Custom shape](docs/screenshots/custom-shape.png)
 
 ---
-
-## Table of contents
-
-- [Overview](#overview)
-- [Screenshots](#screenshots)
-- [Features](#features)
-- [Blend modes](#blend-modes)
-- [Download](#download)
-- [Project structure](#project-structure)
-- [Getting started (from source)](#getting-started-from-source)
-- [Using effects in GDevelop](#using-effects-in-gdevelop)
-- [Testing](#testing)
-- [Shared contracts](#shared-contracts)
-- [Roadmap](#roadmap)
-- [Related projects](#related-projects)
-- [Author](#author)
-- [Third-party](#third-party)
-- [License](#license)
 
 ## Overview
 
@@ -53,7 +19,30 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** (a 2D/3D engine built on GDevelop Core), but usable in any GDevelop-based project.
 
-## Features
+---
+
+## 🎨 Version 0.1.2 (current)
+
+- **InstancedMesh batching**: ~580 draw calls → ~12 buckets — same look, verified pixel-identical per particle (matrix, color, alpha), including morph flips and all blend modes.
+- **Lazy buckets**: buckets are created only for shapes in use (not all 11 per emitter); empty buckets cost zero draw calls (`visible=false`).
+- **Sampling diet**: static-track skip + pre-parsed color ints — zero visual change, proven by A/B test.
+- **New blend modes**: **Screen** (2D+3D), **Lighten** (3D max-equation), **Overlay** (2D) — with graceful Normal fallback + single warning where unsupported.
+- **Per-emitter `blendingMode`**: sidebar dropdown; object `'JSON'` = emitter's own, explicit = force all.
+- **Deterministic `seed`**: identical replay everywhere (Python + C++ + browser preview); `0` = legacy unseeded.
+- **Force fields** (v1.1): optional emitter `fields` — age-phased turbulence, Y-axis vortex, linear attractor, bounce/friction collision plane; all off by default.
+- **Export format v1.1**: hyphenated easing; schema validation + automatic v1.0→1.1 migration with defaults + warnings.
+- **Fixed**: extension crash on object add (helper defs ran before `var F` — TypeError on frame 1); Export/Save/Open empty payloads (now OS-native dialogs); 3D Subtractive was silently rendering as Normal.
+- **App version**: title bar shows `Carrot Particle Editor v0.1.2`.
+
+### 📦 Download
+
+Prebuilt Windows executables are published on the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page. Download `CarrotParticleEditor.exe` and run it — no Python installation required.
+
+> Binaries (`dist/`, `*.exe`, `*.pyd`, `node_modules/`) are never committed to the repo — they are rebuilt locally (`python tools/rebuild_app.py`) and shipped through GitHub Releases.
+
+---
+
+## ✨ Features
 
 - **12 particle shapes** — circle, square, triangle, star, diamond, line, custom, sphere, cube, pyramid, torus, billboard — shared between the 2D and 3D renderers.
 - **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` models (or images for 2D); models render as themselves in the viewport, the browser preview, and export. The node picker lists only mesh-bearing nodes; picking a mesh-less (bone) node falls back to the whole file with a warning. Rigged/skinned GLBs are baked to their rest pose for preview and in-game.
@@ -69,7 +58,9 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.1 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`); v1.0 files migrate automatically with defaults.
 
-## Blend modes
+---
+
+## 🎨 Blend modes
 
 Per-emitter `blendingMode` (sidebar dropdown; object-level `BlendingMode: 'JSON'` uses each emitter's own mode, any explicit value forces all emitters). Supported values and per-renderer behavior:
 
@@ -85,74 +76,9 @@ Per-emitter `blendingMode` (sidebar dropdown; object-level `BlendingMode: 'JSON'
 
 Unsupported combinations fall back with a single `console.warn` (never per frame, never throwing). Note: extension versions before 0.1.2 don't know Screen/Lighten/Overlay and render them as Normal.
 
-## Download
+---
 
-Prebuilt Windows executables are published on the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page.
-Download `CarrotParticleEditor.exe` and run it — no Python installation required.
-
-> Binaries (`dist/`, `*.exe`, `*.pyd`, `node_modules/`) are never committed to the repo — they are rebuilt locally (`python tools/rebuild_app.py`) and shipped through GitHub Releases.
-
-## Project structure
-
-```text
-Carrot-Particle-Editor/
-├── .github/workflows/               # CI: compile + tests + contracts + perf gate
-├── assets/                        # Icons and static resources
-├── bench/                         # Reproducible benchmarks (bench_cores.py, bench_preview.py) + BASELINE.md
-├── carrots-runtime/               # Game-runtime ingestion (normalizeEffect)
-├── contracts/                     # Single source of truth (contracts.json + generated gen/)
-├── core/                          # Simulation core (Python + C++) and its tests
-├── docs/screenshots/              # README gallery images
-├── editor/                        # Dear PyGui app (studio_imgui.py), raster viewport (raster_view.py), shared logic + legacy prototype (particle_studio.py), mesh_cache.py
-├── packaging/                     # PyInstaller spec
-├── preview/                       # Browser preview (Three.js / PixiJS) and its tests
-├── render/                        # OpenGL preview renderer and its tests
-├── tests/                         # Headless UI tests + contracts/seed/fields/blend/GL tests
-├── tools/                         # Build pipeline (rebuild_app.py), contract generator, extension patch scripts, preview builder, perf gate
-├── AdvancedParticleEmitter.json   # GDevelop extension (v0.1.2)
-├── sample_effect.json             # Example effect (v1.1)
-├── sample_blend_layers.json       # Additive/Normal/Screen sample effects (v1.1)
-├── APP_STRUCTURE.md               # Detailed architecture notes
-├── PROGRESS.md                    # Upgrade log: phases, decisions, benchmarks, limitations
-├── package.json                   # Node dependencies for the browser preview
-└── LICENSE                        # MIT
-```
-
-## Getting started (from source)
-
-### Requirements
-
-- Python 3.14
-- A C++ compiler for the optional simulation core: MSVC, g++, clang++, or Zig (auto-detected in that order)
-- Node.js — for building the browser preview (`three`, `pixi.js`, `typescript`, `esbuild`)
-
-### Install
-
-```bash
-git clone https://github.com/Boy1developer/Carrot-Particle-Editor.git
-cd Carrot-Particle-Editor
-npm install
-```
-
-### Build
-
-```bash
-python tools/rebuild_app.py
-```
-
-This runs the full pipeline: compiles and validates the app, rebuilds the C++ core if it's stale, packages the executable with PyInstaller, runs a smoke boot test, and regenerates the Windows shortcut.
-
-### Run
-
-```bash
-# From source (Dear PyGui edition; shared logic lives in editor/particle_studio.py)
-python editor/studio_imgui.py
-
-# Or the packaged build
-dist/CarrotParticleEditor.exe
-```
-
-## Using effects in GDevelop
+## 🛠️ Using effects in GDevelop
 
 1. Design your effect in Carrot Particle Editor and export it as a `.json` file.
 2. In GDevelop, import the `AdvancedParticleEmitter.json` extension into your project.
@@ -161,7 +87,9 @@ dist/CarrotParticleEditor.exe
 
 > The exact action/condition names depend on the extension version — see the extension's in-editor descriptions.
 
-## Testing
+---
+
+## 🧪 Testing
 
 | Test | Covers |
 | --- | --- |
@@ -188,34 +116,39 @@ dist/CarrotParticleEditor.exe
 | `tools/check_perf.py` | CI perf gate: C++ throughput floor (fails on large regressions) |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
-| `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
+| `render/test_cost.py` | Render-cost profiling |
 | `preview/test_engine.mjs`, `test_engine3d.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, and guide rendering |
 | `preview/test_models.mjs` | Model-blob caching and live-push behavior |
 | `preview/test_morph.mjs` | Preview-side `morphAt()` cross-fade sampling |
 | `preview/test_bake.mjs` | Skinned-mesh rest-pose baking (synthetic 2-bone rig) |
 | `preview/test_ext_bake.mjs` | Extension's shipped bake function, extracted from the JSON at runtime |
 
-## Shared contracts
+---
+
+## 🤝 Shared contracts
 
 Single source of truth: [`contracts/contracts.json`](contracts/contracts.json) (particle record layout, `SHAPE_ORDER`, easings, blend modes, export schema, morph window).
+
 [`tools/generate_contracts.py`](tools/generate_contracts.py) regenerates the language bindings in [`contracts/gen/`](contracts/gen/) (Python, C++ header, TypeScript reference, export JSON Schema) — edit the JSON, run the generator, never the outputs. CI (`generate_contracts.py --check` + `tests/test_contracts.py`) fails on stale files or drifted consumers.
 
-Wiring: Python (`editor/particle_studio.py`) and the C++ core (`core/particle_core.cpp`) import the generated files directly.
-The TypeScript sides (`preview/`, `carrots-runtime/`) and the GDevelop extension keep their own literal copies for build/bundling reasons (`rootDir`, bundled JSON) — the check script verifies those literals match instead of rewriting them.
+Wiring: Python (`editor/particle_studio.py`) and the C++ core (`core/particle_core.cpp`) import the generated files directly. The TypeScript sides (`preview/`, `carrots-runtime/`) and the GDevelop extension keep their own literal copies for build/bundling reasons (`rootDir`, bundled JSON) — the check script verifies those literals match instead of rewriting them.
 
 A few conventions are kept identical across the Python app, the C++ core, and the browser preview, so effects look and behave the same everywhere:
 
 - **Particle record layout** — `[x, y, vx, vy, age, c0, c1, s0, s1, life, z, vz, shape, tracks, dx, dy, dz, gx, gy, gz, sizeRatio, speedRatio]`
 - **`SHAPE_ORDER`** — 12 shapes, shared Python ↔ C++ ↔ preview
 - **Export format** — GDevelop extension v1.1 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values; validated against `contracts/gen/schema.json` on save and load, with `migrate_effect()` healing old files (missing version, v1.0→1.1 upgrade, camelCase easings, missing blend mode/seed)
-- **GL coordinates** — sizes are resolved once in the vertex shader; the editor's own projection matrix is numerically matched in tests
 
-## Roadmap
+---
 
-- [ ] Evaluate integration with a dedicated C++ particle library (Effekseer or SPARK) as a complement to the current custom core
+## 🛣️ Roadmap
+
 - [x] Add ready-made effect presets (fire, smoke, sparks, magic)
 - [x] Add CI to run the parity and behavior tests automatically (`.github/workflows/ci.yml`)
 - [x] Add screenshots/GIFs and a step-by-step GDevelop tutorial
+- [x] InstancedMesh batching + lazy buckets + sampling diet (v0.1.2)
+- [x] New blend modes: Screen, Lighten, Overlay (v0.1.2)
+- [x] Deterministic seed + force fields (v0.1.2)
 - [ ] Trails/ribbons renderer
 - [ ] Over-life Bezier curves and gradient editor
 - [ ] Flipbook animation, UV scroll, soft particles
@@ -223,22 +156,43 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 - [ ] Timeline with scrubbing and a preset gallery
 - [ ] Golden-image tests (editor render vs browser preview)
 
-## Related projects
+---
+
+## 🔗 Related projects
 
 - **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — the 2D/3D game engine this extension is built for, extending GDevelop Core with Blueprint scripting, PBR materials, advanced animation, and this particle system among its VFX tools.
+- **[Carrot Particle Editor](https://github.com/Boy1developer/Carrot-Particle-Editor)** — this repository.
 
-## Author
+---
+
+## 👤 Author
 
 **Carrot Studio** — Mostafa Fathy Thabet ([@Boy1developer](https://github.com/Boy1developer)) — contributor to [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine).
 
-## Third-party
+---
+
+## 📦 Third-party
 
 - [Dear PyGui](https://github.com/hoffstadt/DearPyGui) (MIT) — the desktop editor UI.
 - [Three.js](https://threejs.org) (MIT) — 3D rendering in the browser preview and the GDevelop extension.
 - [PixiJS](https://pixijs.com) (MIT) — 2D rendering in the browser preview and the GDevelop extension.
 
-## License
+---
+
+## 📄 License
 
 This project is released under the [MIT License](LICENSE).
 
 Note: [Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine) itself is distributed under [its own separate license](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md); that does not affect the license of this repository.
+
+---
+
+## 🆕 What's new in v0.1.2 (release highlights)
+
+- **Performance**: instanced rendering collapsed from ~580 draw calls to ~12 buckets; lazy creation means idle shapes cost nothing.
+- **Blend modes**: Screen, Lighten, Overlay are now supported with graceful fallbacks.
+- **Determinism**: seed replay works identically in editor, preview, and runtime.
+- **Fields**: force field UI (turbulence, vortex, attractor, collision plane) now in the editor sidebar.
+- **Export**: v1.1 format with automatic v1.0→1.1 migration; schema validation on save/load.
+- **UI fixes**: OS-native file dialogs; extension no longer crashes on object add; 3D Subtractive blend fixed.
+- **Build**: `package.json` license set to MIT; app title reads `v0.1.2`.
