@@ -11,6 +11,7 @@ _Not yet — run in progress._
 - [x] Phase 2: Single source of truth for contracts — DONE (`phase-2-done`)
 - [x] Phase 3: Viewport handoff (Dear PyGui) — DONE (`phase-3-done`)
 - [x] Phase 4: Simulation core performance — DONE (`phase-4-done`, 10x target MISSED — see below)
+- [x] Phase 5: Runtime rendering efficiency — DONE (`phase-5-done`)
 - [ ] Phase 2: Single source of truth for contracts
 - [ ] Phase 3: Viewport handoff (Dear PyGui)
 - [ ] Phase 4: Simulation core performance
@@ -33,7 +34,7 @@ _Not yet — run in progress._
 - Phase 3: DPG raw-texture row 0 = top is assumed (matches the numerically verified PPM orientation: canvas-top dot → row 5/214); could not verify visually headless. If the raster image ever appears vertically flipped in-app, flip the row order in `ppm_to_floats`.
 
 ## Test results
-- Phase 4 full run: ALL GREEN (parity 99/99 with optimized core, behavior, all headless UI incl. raster, GL + clip + cost, preview server, all 7 Node preview tests, runtime loader, contracts + `--check`).
+- Phase 5 full run: ALL GREEN (parity 99/99, behavior, all headless UI incl. raster, GL + clip + cost, preview server, all 7 Node preview tests incl. recompiled scenes, runtime loader, contracts + `--check`, extension `node --check` via patch script).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
@@ -53,9 +54,14 @@ _Not yet — run in progress._
 - Phase 4 result: hoisted keyframe string work (color parse, easing enum, shape index) from per-particle to `configure()` — C++ @1k 2.36→0.87ms, @10k 38.5→18.5ms, @100k 452→140ms, behavior @2k ~4→1.45ms (≈2.8x). Parity 99/99 intact (values bit-identical by construction).
 - Phase 4 10x target MISSED at 2k: floor analysis — each `step()` builds 12 fresh PyObjects/particle (~250ns) + 2 × `locate()` (old-age speed + new-age draw, both semantically required) + lerps/nearbyint (~450ns) ≈ 0.7us/particle ≈ 1.4ms @2k. 10x (0.2us) is unreachable without changing the 22-field dict-of-lists boundary. Rejected: backward output loop fusion (would reorder 2D stacking), output buffer reuse (saves only 12 list shells, not the 12n values; adds aliasing hazard), multithreading (GIL-bound output, overhead dominates ≤100k). PROPOSAL for later: boundary-v2 `advance()` + `fetch()` split or flat float buffers behind a format-version bump (needs Phase-2-style lockstep).
 - Phase 4 pool/fixed-step status: particle SoA vectors already persist across frames (geometric growth, swap-remove kills — no per-frame particle allocation; only the boundary output lists allocate, as the contract requires). dt clamp [0, 0.05] is the existing fixed-step guard.
+- Phase 5: browser preview was ALREADY batched (3D InstancedMesh ×12 shapes, 2D pooled sprites + baked shape textures). Added: reused instance counters + `visible=false` on empty buckets (3D), 96px-margin sprite cull (2D), `tools/build_preview.py` (tsc + esbuild bundle, bundle diff verified as one localized block).
+- Phase 5: extension 3D pool was WRITE-ONLY (`getPooledParticle` had zero call sites) — spawns/flips now reuse pooled meshes (steady-state zero mesh/material churn), pool key includes blendingMode, flipped-away GLB meshes return to the pool (previously leaked). Per-frame THREE temps hoisted (billboard basis, alignToVelocity chain, color scratch). Via `tools/patch_perf.py` (anchored, idempotent) + `node --check`.
+- Phase 5 deferred (conservative): extension InstancedMesh rewrite (one draw call/emitter) and 2D ParticleContainer (incompatible with Graphics children — needs baked-sprite approach + Pixi version audit from 6a). Both are unverifiable outside a running GDevelop game and risk the game runtime; revisit with GDevelop-side profiling.
+- Phase 5 cache-key audit: geoCache=shape (blend-independent ✓), textureCache/modelCache=refId (cloned per use ✓), 3D pool=shape+ref+blend ✓ (fixed), 2D pool=shape+customId with per-frame `blendMode` set (✓ safe).
 
 ## Known limitations / unverified
-- Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop.
+- Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop. In particular Phase 5's extension pooling/temps patch is syntax-checked (`node --check`) and logic-reviewed but NOT run in GDevelop.
+- Phase 3's DPG raster image orientation (row 0 = top) is assumed from the numerically verified PPM layout; flip rows in `ppm_to_floats` if the in-app image ever appears upside down.
 - GL tests (`render/test_*.py`) need a GPU/GLFW context; may fail on headless CI — workflow runs them `continue-on-error`.
 - `carrots-runtime/package.json` `build` script references `../../node_modules/typescript` which is wrong standalone (resolves above the repo); use repo-root `node node_modules/typescript/bin/tsc -p carrots-runtime/tsconfig.json` instead (CI does this). Left untouched in Phase 0.
 - Preview Node tests print `MODULE_TYPELESS_PACKAGE_JSON` warnings (root `package.json` has no `"type"` field); harmless, left untouched.
