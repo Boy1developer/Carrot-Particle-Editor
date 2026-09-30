@@ -174,12 +174,20 @@ function makeWorld(effect, props = {}, runtime = true) {
 
 const src = stepChunk();
 const run = new Function("objects", "THREE", src);
+// classic-mode THREE: InstancedMesh removed -> legacy mesh-per-particle path
+const THREE_CLASSIC = { ...THREE };
+delete THREE_CLASSIC.InstancedMesh;
+delete THREE_CLASSIC.InstancedBufferAttribute;
 
-function drive(effect, frames, props, runtime = true) {
+const runClassic = new Function("objects", "THREE", src);
+
+function drive(effect, frames, props, runtime = true, classic = false) {
   const { object } = makeWorld(effect, props, runtime);
+  const runFn = classic ? runClassic : run;
+  const threeNS = classic ? THREE_CLASSIC : THREE;
   for (let f = 0; f < frames; f++) {
     object._advance(16.7);
-    run([object], THREE);
+    runFn([object], threeNS);
   }
   return object;
 }
@@ -279,5 +287,123 @@ console.log("editor static preview: OK");
     process.exit(1);
   }
   console.log("null-renderer fallback: OK particles=%d", d.particles.length);
+}
+
+// 7) instancing: buckets exist, draw-call proxy collapses (11 buckets,
+//    not N meshes), all written matrices/colors/alpha finite.
+{
+  const eff = userLikeEffect();
+  eff.emitter.seed = 4242;
+  const o = drive(eff, 90, {}, true);
+  const d = o.__apfx3D;
+  if (!d._inst) { console.error("FAIL: no buckets"); process.exit(1); }
+  const keys = Object.keys(d._inst);
+  if (keys.length !== 11) { console.error("FAIL: buckets", keys.length); process.exit(1); }
+  let slots = 0;
+  const groupChildren = d.particleGroup.children.length;
+  for (const k of keys) {
+    const bk = d._inst[k];
+    if (bk.mesh.frustumCulled !== false) { console.error("FAIL: culling", k); process.exit(1); }
+    slots += bk.count;
+    const m = new THREE.Matrix4();
+    for (let s = 0; s < bk.count; s++) {
+      bk.mesh.getMatrixAt(s, m);
+      for (const v of m.elements) {
+        if (!isFinite(v)) { console.error("FAIL: matrix", k, s); process.exit(1); }
+      }
+      const c = new THREE.Color();
+      bk.mesh.getColorAt(s, c);
+      if (!isFinite(c.r + c.g + c.b)) { console.error("FAIL: color", k, s); process.exit(1); }
+      const a = bk.alpha[s];
+      if (!(a >= 0 && a <= 1)) { console.error("FAIL: alpha", k, s, a); process.exit(1); }
+    }
+  }
+  const prims = d.particles.filter((p) => p.inst).length;
+  if (slots !== prims || prims === 0) {
+    console.error("FAIL: slots", slots, "prims", prims); process.exit(1);
+  }
+  if (!(groupChildren <= 12)) {
+    console.error("FAIL: draw calls", groupChildren); process.exit(1);
+  }
+  console.log("instancing buckets: OK slots=%d drawObjs=%d", slots, groupChildren);
+}
+
+// 8) classic fallback (no InstancedMesh in THREE): mesh-per-particle path,
+//    still runs clean, every particle owns a mesh, no buckets.
+{
+  const eff = userLikeEffect();
+  eff.emitter.seed = 4242;
+  const o = drive(eff, 90, {}, true, true);
+  const d = o.__apfx3D;
+  if (d._inst !== undefined && d._inst !== null) {
+    console.error("FAIL: buckets in classic mode"); process.exit(1);
+  }
+  if (!(d.particles.length > 0)) { console.error("FAIL: classic empty"); process.exit(1); }
+  for (const p of d.particles) {
+    if (!p.mesh) { console.error("FAIL: classic meshless"); process.exit(1); }
+  }
+  console.log("classic fallback: OK particles=%d", d.particles.length);
+}
+
+// 9) A/B appearance parity: same seeded effect, instanced vs classic must
+//    draw identical per-shape multisets of [matrix, rgb, alpha] (tol 1e-3:
+//    instanced storage is float32, classic float64 — real divergences are
+//    orders of magnitude larger).
+function collectAppearance(obj) {
+  const d = obj.__apfx3D;
+  const out = {};
+  const push = (shape, m16, r, g, b, a) => {
+    (out[shape] = out[shape] || []).push([...m16, r, g, b, a]);
+  };
+  if (d._inst) {
+    const m = new THREE.Matrix4(), c = new THREE.Color();
+    for (const k of Object.keys(d._inst)) {
+      const bk = d._inst[k];
+      for (let s = 0; s < bk.count; s++) {
+        bk.mesh.getMatrixAt(s, m);
+        bk.mesh.getColorAt(s, c);
+        push(k, [...m.elements], c.r, c.g, c.b, bk.alpha[s]);
+      }
+    }
+  } else {
+    for (const p of d.particles) {
+      p.mesh.updateMatrix();
+      const mc = p.mesh.material.color;
+      push(p.currentShape, [...p.mesh.matrix.elements], mc.r, mc.g, mc.b,
+        p.mesh.material.opacity);
+    }
+  }
+  for (const k of Object.keys(out)) {
+    out[k].sort((x, y) => {
+      for (let i = 0; i < x.length; i++) {
+        if (Math.abs(x[i] - y[i]) > 1e-3) return x[i] - y[i];
+      }
+      return 0;
+    });
+  }
+  return out;
+}
+{
+  const eff = userLikeEffect();
+  eff.emitter.seed = 4242;
+  eff.emitter.blendingMode = "Normal";
+  const a = collectAppearance(drive(eff, 90, {}, true, false));
+  const b = collectAppearance(drive(eff, 90, {}, true, true));
+  const ka = Object.keys(a).sort().join(","), kb = Object.keys(b).sort().join(",");
+  if (ka !== kb) { console.error("FAIL: shape keys", ka, kb); process.exit(1); }
+  for (const k of Object.keys(a)) {
+    if (a[k].length !== b[k].length) {
+      console.error("FAIL: count", k, a[k].length, b[k].length); process.exit(1);
+    }
+    for (let i = 0; i < a[k].length; i++) {
+      for (let j = 0; j < a[k][i].length; j++) {
+        if (Math.abs(a[k][i][j] - b[k][i][j]) > 1e-3) {
+          console.error("FAIL: appearance", k, i, j, a[k][i][j], b[k][i][j]);
+          process.exit(1);
+        }
+      }
+    }
+  }
+  console.log("A/B parity: OK shapes=%s", ka);
 }
 console.log("EXT-RUNTIME-OK");
