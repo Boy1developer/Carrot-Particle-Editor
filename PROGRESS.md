@@ -37,7 +37,7 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 
 ## Test results
 - FINAL full run: ALL GREEN (parity 99/99, behavior, seed + fields replay Py+C+++preview+extension, all headless UI, GL + clip + cost + pixel blend, preview server, all 11 Node tests, runtime loader, contracts + `--check`, extension `node --check`, perf gate 1069 vs floor 300).
-- `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
+- `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.2, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
 - GL (run as `python -m render.test_*`; direct `python render/test_x.py` fails with ModuleNotFoundError — pre-existing, no bootstrap): GL_RENDER OK, clip 0/3000, cost raw 14ms / quantized 14ms.
