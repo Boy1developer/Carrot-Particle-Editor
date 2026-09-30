@@ -8,6 +8,7 @@ _Not yet — run in progress._
 ## Phase status
 - [x] Phase 0: Repo hygiene — DONE (`phase-0-done`)
 - [x] Phase 1: Benchmarks and profiling — DONE (`phase-1-done`)
+- [x] Phase 2: Single source of truth for contracts — DONE (`phase-2-done`)
 - [ ] Phase 2: Single source of truth for contracts
 - [ ] Phase 3: Viewport handoff (Dear PyGui)
 - [ ] Phase 4: Simulation core performance
@@ -21,9 +22,12 @@ _Not yet — run in progress._
 - Phase 0: `preview/*.js` + `preview/live_bundle.js` + `preview/live_effect.html` stay tracked for now. Rationale: they are checked-in build outputs the exe + tests consume; untracking them mid-upgrade would break the build. Revisit in Phase 2/8 if a TS build step lands in CI.
 - License = MIT (`LICENSE` file). `package.json` had no `license` field (shows as "none specified" on npm/GitHub) → set to `MIT` in both `package.json` files.
 - Phase 1: benchmark metric uses actual mean stepped count (not the cap), because both cores apply 0.9–1.1 life jitter with independent RNG streams, so equilibrium counts differ slightly by design. No parity implication.
+- Phase 2: Python + C++ import generated contracts directly; TypeScript sides and the extension are verify-only (their literals are regex-compared by `generate_contracts.py --check`). Rationale: `carrots-runtime` has `rootDir: src` (an outside import breaks `tsc`), preview `tsconfig.files` is brittle, and rewriting bundled extension JSON risks the game runtime. Revisit only if a TS build step lands in CI.
+- Phase 2: schema validator is hand-rolled stdlib-only (type/required/enum/properties/items/minItems), unknown keys ignored for forward compatibility. No `jsonschema` dependency per the no-heavy-deps rule.
+- Phase 2: migration is silent-heal + warnings (status line / debug log); only an explicitly newer `version` or a non-object raises.
 
 ## Test results
-- Phase 1 full run: ALL GREEN (parity 99/99, behavior, all headless UI, GL + clip + cost, preview server, all 7 Node preview tests, runtime loader).
+- Phase 2 full run: ALL GREEN (parity 99/99 with rebuilt C++ core, behavior, all headless UI, GL + clip + cost, preview server, all 7 Node preview tests, runtime loader, new `test_contracts.py`, `generate_contracts.py --check`).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.

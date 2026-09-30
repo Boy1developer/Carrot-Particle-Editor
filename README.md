@@ -80,6 +80,7 @@ Download `CarrotParticleEditor.exe` and run it — no Python installation requir
 Carrot-Particle-Editor/
 ├── assets/                        # Icons and static resources
 ├── carrots-runtime/               # Game-runtime ingestion (normalizeEffect)
+├── contracts/                     # Single source of truth (contracts.json + generated gen/)
 ├── core/                          # Simulation core (Python + C++) and its tests
 ├── editor/                        # Dear PyGui app (studio_imgui.py), shared logic + legacy prototype (particle_studio.py), mesh_cache.py
 ├── packaging/                     # PyInstaller spec
@@ -151,6 +152,7 @@ dist/CarrotParticleEditor.exe
 | `tests/test_imgui_morph.py` | Shape cross-fade window (edges, split alpha, legacy fallback) |
 | `tests/test_imgui_upload.py` | Upload chain, OBJ parsing, big-JSON node names, bone-node fallback |
 | `tests/test_preview_blobs.py` | Model-blob embedding for the browser preview |
+| `tests/test_contracts.py` | Generated bindings = source, C++ order, schema accept/reject, migration |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |
@@ -161,11 +163,17 @@ dist/CarrotParticleEditor.exe
 
 ## Shared contracts
 
+Single source of truth: [`contracts/contracts.json`](contracts/contracts.json) (particle record layout, `SHAPE_ORDER`, easings, blend modes, export schema, morph window).
+[`tools/generate_contracts.py`](tools/generate_contracts.py) regenerates the language bindings in [`contracts/gen/`](contracts/gen/) (Python, C++ header, TypeScript reference, export JSON Schema) — edit the JSON, run the generator, never the outputs. CI (`generate_contracts.py --check` + `tests/test_contracts.py`) fails on stale files or drifted consumers.
+
+Wiring: Python (`editor/particle_studio.py`) and the C++ core (`core/particle_core.cpp`) import the generated files directly.
+The TypeScript sides (`preview/`, `carrots-runtime/`) and the GDevelop extension keep their own literal copies for build/bundling reasons (`rootDir`, bundled JSON) — the check script verifies those literals match instead of rewriting them.
+
 A few conventions are kept identical across the Python app, the C++ core, and the browser preview, so effects look and behave the same everywhere:
 
 - **Particle record layout** — `[x, y, vx, vy, age, c0, c1, s0, s1, life, z, vz, shape, tracks, dx, dy, dz, gx, gy, gz, sizeRatio, speedRatio]`
 - **`SHAPE_ORDER`** — 12 shapes, shared Python ↔ C++ ↔ preview
-- **Export format** — GDevelop extension v1.0 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values
+- **Export format** — GDevelop extension v1.0 (`2d: needShape` / `3d: mesh swap`), hyphenated easing values; validated against `contracts/gen/schema.json` on save and load, with `migrate_effect()` healing old files (missing version, camelCase easings, missing blend mode)
 - **GL coordinates** — sizes are resolved once in the vertex shader; the editor's own projection matrix is numerically matched in tests
 
 ## Roadmap
