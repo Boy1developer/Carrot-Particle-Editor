@@ -4,9 +4,6 @@
 
 > Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem. The "Advanced particle editor for stunning VFX" mentioned in the engine's feature list is this project.
 
-<!-- TODO: add a screenshot or GIF of the editor here -->
-<!-- ![Carrot Particle Editor](docs/screenshot.png) -->
-
 ## Screenshots
 
 | 3D viewport | 3D fast preview (three.js) |
@@ -32,6 +29,7 @@
 - [Overview](#overview)
 - [Screenshots](#screenshots)
 - [Features](#features)
+- [Blend modes](#blend-modes)
 - [Download](#download)
 - [Project structure](#project-structure)
 - [Getting started (from source)](#getting-started-from-source)
@@ -58,14 +56,15 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 ## Features
 
 - **12 particle shapes** — circle, square, triangle, star, diamond, line, custom, sphere, cube, pyramid, torus, billboard — shared between the 2D and 3D renderers.
-- **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` models (or images for 2D); models render as themselves in the viewport, the browser preview, and export. The node picker lists only mesh-bearing nodes; picking a mesh-less (bone) node falls back to the whole file with a warning. Rigged/skinned GLBs are baked to their rest pose for preview.
+- **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` models (or images for 2D); models render as themselves in the viewport, the browser preview, and export. The node picker lists only mesh-bearing nodes; picking a mesh-less (bone) node falls back to the whole file with a warning. Rigged/skinned GLBs are baked to their rest pose for preview and in-game.
 - **Per-state colors** — each birth/mid/death state keeps its own color; white means natural materials, any other color tints over the base.
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
 - **Deterministic seed** — a nonzero emitter `seed` replays the identical effect on every load in the editor (Python + C++), the browser preview, and the GDevelop runtime; `0` keeps legacy unseeded behavior.
 - **Force fields** (v1.1) — optional emitter `fields`: age-phased turbulence, Y-axis vortex through the emitter point, linear-falloff attractor, and a bounce/friction collision plane; all off by default (legacy motion bit-identical).
 - **Adaptive viewport** — crisp vector drawlist under ~900 particles; above that the particle layer renders offscreen (GL, 320px wide) and uploads as a raw texture while guides/gizmo stay vector. Custom meshes always use the vector path.
-- **Pooled game runtime** — the GDevelop extension reuses meshes/materials from a shape-aware pool (no per-spawn GPU churn), shares geometries, and hoists per-frame temporaries; the browser preview renders 3D as instanced meshes and 2D as pooled tinted sprites.- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
+- **Pooled game runtime** — the GDevelop extension reuses meshes/materials from a shape-aware pool (no per-spawn GPU churn), shares geometries, and hoists per-frame temporaries; the browser preview renders 3D as instanced meshes and 2D as pooled tinted sprites.
+- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.1 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`); v1.0 files migrate automatically with defaults.
@@ -97,19 +96,24 @@ Download `CarrotParticleEditor.exe` and run it — no Python installation requir
 
 ```text
 Carrot-Particle-Editor/
+├── .github/workflows/               # CI: compile + tests + contracts + perf gate
 ├── assets/                        # Icons and static resources
+├── bench/                         # Reproducible benchmarks (bench_cores.py, bench_preview.py) + BASELINE.md
 ├── carrots-runtime/               # Game-runtime ingestion (normalizeEffect)
 ├── contracts/                     # Single source of truth (contracts.json + generated gen/)
 ├── core/                          # Simulation core (Python + C++) and its tests
-├── editor/                        # Dear PyGui app (studio_imgui.py), shared logic + legacy prototype (particle_studio.py), mesh_cache.py
+├── docs/screenshots/              # README gallery images
+├── editor/                        # Dear PyGui app (studio_imgui.py), raster viewport (raster_view.py), shared logic + legacy prototype (particle_studio.py), mesh_cache.py
 ├── packaging/                     # PyInstaller spec
 ├── preview/                       # Browser preview (Three.js / PixiJS) and its tests
 ├── render/                        # OpenGL preview renderer and its tests
-├── tests/                         # Headless Dear PyGui UI tests + preview blob tests
-├── tools/                         # One-command build pipeline (rebuild_app.py), icon tools
-├── AdvancedParticleEmitter.json   # GDevelop extension
-├── sample_effect.json             # Example effect
+├── tests/                         # Headless UI tests + contracts/seed/fields/blend/GL tests
+├── tools/                         # Build pipeline (rebuild_app.py), contract generator, extension patch scripts, preview builder, perf gate
+├── AdvancedParticleEmitter.json   # GDevelop extension (v0.1.2)
+├── sample_effect.json             # Example effect (v1.1)
+├── sample_blend_layers.json       # Additive/Normal/Screen sample effects (v1.1)
 ├── APP_STRUCTURE.md               # Detailed architecture notes
+├── PROGRESS.md                    # Upgrade log: phases, decisions, benchmarks, limitations
 ├── package.json                   # Node dependencies for the browser preview
 └── LICENSE                        # MIT
 ```
@@ -152,7 +156,7 @@ dist/CarrotParticleEditor.exe
 
 1. Design your effect in Carrot Particle Editor and export it as a `.json` file.
 2. In GDevelop, import the `AdvancedParticleEmitter.json` extension into your project.
-3. Add the emitter behavior/object to your scene and load the exported effect file.
+3. Add the emitter behavior/object to your scene, set its **ParticleJSON** resource to the exported file (and its **Models GLB** resource to the `.glb` if the effect uses a custom model).
 4. Run the preview to see the effect in your game.
 
 > The exact action/condition names depend on the extension version — see the extension's in-editor descriptions.
@@ -162,8 +166,8 @@ dist/CarrotParticleEditor.exe
 | Test | Covers |
 | --- | --- |
 | `core/test_parity.py` | Python vs C++ simulation output — 99/99 passing |
-| `core/test_behavior.py` | Simulation behavior, morph-window keys, and performance (~5 ms @ 2,000 particles) |
-| `tests/test_imgui_build.py` | UI builds without errors |
+| `core/test_behavior.py` | Simulation behavior, morph-window keys, and performance (~2–3 ms @ 2,000 particles) |
+| `tests/test_imgui_build.py` | UI builds without errors (incl. blend dropdown, seed box, force-field widgets) |
 | `tests/test_imgui_logic.py` | Headless simulation logic (C++ path) |
 | `tests/test_imgui_nav.py` | Viewport navigation (WASD/arrows, Q/E, F, Shift×3) |
 | `tests/test_imgui_color.py` | Per-state color persistence across birth/death switches |
@@ -188,6 +192,7 @@ dist/CarrotParticleEditor.exe
 | `preview/test_models.mjs` | Model-blob caching and live-push behavior |
 | `preview/test_morph.mjs` | Preview-side `morphAt()` cross-fade sampling |
 | `preview/test_bake.mjs` | Skinned-mesh rest-pose baking (synthetic 2-bone rig) |
+| `preview/test_ext_bake.mjs` | Extension's shipped bake function, extracted from the JSON at runtime |
 
 ## Shared contracts
 
@@ -210,6 +215,12 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 - [x] Add ready-made effect presets (fire, smoke, sparks, magic)
 - [x] Add CI to run the parity and behavior tests automatically (`.github/workflows/ci.yml`)
 - [x] Add screenshots/GIFs and a step-by-step GDevelop tutorial
+- [ ] Trails/ribbons renderer
+- [ ] Over-life Bezier curves and gradient editor
+- [ ] Flipbook animation, UV scroll, soft particles
+- [ ] Effect node tree with parent/child emitters and sub-emitters
+- [ ] Timeline with scrubbing and a preset gallery
+- [ ] Golden-image tests (editor render vs browser preview)
 
 ## Related projects
 
