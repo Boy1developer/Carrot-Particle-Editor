@@ -117,7 +117,8 @@ function makeWorld(effect, props = {}, runtime = true) {
     getRenderer: () => ({ _threeGroup: threeGroup, getRendererObject: () => null }),
     getX: () => 0, getY: () => 0, getZ: () => 0,
     getRotationX: () => 0, getRotationY: () => 0,
-    getElapsedTime: () => elapsed,
+    // GDevelop getElapsedTime() is a per-frame DELTA (not cumulative time)
+    getElapsedTime: () => 16.7,
     _advance: (ms) => { elapsed += ms; },
     _getParticleJSON: () => get("ParticleJSON", ""),
     _getBlendingMode: () => get("BlendingMode", "JSON"),
@@ -260,5 +261,23 @@ console.log("editor static preview: OK");
   const o = drive(eff, 40, {}, true);
   if (!o.__apfx3D) { console.error("FAIL: missing-model data"); process.exit(1); }
   console.log("missing-model fallback: OK particles=%d", o.__apfx3D.particles.length);
+}
+
+// 6) object renderer missing (getRenderer() null): objectGroup falls back
+//    to null and the update uses object position. Must not throw.
+{
+  const eff = userLikeEffect();
+  const { object } = makeWorld(eff, {}, true);
+  object.getRenderer = () => null;
+  for (let f = 0; f < 30; f++) {
+    object._advance(16.7);
+    run([object], THREE);
+  }
+  const d = object.__apfx3D;
+  if (!d || d.objectGroup !== null || !(d.particles.length > 0)) {
+    console.error("FAIL: null-renderer fallback");
+    process.exit(1);
+  }
+  console.log("null-renderer fallback: OK particles=%d", d.particles.length);
 }
 console.log("EXT-RUNTIME-OK");
