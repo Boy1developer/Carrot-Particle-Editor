@@ -184,6 +184,7 @@ dist/CarrotParticleEditor.exe
 | `preview/test_seed.mjs` | Preview replay identical + extension RNG extraction |
 | `tests/test_fields.py` | Field formulas, off-identical, perturb/replay, collision, attractor (Py + C++) |
 | `preview/test_fields.mjs` | Extension helpers == Python + preview field behavior |
+| `preview/test_ext_runtime.mjs` | Shipped 3D runtime headless (stub gdjs + real three.js): init, frames, replay, editor preview, fallbacks |
 | `tools/check_perf.py` | CI perf gate: C++ throughput floor (fails on large regressions) |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
