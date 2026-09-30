@@ -2171,6 +2171,11 @@ def do_new():
 
 
 def _apply_loaded_effect(eff, path):
+    try:
+        eff, _warns = PS.migrate_effect(eff)
+    except ValueError as e:
+        show_msg("Error", str(e))
+        return
     APP.filepath = path
     APP.filename = os.path.splitext(os.path.basename(path))[0]
     APP.ptype = eff.get("type", "2d")
@@ -2184,6 +2189,8 @@ def _apply_loaded_effect(eff, path):
     APP.sim.reset()
     APP.mark_dirty()
     APP.history_commit()
+    if _warns:
+        APP.set_status("Migrated: " + " | ".join(_warns)[:200], WARN)
 
 
 def dialog_pick(app_data):

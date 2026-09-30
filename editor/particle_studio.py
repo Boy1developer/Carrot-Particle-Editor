@@ -30,21 +30,36 @@ if not getattr(sys, "frozen", False):
         sys.path.insert(0, _REPO_ROOT)
 
 try:
+    from contracts.gen.contracts import (
+        EXPORT_VERSION as _GEN_VERSION,
+        SHAPE_ORDER as _GEN_SHAPE_ORDER,
+        SHAPES_2D as _GEN_SHAPES_2D,
+        SHAPES_3D as _GEN_SHAPES_3D,
+        EASINGS as _GEN_EASINGS,
+        EASING_ALIASES as _GEN_EASING_ALIASES,
+        BLEND_MODES as _GEN_BLEND_MODES,
+    )
+    _HAVE_CONTRACTS = True
+except Exception:
+    _HAVE_CONTRACTS = False
+
+try:
     import particle_core as _CPP_MOD  # C++ sim core (optional, built via core/build_core.py)
     HAS_CPP_CORE = True
     SHAPE_ORDER = list(_CPP_MOD.SHAPE_ORDER)
 except Exception:
     _CPP_MOD = None
     HAS_CPP_CORE = False
-    SHAPE_ORDER = ["circle", "square", "triangle", "star", "diamond", "line",
-                   "custom", "sphere", "cube", "pyramid", "torus", "billboard"]
+    SHAPE_ORDER = list(_GEN_SHAPE_ORDER) if _HAVE_CONTRACTS else [
+        "circle", "square", "triangle", "star", "diamond", "line",
+        "custom", "sphere", "cube", "pyramid", "torus", "billboard"]
 try:
     from render.gl_view import GLView, mat_clip_3d, mat_ortho, orbit_right_up
     HAS_GL_VIEW = True
 except Exception:
     HAS_GL_VIEW = False
 
-VERSION = "1.0"  # effect JSON format (extension contract — do NOT bump with the app)
+VERSION = _GEN_VERSION if _HAVE_CONTRACTS else "1.0"  # effect JSON format (extension contract — do NOT bump with the app)
 APP_VERSION = "0.1.1"  # Carrot Particle Editor release version (title bar)
 BUILD_ID = "b20260930-extcompat"  # bump on every shipped change; shown in title
 
@@ -75,11 +90,13 @@ def app_base_dir():
     root = os.path.dirname(here)  # editor/ -> repo root
     return root if os.path.isdir(os.path.join(root, "preview")) else here
 
-EASINGS = ["linear", "ease-in", "ease-out", "ease-in-out"]
+EASINGS = list(_GEN_EASINGS) if _HAVE_CONTRACTS else ["linear", "ease-in", "ease-out", "ease-in-out"]
+EASING_ALIASES = dict(_GEN_EASING_ALIASES) if _HAVE_CONTRACTS else {"easeIn": "ease-in", "easeOut": "ease-out", "easeInOut": "ease-in-out"}
+BLEND_MODES = list(_GEN_BLEND_MODES) if _HAVE_CONTRACTS else ["Normal", "Additive", "Subtractive", "Multiply"]
 MODES = ["Infinite", "Burst", "One Shot"]
 FLOW_MODES = ["rate", "interval"]
-SHAPES_2D = ["circle", "square", "triangle", "star", "diamond", "line", "custom"]
-SHAPES_3D = ["sphere", "cube", "pyramid", "diamond", "torus",
+SHAPES_2D = list(_GEN_SHAPES_2D) if _HAVE_CONTRACTS else ["circle", "square", "triangle", "star", "diamond", "line", "custom"]
+SHAPES_3D = list(_GEN_SHAPES_3D) if _HAVE_CONTRACTS else ["sphere", "cube", "pyramid", "diamond", "torus",
              "square", "triangle", "star", "line", "billboard", "custom"]
 ZONE_2D = ["Circle", "Rectangle", "Point", "Line"]
 ZONE_3D = ["sphere", "box", "point", "line"]
@@ -482,7 +499,131 @@ def validate_effect(eff):
                 errs.append(f"easing غلط في {s.get('label')}")
             if str(s.get("shape", "")).lower() == "custom" and not (s.get("modelRefs") or s.get("customShapeRefs")):
                 errs.append(f"custom بدون موديل في {s.get('label')} (ارفع ملف)")
+    errs.extend(validate_against_schema(eff))
     return errs
+
+
+def _contracts_schema():
+    """Load contracts/gen/schema.json (cached). Falls back to {} (skip)."""
+    global _SCHEMA_CACHE
+    try:
+        _SCHEMA_CACHE
+    except NameError:
+        _SCHEMA_CACHE = None
+    if _SCHEMA_CACHE is None:
+        try:
+            here = os.path.dirname(os.path.abspath(__file__))
+            p = os.path.join(os.path.dirname(here), "contracts", "gen", "schema.json")
+            with open(p, encoding="utf-8") as f:
+                _SCHEMA_CACHE = json.load(f)
+        except Exception:
+            _SCHEMA_CACHE = {}
+    return _SCHEMA_CACHE
+
+
+def _schema_check(schema, data, path="$", errs=None):
+    """Minimal stdlib-only JSON Schema check (type/required/enum/properties/items/minItems).
+
+    Unknown keys are ignored so newer files stay loadable (forward compatible).
+    """
+    if errs is None:
+        errs = []
+    if not isinstance(schema, dict):
+        return errs
+    t = schema.get("type")
+    if t == "object":
+        if not isinstance(data, dict):
+            errs.append(f"{path}: لازم object")
+            return errs
+    elif t == "array":
+        if not isinstance(data, list):
+            errs.append(f"{path}: لازم array")
+            return errs
+    elif t == "string":
+        if not isinstance(data, str):
+            errs.append(f"{path}: لازم string")
+            return errs
+    elif t == "number":
+        if not isinstance(data, (int, float)) or isinstance(data, bool):
+            errs.append(f"{path}: لازم number")
+            return errs
+    elif t == "boolean":
+        if not isinstance(data, bool):
+            errs.append(f"{path}: لازم boolean")
+            return errs
+    if "enum" in schema and data not in schema["enum"]:
+        errs.append(f"{path}: قيمة غير مدعومة {data!r}")
+    if isinstance(data, dict):
+        for k in schema.get("required", []):
+            if k not in data:
+                errs.append(f"{path}: ناقص '{k}'")
+        for k, sub in schema.get("properties", {}).items():
+            if k in data:
+                _schema_check(sub, data[k], f"{path}.{k}", errs)
+    if isinstance(data, list):
+        if "minItems" in schema and len(data) < schema["minItems"]:
+            errs.append(f"{path}: لازم على الاقل {schema['minItems']} عناصر")
+        sub = schema.get("items")
+        if isinstance(sub, dict):
+            for i, v in enumerate(data):
+                _schema_check(sub, v, f"{path}[{i}]", errs)
+    return errs
+
+
+def validate_against_schema(eff):
+    """Validate an effect dict against contracts/gen/schema.json. Returns [errors]."""
+    schema = _contracts_schema()
+    if not schema:
+        return []
+    try:
+        return _schema_check(schema, eff)
+    except Exception as e:  # never let validation itself crash the UI
+        return [f"schema check failed: {e}"]
+
+
+def migrate_effect(data):
+    """Migrate an old/foreign effect dict to the current export format.
+
+    Returns (migrated_dict, warnings). Raises ValueError on a dict that
+    cannot be migrated (not an object, or an explicitly newer version).
+    Rules: missing version -> current (warn); easing aliases
+    (easeIn/easeOut/easeInOut) -> hyphenated (warn each); missing easing ->
+    linear (warn); shapes lowercased; missing emitter.blendingMode -> Normal.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("effect file must contain a JSON object")
+    eff = copy.deepcopy(data)
+    warns = []
+    v = eff.get("version")
+    if v is None:
+        eff["version"] = VERSION
+        warns.append(f"version missing -> assumed '{VERSION}'")
+    elif str(v) != str(VERSION):
+        raise ValueError(f"unsupported effect version {v!r} (need '{VERSION}')")
+    if eff.get("type") not in ("2d", "3d"):
+        eff["type"] = "2d"
+        warns.append("type missing/unknown -> '2d'")
+    em = eff.get("emitter")
+    if not isinstance(em, dict):
+        eff["emitter"] = em = {}
+        warns.append("emitter missing -> {}")
+    if not em.get("blendingMode"):
+        em["blendingMode"] = "Normal"
+    states = eff.get("states")
+    if isinstance(states, list):
+        for i, s in enumerate(states):
+            if not isinstance(s, dict):
+                continue
+            ez = s.get("easing")
+            if ez in EASING_ALIASES:
+                s["easing"] = EASING_ALIASES[ez]
+                warns.append(f"states[{i}].easing '{ez}' -> '{s['easing']}'")
+            elif ez not in EASINGS:
+                s["easing"] = "linear"
+                warns.append(f"states[{i}].easing missing/unknown -> 'linear'")
+            if isinstance(s.get("shape"), str):
+                s["shape"] = s["shape"].lower()
+    return eff, warns
 
 
 def _boom_states(shape):
@@ -1987,6 +2128,13 @@ class StudioApp(tk.Tk):
         try:
             with open(p, encoding="utf-8") as f:
                 eff = json.load(f)
+            try:
+                eff, _warns = migrate_effect(eff)
+            except ValueError as ve:
+                messagebox.showerror("خطأ", str(ve))
+                return
+            if _warns:
+                debug_log("MIGRATE", p, " | ".join(_warns))
             self.filepath = p
             self.e_filename.delete(0, "end")
             self.e_filename.insert(0, os.path.splitext(os.path.basename(p))[0])
