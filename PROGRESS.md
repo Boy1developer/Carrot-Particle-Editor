@@ -9,6 +9,7 @@ _Not yet — run in progress._
 - [x] Phase 0: Repo hygiene — DONE (`phase-0-done`)
 - [x] Phase 1: Benchmarks and profiling — DONE (`phase-1-done`)
 - [x] Phase 2: Single source of truth for contracts — DONE (`phase-2-done`)
+- [x] Phase 3: Viewport handoff (Dear PyGui) — DONE (`phase-3-done`)
 - [ ] Phase 2: Single source of truth for contracts
 - [ ] Phase 3: Viewport handoff (Dear PyGui)
 - [ ] Phase 4: Simulation core performance
@@ -25,9 +26,13 @@ _Not yet — run in progress._
 - Phase 2: Python + C++ import generated contracts directly; TypeScript sides and the extension are verify-only (their literals are regex-compared by `generate_contracts.py --check`). Rationale: `carrots-runtime` has `rootDir: src` (an outside import breaks `tsc`), preview `tsconfig.files` is brittle, and rewriting bundled extension JSON risks the game runtime. Revisit only if a TS build step lands in CI.
 - Phase 2: schema validator is hand-rolled stdlib-only (type/required/enum/properties/items/minItems), unknown keys ignored for forward compatibility. No `jsonschema` dependency per the no-heavy-deps rule.
 - Phase 2: migration is silent-heal + warnings (status line / debug log); only an explicitly newer `version` or a non-object raises.
+- Phase 3: NO framework switch. DPG now has a real raster path (`editor/raster_view.py`: 320px GL render → one flat LUT comprehension → `add_raw_texture`/`set_value`, GPU-upscaled via `draw_image`); drawlist stays for <900 particles, custom meshes, and no-GL fallback.
+- Phase 3: PBO async readback deliberately NOT implemented — synchronous readback at 320×214 is sub-ms inside a ~3ms GL stage; a PBO buffer lifecycle on the raw-ctypes path risks more than it saves. Revisit only if upload profiling says otherwise.
+- Phase 3: dirty-region (`vp=` subrect) deliberately NOT used for the texture path — it would need a Python-side splice into a cached full frame every time the box moves; full small-frame render (~3ms GL) already bounds the cost. `vp=` stays available for the legacy Tk photo path.
+- Phase 3: DPG raw-texture row 0 = top is assumed (matches the numerically verified PPM orientation: canvas-top dot → row 5/214); could not verify visually headless. If the raster image ever appears vertically flipped in-app, flip the row order in `ppm_to_floats`.
 
 ## Test results
-- Phase 2 full run: ALL GREEN (parity 99/99 with rebuilt C++ core, behavior, all headless UI, GL + clip + cost, preview server, all 7 Node preview tests, runtime loader, new `test_contracts.py`, `generate_contracts.py --check`).
+- Phase 3 full run: ALL GREEN (parity 99/99, behavior, all headless UI incl. new raster test, GL + clip + cost, preview server, all 7 Node preview tests, runtime loader, contracts + `--check`).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
@@ -41,6 +46,7 @@ _Not yet — run in progress._
 - Baseline saved in `bench/BASELINE.md` (2026-09-30, DESKTOP-2O3SIPG, py3.14.3, C++ v1.0 MSVC/O2).
 - Cores (particles/ms): 1k py 69.3 / c++ 410.1; 10k py 76.2 / c++ 251.3; 100k py 61.5 / c++ 208.5.
 - Frame @2k (ms): sim-py 36.2, sim-cpp 7.1, gl-render+readback 11.8, dpg-drawlist 43.1, tk-photo 14.5.
+- Phase 3 re-measure: raster-2d (GL 320px + LUT convert + texture upload) 26.1ms @~2k vs drawlist 43.2ms (1.65x on the draw stage; ~20fps → ~30fps frame with C++ sim). Drawlist scales ~22us/particle; raster is ~flat (26ms @2k, est. ~50ms @10k vs ~220ms vector ≈ 4.4x). Auto-switch threshold `MIN_N = 900` (crossover of measured curves; vector stays native-res sharp below it).
 - Frame reaches DPG as per-particle drawlist primitives — NO texture path exists; GL→PPM path is Tk/legacy + headless-tests only.
 - C++ at 100k only ~3.5x Python: per-frame output marshaling (12 fresh lists + per-particle hex color parsing) dominates, not physics.
 

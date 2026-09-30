@@ -62,7 +62,7 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **Per-state colors** — each birth/mid/death state keeps its own color; white means natural materials, any other color tints over the base.
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
-- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
+- **Adaptive viewport** — crisp vector drawlist under ~900 particles; above that the particle layer renders offscreen (GL, 320px wide) and uploads as a raw texture while guides/gizmo stay vector. Custom meshes always use the vector path.- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
@@ -151,6 +151,7 @@ dist/CarrotParticleEditor.exe
 | `tests/test_imgui_mesh.py` | Uploaded models render as meshes (not placeholders), tint, culling, LOD |
 | `tests/test_imgui_morph.py` | Shape cross-fade window (edges, split alpha, legacy fallback) |
 | `tests/test_imgui_upload.py` | Upload chain, OBJ parsing, big-JSON node names, bone-node fallback |
+| `tests/test_imgui_raster.py` | Raster path: PPM conversion, GL orientation, auto-switch, no-GL fallback |
 | `tests/test_preview_blobs.py` | Model-blob embedding for the browser preview |
 | `tests/test_contracts.py` | Generated bindings = source, C++ order, schema accept/reject, migration |
 | `render/test_gl.py` | OpenGL context initialization |
