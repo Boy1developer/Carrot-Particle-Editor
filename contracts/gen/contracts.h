@@ -13,8 +13,8 @@ constexpr const char* CARROT_SHAPE_ORDER[CARROT_SHAPE_COUNT] = {"circle", "squar
 constexpr int CARROT_EASING_COUNT = 4;
 constexpr const char* CARROT_EASINGS[CARROT_EASING_COUNT] = {"linear", "ease-in", "ease-out", "ease-in-out"};
 
-constexpr int CARROT_BLEND_MODE_COUNT = 4;
-constexpr const char* CARROT_BLEND_MODES[CARROT_BLEND_MODE_COUNT] = {"Normal", "Additive", "Subtractive", "Multiply"};
+constexpr int CARROT_BLEND_MODE_COUNT = 7;
+constexpr const char* CARROT_BLEND_MODES[CARROT_BLEND_MODE_COUNT] = {"Normal", "Additive", "Subtractive", "Multiply", "Screen", "Lighten", "Overlay"};
 
 // Shape cross-fade window (raw segment time).
 constexpr double CARROT_MORPH_LO = 0.25;

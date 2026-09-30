@@ -37,7 +37,10 @@
             "Normal",
             "Additive",
             "Subtractive",
-            "Multiply"
+            "Multiply",
+            "Screen",
+            "Lighten",
+            "Overlay"
           ]
         }
       }

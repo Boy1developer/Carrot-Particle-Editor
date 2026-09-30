@@ -21,6 +21,6 @@
     "easeOut": "ease-out",
     "easeInOut": "ease-in-out"
   },
-  "blend_modes": ["Normal", "Additive", "Subtractive", "Multiply"],
+  "blend_modes": ["Normal", "Additive", "Subtractive", "Multiply", "Screen", "Lighten", "Overlay"],
   "morph_window": {"lo": 0.25, "hi": 0.75}
 }

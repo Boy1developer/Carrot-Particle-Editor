@@ -8,6 +8,6 @@ SHAPES_2D = ['circle', 'square', 'triangle', 'star', 'diamond', 'line', 'custom'
 SHAPES_3D = ['sphere', 'cube', 'pyramid', 'diamond', 'torus', 'square', 'triangle', 'star', 'line', 'billboard', 'custom']
 EASINGS = ['linear', 'ease-in', 'ease-out', 'ease-in-out']
 EASING_ALIASES = {'easeIn': 'ease-in', 'easeOut': 'ease-out', 'easeInOut': 'ease-in-out'}
-BLEND_MODES = ['Normal', 'Additive', 'Subtractive', 'Multiply']
+BLEND_MODES = ['Normal', 'Additive', 'Subtractive', 'Multiply', 'Screen', 'Lighten', 'Overlay']
 MORPH_LO = 0.25
 MORPH_HI = 0.75

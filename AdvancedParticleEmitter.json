@@ -10,7 +10,7 @@
   "name": "AdvancedParticleEmitter",
   "previewIconUrl": "https://asset-resources.gdevelop.io/public-resources/Icons/4ea42069d08966f8c7983d8e5707d932dd3749b06a4549d08df38b77455be1c8_grain.svg",
   "shortDescription": "Advanced 2D & 3D particle system with keyframe animations, v2 format — JSON + optional atlas PNG / GLB.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": [
     "## Overview",
     "Complete particle system for GDevelop with **2D** (custom 2D object) and **3D** (custom 3D object) support. Design effects in the Particle Studio Pro and import them via JSON.",
@@ -257,18 +257,30 @@
                 "var imageResourceName    = (typeof object._getImageResource === 'function') ? object._getImageResource() : \"\";",
                 "var atlasResourceName    = (typeof object._getAtlasImage === 'function') ? object._getAtlasImage() : \"\";",
                 "var layerName            = object.getLayer();",
-                "// Blending mode: how particles blend with the background (Normal, Additive, Subtractive, Multiply)",
+                "// Blending mode: how particles blend with the background (Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay)",
                 "var blendingModeProp    = (typeof object._getBlendingMode === 'function') ? object._getBlendingMode() : 'JSON';",
                 "var blendingMode         = (blendingModeProp === 'JSON' || blendingModeProp === '') ? ((object.__apfx2D && object.__apfx2D._originalBlendingMode) || 'Normal') : blendingModeProp;",
-                "var pixiBlendMode = (function(b){",
-                "  if (!PIXI || !PIXI.BLEND_MODES) return 0;",
-                "  switch (b) {",
-                "    case 'Additive':    return PIXI.BLEND_MODES.ADD;",
-                "    case 'Multiply':    return PIXI.BLEND_MODES.MULTIPLY;",
-                "    case 'Subtractive': return (PIXI.BLEND_MODES.SUBTRACT != null ? PIXI.BLEND_MODES.SUBTRACT : (PIXI.BLEND_MODES.ERASE != null ? PIXI.BLEND_MODES.ERASE : PIXI.BLEND_MODES.NORMAL));",
-                "    default:            return PIXI.BLEND_MODES.NORMAL;",
+                "var pixiBlendFor = function(mode, P) {",
+                "  P = P || ((typeof PIXI !== \"undefined\") ? PIXI : null);",
+                "  var B = (P && P.BLEND_MODES) || {};",
+                "  var N = (B.NORMAL !== undefined && B.NORMAL !== null) ? B.NORMAL : 0;",
+                "  switch (mode) {",
+                "    case \"Additive\": return { blend: ((B.ADD !== undefined && B.ADD !== null) ? B.ADD : N), warn: null };",
+                "    case \"Multiply\": return { blend: ((B.MULTIPLY !== undefined && B.MULTIPLY !== null) ? B.MULTIPLY : N), warn: null };",
+                "    case \"Subtractive\": return { blend: ((B.SUBTRACT !== undefined && B.SUBTRACT !== null) ? B.SUBTRACT : (((B.ERASE !== undefined && B.ERASE !== null) ? B.ERASE : N))), warn: null };",
+                "    case \"Screen\": if (B.SCREEN !== undefined && B.SCREEN !== null) return { blend: B.SCREEN, warn: null }; return { blend: N, warn: \"Screen\" };",
+                "    case \"Overlay\": if (B.OVERLAY !== undefined && B.OVERLAY !== null) return { blend: B.OVERLAY, warn: null }; return { blend: N, warn: \"Overlay\" };",
+                "    case \"Lighten\": return { blend: N, warn: \"Lighten\" };",
+                "    default: return { blend: N, warn: null };",
                 "  }",
-                "})(blendingMode);",
+                "};",
+                "var blendWarnOnce = function(msg) {",
+                "  var w = object.__apfxBlendWarned || (object.__apfxBlendWarned = {});",
+                "  if (!w[msg]) { w[msg] = true; console.warn(msg); }",
+                "};",
+                "var _pb2 = pixiBlendFor(blendingMode);",
+                "var pixiBlendMode = _pb2.blend;",
+                "if (_pb2.warn) blendWarnOnce(\"[AvancedPFX2D] Blend mode '\" + _pb2.warn + \"' is not supported by this PixiJS runtime; falling back to Normal.\");",
                 "",
                 "// --- Access PixiJS container from GDevelop's layer ---",
                 "var layer = gameScene.getLayer(layerName);",
@@ -3843,7 +3855,7 @@
           "objectGroups": []
         },
         {
-          "description": "the blending mode of the object. How particles blend with background: Normal, Additive, Subtractive, Multiply",
+          "description": "the blending mode of the object. How particles blend with background: Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay",
           "fullName": "Blending mode",
           "functionType": "ExpressionAndCondition",
           "group": "AvancedParticleEmitter  2D display configuration",
@@ -3866,7 +3878,7 @@
             }
           ],
           "expressionType": {
-            "supplementaryInformation": "[\"JSON\",\"Normal\",\"Additive\",\"Subtractive\",\"Multiply\"]",
+            "supplementaryInformation": "[\"JSON\",\"Normal\",\"Additive\",\"Subtractive\",\"Multiply\",\"Screen\",\"Lighten\",\"Overlay\"]",
             "type": "stringWithSelector"
           },
           "parameters": [
@@ -5230,7 +5242,7 @@
           "value": "JSON",
           "type": "Choice",
           "label": "Blending mode",
-          "description": "How particles blend with background: Normal, Additive, Subtractive, Multiply",
+          "description": "How particles blend with background: Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay",
           "group": "Display",
           "choices": [
             {
@@ -5252,6 +5264,18 @@
             {
               "label": "",
               "value": "Multiply"
+            },
+            {
+              "label": "",
+              "value": "Screen"
+            },
+            {
+              "label": "",
+              "value": "Lighten"
+            },
+            {
+              "label": "",
+              "value": "Overlay"
             }
           ],
           "name": "BlendingMode"
@@ -6111,6 +6135,40 @@
                 "if (!object.__apfx3DFns) {",
                 "  object.__apfx3DFns = {};",
                 "  var F = object.__apfx3DFns;",
+                "F.threeBlendFor = F.threeBlendFor || function(mode, T) {",
+                "  T = T || ((typeof THREE !== \"undefined\") ? THREE : null);",
+                "  var N = (T && T.NormalBlending !== undefined) ? T.NormalBlending : 0;",
+                "  var out = { blending: N, equation: null, src: null, dst: null, bake: \"normal\", warn: null };",
+                "  if (!T) return out;",
+                "  switch (mode) {",
+                "    case \"Additive\": out.blending = T.AdditiveBlending; out.bake = \"additive\"; return out;",
+                "    case \"Subtractive\": out.blending = T.SubtractiveBlending; out.bake = \"subtractive\"; return out;",
+                "    case \"Multiply\": out.blending = T.MultiplyBlending; out.bake = \"multiply\"; return out;",
+                "    case \"Screen\":",
+                "      if (T.CustomBlending === undefined || T.AddEquation === undefined ||",
+                "          T.OneFactor === undefined || T.OneMinusSrcColorFactor === undefined)",
+                "        { out.warn = \"Screen\"; return out; }",
+                "      out.blending = T.CustomBlending; out.equation = T.AddEquation;",
+                "      out.src = T.OneFactor; out.dst = T.OneMinusSrcColorFactor;",
+                "      out.bake = \"additive\"; return out;",
+                "    case \"Lighten\":",
+                "      if (T.CustomBlending === undefined || T.MaxEquation === undefined)",
+                "        { out.warn = \"Lighten\"; return out; }",
+                "      out.blending = T.CustomBlending; out.equation = T.MaxEquation;",
+                "      out.bake = \"lighten\"; return out;",
+                "    case \"Overlay\": out.warn = \"Overlay\"; return out;",
+                "    default: return out;",
+                "  }",
+                "};",
+                "F.blendWarnOnce = F.blendWarnOnce || function(msg) {",
+                "  var w = object.__apfxBlendWarned || (object.__apfxBlendWarned = {});",
+                "  if (!w[msg]) { w[msg] = true; console.warn(msg); }",
+                "};",
+                "F.resolveEmitterBlend = F.resolveEmitterBlend || function(objProp, emitterMode) {",
+                "  if (objProp === \"JSON\" || objProp === \"\" || objProp === undefined || objProp === null)",
+                "    return (typeof emitterMode === \"string\" && emitterMode) ? emitterMode : \"Normal\";",
+                "  return objProp;",
+                "};",
                 "",
                 "  F.ease = function(t, easing) {",
                 "    t = Math.max(0, Math.min(1, t));",
@@ -6270,10 +6328,9 @@
                 "  F.createMesh = function(shape, refKind, refId, data, shadowParams, blending) {",
                 "    var doCast = shadowParams ? shadowParams.castShadow : false;",
                 "    var doRecv = shadowParams ? shadowParams.receiveShadow : false;",
-                "    var blendMode = THREE.NormalBlending;",
-                "    if (blending === \"Additive\") blendMode = THREE.AdditiveBlending;",
-                "    else if (blending === \"Subtractive\") blendMode = THREE.SubtractBlending;",
-                "    else if (blending === \"Multiply\") blendMode = THREE.MultiplyBlending;",
+                "    var _br3 = F.threeBlendFor(blending, (typeof THREE !== \"undefined\") ? THREE : null);",
+                "    if (_br3.warn) F.blendWarnOnce(\"[AvancedPFX3D] Blend mode '\" + _br3.warn + \"' is not supported by this Three.js runtime; falling back to Normal.\");",
+                "    var blendMode = _br3.blending;",
                 "",
                 "    // GLB model (multi-node)",
                 "    if (refKind === \"model\" && data.modelCache[refId] && data.modelCache[refId].ready) {",
@@ -6285,6 +6342,11 @@
                 "          child.material.transparent = true;",
                 "          child.material.depthWrite = false;",
                 "          child.material.blending = blendMode;",
+                "          if (_br3.equation !== null && _br3.equation !== undefined) {",
+                "            child.material.blendEquation = _br3.equation;",
+                "            child.material.blendSrc = _br3.src;",
+                "            child.material.blendDst = _br3.dst;",
+                "          }",
                 "          child.castShadow = doCast;",
                 "          child.receiveShadow = doRecv;",
                 "        }",
@@ -6307,6 +6369,9 @@
                 "        side: THREE.DoubleSide, depthWrite: false, blending: blendMode,",
                 "        alphaTest: 0.01",
                 "      });",
+                "      if (_br3.equation !== null && _br3.equation !== undefined) {",
+                "        imgMat.blendEquation = _br3.equation; imgMat.blendSrc = _br3.src; imgMat.blendDst = _br3.dst;",
+                "      }",
                 "      var imgMesh = new THREE.Mesh(imgGeo, imgMat);",
                 "      imgMesh.castShadow = doCast; imgMesh.receiveShadow = doRecv;",
                 "      imgMesh.userData.is3DShape = false; imgMesh.userData.isBillboard = true;",
@@ -6333,6 +6398,9 @@
                 "      color: 0xffffff, transparent: true, opacity: 1,",
                 "      side: THREE.DoubleSide, depthWrite: false, blending: blendMode",
                 "    });",
+                "    if (_br3.equation !== null && _br3.equation !== undefined) {",
+                "      mat.blendEquation = _br3.equation; mat.blendSrc = _br3.src; mat.blendDst = _br3.dst;",
+                "    }",
                 "    var mesh = new THREE.Mesh(geo, mat);",
                 "    mesh.castShadow = doCast; mesh.receiveShadow = doRecv;",
                 "    mesh.userData.is3DShape = is3D; mesh.userData.isBillboard = !is3D; mesh.userData.isGLB = false;",
@@ -6947,9 +7015,10 @@
                 "    // particles for ALL blending modes, we bake the fade into the color channel.",
                 "    var _bm = (typeof blendingMode === 'string') ? blendingMode : 'Normal';",
                 "    var _rM = threeColor.r, _gM = threeColor.g, _bM = threeColor.b, _aOut = alpha;",
-                "    if (_bm === 'Additive') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = alpha; }",
+                "    if (_bm === 'Additive' || _bm === 'Screen') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = alpha; }",
                 "    else if (_bm === 'Multiply') { _rM = 1 + (threeColor.r - 1) * alpha; _gM = 1 + (threeColor.g - 1) * alpha; _bM = 1 + (threeColor.b - 1) * alpha; _aOut = 1; }",
                 "    else if (_bm === 'Subtractive') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = 1; }",
+                "    else if (_bm === 'Lighten') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = 1; }",
                 "    if (p.mesh.userData.isGLB) {",
                 "      p.mesh.traverse(function(c){ if (c.isMesh && c.material) { c.material.opacity = _aOut; if (c.material.color) { var bt = c.material.userData.baseTint || [1, 1, 1]; c.material.color.setRGB(bt[0] * _rM, bt[1] * _gM, bt[2] * _bM); } } });",
                 "    } else {",
@@ -11478,7 +11547,7 @@
           "objectGroups": []
         },
         {
-          "description": "the blendingMode of the object. How particles blend with background: Normal, Additive, Subtractive, Multiply",
+          "description": "the blendingMode of the object. How particles blend with background: Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay",
           "fullName": "BlendingMode",
           "functionType": "ExpressionAndCondition",
           "group": "AvancedParticleEmitter 3D display configuration",
@@ -11501,7 +11570,7 @@
             }
           ],
           "expressionType": {
-            "supplementaryInformation": "[\"Normal\",\"Additive\",\"Subtractive\",\"Multiply\"]",
+            "supplementaryInformation": "[\"Normal\",\"Additive\",\"Subtractive\",\"Multiply\",\"Screen\",\"Lighten\",\"Overlay\"]",
             "type": "stringWithSelector"
           },
           "parameters": [
@@ -12722,7 +12791,7 @@
           "value": "JSON",
           "type": "Choice",
           "label": "",
-          "description": "How particles blend with background: Normal, Additive, Subtractive, Multiply",
+          "description": "How particles blend with background: Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay",
           "group": "Display",
           "choices": [
             {
@@ -12744,6 +12813,18 @@
             {
               "label": "",
               "value": "Multiply"
+            },
+            {
+              "label": "",
+              "value": "Screen"
+            },
+            {
+              "label": "",
+              "value": "Lighten"
+            },
+            {
+              "label": "",
+              "value": "Overlay"
             }
           ],
           "name": "BlendingMode"

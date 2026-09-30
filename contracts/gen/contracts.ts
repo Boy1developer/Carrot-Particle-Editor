@@ -80,6 +80,9 @@ export const BLEND_MODES = [
   "Additive",
   "Subtractive",
   "Multiply",
+  "Screen",
+  "Lighten",
+  "Overlay",
 ] as const;
 export type BlendMode = (typeof BLEND_MODES)[number];
 export const MORPH_LO = 0.25;
