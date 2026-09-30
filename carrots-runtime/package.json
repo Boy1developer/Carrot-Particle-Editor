@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Typed TypeScript loader for Carrot particle effect JSON (v1.0), built for Carrots Game Engine GDJS runtime (PixiJS 2D / Three.js 3D).",
+  "license": "MIT",
   "scripts": {
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",

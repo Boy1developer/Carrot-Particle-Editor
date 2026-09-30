@@ -49,7 +49,7 @@
 This repository is a two-part toolkit:
 
 1. **`AdvancedParticleEmitter.json`** — a GDevelop extension (namespace `AdvancedParticleEmitter`, author *Carrot Studio*) that renders particle effects inside GDevelop games: 2D via [PixiJS](https://pixijs.com), 3D via [Three.js](https://threejs.org), using a shared custom JSON effect format.
-2. **Carrot Particle Editor** — a Dear PyGui desktop application (packaged as `CarrotParticleEditor.exe`, Tkinter kept as fallback) for designing those effects with a live viewport, then exporting them to the extension's JSON format.
+2. **Carrot Particle Editor** — a Dear PyGui desktop application (packaged as `CarrotParticleEditor.exe`) for designing those effects with a live viewport, then exporting them to the extension's JSON format.
 
 Both parts share a single source of truth for particle behavior, shapes, and the export format — see [Shared contracts](#shared-contracts).
 
@@ -62,7 +62,7 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **Per-state colors** — each birth/mid/death state keeps its own color; white means natural materials, any other color tints over the base.
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
-- **In-editor GPU preview (Tk fallback edition)** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The main Dear PyGui edition renders its viewport with drawlist primitives instead, so it has no such switch.
+- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
 - **One-command rebuild pipeline** — compile check → C++ core build (if stale) → PyInstaller packaging → smoke test → Windows shortcut generation.
 - **Compatible JSON export** — matches the extension's v1.0 effect format (hyphenated easing: `linear` / `ease-in` / `ease-out` / `ease-in-out`).
@@ -72,6 +72,8 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 Prebuilt Windows executables are published on the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page.
 Download `CarrotParticleEditor.exe` and run it — no Python installation required.
 
+> Binaries (`dist/`, `*.exe`, `*.pyd`, `node_modules/`) are never committed to the repo — they are rebuilt locally (`python tools/rebuild_app.py`) and shipped through GitHub Releases.
+
 ## Project structure
 
 ```text
@@ -79,7 +81,7 @@ Carrot-Particle-Editor/
 ├── assets/                        # Icons and static resources
 ├── carrots-runtime/               # Game-runtime ingestion (normalizeEffect)
 ├── core/                          # Simulation core (Python + C++) and its tests
-├── editor/                        # Dear PyGui app (studio_imgui.py), Tk fallback + shared logic (particle_studio.py), mesh_cache.py
+├── editor/                        # Dear PyGui app (studio_imgui.py), shared logic + legacy prototype (particle_studio.py), mesh_cache.py
 ├── packaging/                     # PyInstaller spec
 ├── preview/                       # Browser preview (Three.js / PixiJS) and its tests
 ├── render/                        # OpenGL preview renderer and its tests
@@ -119,7 +121,7 @@ This runs the full pipeline: compiles and validates the app, rebuilds the C++ co
 ### Run
 
 ```bash
-# From source (Dear PyGui edition; Tkinter fallback lives in editor/particle_studio.py)
+# From source (Dear PyGui edition; shared logic lives in editor/particle_studio.py)
 python editor/studio_imgui.py
 
 # Or the packaged build
@@ -170,7 +172,7 @@ A few conventions are kept identical across the Python app, the C++ core, and th
 
 - [ ] Evaluate integration with a dedicated C++ particle library (Effekseer or SPARK) as a complement to the current custom core
 - [x] Add ready-made effect presets (fire, smoke, sparks, magic)
-- [ ] Add CI to run the parity and behavior tests automatically
+- [x] Add CI to run the parity and behavior tests automatically (`.github/workflows/ci.yml`)
 - [x] Add screenshots/GIFs and a step-by-step GDevelop tutorial
 
 ## Related projects
