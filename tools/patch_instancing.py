@@ -377,7 +377,7 @@ def main():
         "    else if (_bm === 'Multiply') { _rM = 1 + (threeColor.r - 1) * alpha; _gM = 1 + (threeColor.g - 1) * alpha; _bM = 1 + (threeColor.b - 1) * alpha; _aOut = 1; }\n"
         "    else if (_bm === 'Subtractive') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = 1; }\n"
         "    else if (_bm === 'Lighten') { _rM = threeColor.r * alpha; _gM = threeColor.g * alpha; _bM = threeColor.b * alpha; _aOut = 1; }\n"
-        "    if (p.inst && data._inst && data._inst[_shpI]) {\n"
+        "    if (p.inst) {\n"
         "      F.writeInstance(data, _shpI, p.x, p.y, p.z, s, p.accRotX, p.accRotY, p.accRotZ,\n"
         "        _useBb, _bbQuat, _useAlign, quat, _rM, _gM, _bM, _aOut);\n"
         "    } else if (p.mesh) {\n"

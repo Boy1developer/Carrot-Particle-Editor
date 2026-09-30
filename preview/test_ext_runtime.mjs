@@ -289,8 +289,8 @@ console.log("editor static preview: OK");
   console.log("null-renderer fallback: OK particles=%d", d.particles.length);
 }
 
-// 7) instancing: buckets exist, draw-call proxy collapses (11 buckets,
-//    not N meshes), all written matrices/colors/alpha finite.
+// 7) instancing: buckets are created LAZILY (only shapes in use, not all
+//    11), draw-call proxy collapses, all written matrices/colors finite.
 {
   const eff = userLikeEffect();
   eff.emitter.seed = 4242;
@@ -298,12 +298,22 @@ console.log("editor static preview: OK");
   const d = o.__apfx3D;
   if (!d._inst) { console.error("FAIL: no buckets"); process.exit(1); }
   const keys = Object.keys(d._inst);
-  if (keys.length !== 11) { console.error("FAIL: buckets", keys.length); process.exit(1); }
+  const allowed = new Set(["sphere", "cube", "diamond", "pyramid", "torus",
+    "square", "triangle", "star", "line", "circle", "billboard"]);
+  for (const k of keys) {
+    if (!allowed.has(k)) { console.error("FAIL: bucket key", k); process.exit(1); }
+  }
+  if (!(keys.length >= 1 && keys.length <= 3)) {
+    console.error("FAIL: lazy buckets", keys); process.exit(1);
+  }
   let slots = 0;
   const groupChildren = d.particleGroup.children.length;
   for (const k of keys) {
     const bk = d._inst[k];
     if (bk.mesh.frustumCulled !== false) { console.error("FAIL: culling", k); process.exit(1); }
+    if (bk.mesh.visible !== (bk.count > 0)) {
+      console.error("FAIL: visibility", k, bk.count); process.exit(1);
+    }
     slots += bk.count;
     const m = new THREE.Matrix4();
     for (let s = 0; s < bk.count; s++) {
@@ -322,10 +332,10 @@ console.log("editor static preview: OK");
   if (slots !== prims || prims === 0) {
     console.error("FAIL: slots", slots, "prims", prims); process.exit(1);
   }
-  if (!(groupChildren <= 12)) {
-    console.error("FAIL: draw calls", groupChildren); process.exit(1);
+  if (groupChildren !== keys.length) {
+    console.error("FAIL: draw calls", groupChildren, keys); process.exit(1);
   }
-  console.log("instancing buckets: OK slots=%d drawObjs=%d", slots, groupChildren);
+  console.log("instancing buckets: OK slots=%d buckets=%s", slots, keys.join(","));
 }
 
 // 8) classic fallback (no InstancedMesh in THREE): mesh-per-particle path,
@@ -405,5 +415,37 @@ function collectAppearance(obj) {
     }
   }
   console.log("A/B parity: OK shapes=%s", ka);
+}
+
+// 10) diet exactness: F._dietOff must not change a single drawn value.
+{
+  const eff = userLikeEffect();
+  eff.emitter.seed = 4242;
+  const ref = collectAppearance(drive(eff, 90, {}, true, false));
+  const eff2 = userLikeEffect();
+  eff2.emitter.seed = 4242;
+  const { object } = makeWorld(eff2, {}, true);
+  for (let f = 0; f < 90; f++) {
+    object._advance(16.7);
+    run([object], THREE);
+    if (f === 0) object.__apfx3DFns._dietOff = true;
+  }
+  const got = collectAppearance(object);
+  const ka = Object.keys(ref).sort().join(","), kb = Object.keys(got).sort().join(",");
+  if (ka !== kb) { console.error("FAIL: diet keys", ka, kb); process.exit(1); }
+  for (const k of Object.keys(ref)) {
+    if (ref[k].length !== got[k].length) {
+      console.error("FAIL: diet count", k); process.exit(1);
+    }
+    for (let i = 0; i < ref[k].length; i++) {
+      for (let j = 0; j < ref[k][i].length; j++) {
+        if (ref[k][i][j] !== got[k][i][j]) {
+          console.error("FAIL: diet value", k, i, j, ref[k][i][j], got[k][i][j]);
+          process.exit(1);
+        }
+      }
+    }
+  }
+  console.log("diet exactness: OK shapes=%s", ka);
 }
 console.log("EXT-RUNTIME-OK");
