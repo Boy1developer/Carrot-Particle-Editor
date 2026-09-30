@@ -1,9 +1,28 @@
 import * as THREE from "three";
 import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 
 // Execute the EXACT function shipped inside AdvancedParticleEmitter.json.
+// (Extracted at runtime so the test never depends on a temp scan artifact.)
+const here = dirname(fileURLToPath(import.meta.url));
+const doc = JSON.parse(readFileSync(join(here, "..", "AdvancedParticleEmitter.json"), "utf8"));
+const obj3d = doc.eventsBasedObjects.find((o) => o.name === "AvancedParticleEmitter3D");
+const chunks = [];
+(function walk(evts) {
+  for (const ev of evts || []) {
+    if (ev.type === "BuiltinCommonInstructions::JsCode") {
+      const code = ev.inlineCode || [];
+      chunks.push(Array.isArray(code) ? code.join("\n") : String(code));
+    }
+    walk(ev.events);
+  }
+})((obj3d.eventsFunctions || []).flatMap((f) => f.events || []));
+const big = chunks.join("\n");
+const m = big.match(/  function apfxBakeSkinned\(root\) \{[\s\S]*?\n  \}\n/);
+if (!m) { console.error("FAIL: bake fn not found in extension"); process.exit(1); }
+const src = m[0];
 globalThis.THREE = THREE;
-const src = readFileSync("ext_bake_fn.js", "utf8");
 const fn = new Function(src + "\nreturn apfxBakeSkinned;")();
 if (typeof fn !== "function") { console.error("FAIL: no fn"); process.exit(1); }
 
