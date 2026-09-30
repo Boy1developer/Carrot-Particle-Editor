@@ -63,6 +63,7 @@ Built to plug into **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-G
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping (desktop viewport + browser preview; the game runtime keeps the classic flip).
 - **Dual simulation core** — a Python reference implementation plus an optional compiled C++ core (`particle_core`) for faster live preview, checked for numerical parity against Python (99/99 test cases passing).
 - **Deterministic seed** — a nonzero emitter `seed` replays the identical effect on every load in the editor (Python + C++), the browser preview, and the GDevelop runtime; `0` keeps legacy unseeded behavior.
+- **Force fields** (v1.1) — optional emitter `fields`: age-phased turbulence, Y-axis vortex through the emitter point, linear-falloff attractor, and a bounce/friction collision plane; all off by default (legacy motion bit-identical).
 - **Adaptive viewport** — crisp vector drawlist under ~900 particles; above that the particle layer renders offscreen (GL, 320px wide) and uploads as a raw texture while guides/gizmo stay vector. Custom meshes always use the vector path.
 - **Pooled game runtime** — the GDevelop extension reuses meshes/materials from a shape-aware pool (no per-spawn GPU churn), shares geometries, and hoists per-frame temporaries; the browser preview renders 3D as instanced meshes and 2D as pooled tinted sprites.- **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built with raw `ctypes` (no PyOpenGL/numpy dependency), with dirty-region redraw for performance. Toggled with the 🎮 GPU button at the top-right of the viewport. The Dear PyGui viewport renders with drawlist primitives; the offscreen GL path is kept for headless verification and reference rendering.
 - **Browser preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live via Three.js (3D) / PixiJS (2D).
@@ -177,6 +178,8 @@ dist/CarrotParticleEditor.exe
 | `preview/test_blend.mjs` | Extension blend mappings + resolution (stubbed runtimes) |
 | `tests/test_seed.py` | Seed replay identical (Python + C++), divergence, seed-0 legacy |
 | `preview/test_seed.mjs` | Preview replay identical + extension RNG extraction |
+| `tests/test_fields.py` | Field formulas, off-identical, perturb/replay, collision, attractor (Py + C++) |
+| `preview/test_fields.mjs` | Extension helpers == Python + preview field behavior |
 | `render/test_gl.py` | OpenGL context initialization |
 | `render/test_clip.py` | GL projection matrix parity with the editor's own projection |
 | `render/test_cost.py` | Render-cost profiling (identified `photo.configure` as the main bottleneck) |

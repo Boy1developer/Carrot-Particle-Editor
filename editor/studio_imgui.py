@@ -348,6 +348,19 @@ class SimEngine:
         gx = g.get("y", 0) * dt * 0.4
         gy = g.get("x", 0) * dt * 0.4
         gz = g.get("z", 0) * dt * 0.4
+        fld = em.get("fields")
+        fld_on = PS.fields_active(fld)
+        flat = (ptype != "3d")
+        ex, ey, ez = emitter_pos
+        col = (fld.get("collision") or {}) if isinstance(fld, dict) else {}
+        try:
+            planeY = col.get("planeY")
+            planeY = float(planeY) if planeY is not None else None
+        except (ValueError, TypeError):
+            planeY = None
+        bounce = float(col.get("bounce", 0.5) or 0.0)
+        friction = float(col.get("friction", 0.1) or 0.0)
+        plane_on = planeY is not None
         mode = em.get("mode", "Infinite")
         if mode != self._last_sim_mode:
             self._last_sim_mode = mode
@@ -373,6 +386,12 @@ class SimEngine:
             p[17] += gx
             p[18] += gy
             p[19] += gz
+            if fld_on:
+                ax, ay, az = PS.field_accel(p[0], p[1], p[10], p[4], fld,
+                                            ex, ey, ez, flat)
+                p[17] += ax * dt
+                p[18] += ay * dt
+                p[19] += az * dt
             smp = self.sample_tracks(p[13], p[4], p[20], p[21])
             p[2] = p[14] * smp["speed"] + p[17]
             p[3] = p[15] * smp["speed"] + p[18]
@@ -381,6 +400,13 @@ class SimEngine:
             p[1] += p[3] * dt
             p[10] += p[11] * dt
             p[4] += dt
+            if plane_on and p[1] < planeY:
+                # bounce via the gravity accumulator (velocities are rebuilt
+                # from dir*speed each frame, so impulses must persist there)
+                p[1] = planeY
+                p[17] += p[2] * -friction
+                p[18] += -p[3] * (1.0 + bounce)
+                p[19] += p[11] * -friction
         if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
             self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
         return len(self.parts)
@@ -465,6 +491,33 @@ class App:
             return default
         return f if math.isfinite(f) else default
 
+    def _read_fields(self, f):
+        """Sanitized fields block (None planeY stays None = disabled)."""
+        d = PS.default_fields()
+        if isinstance(f, dict):
+            for k in ("turbulence", "vortex", "attractor", "collision"):
+                if isinstance(f.get(k), dict):
+                    d[k].update(f[k])
+        F = self._fnum
+        t, v, a, c = d["turbulence"], d["vortex"], d["attractor"], d["collision"]
+        py = c.get("planeY")
+        try:
+            py = float(py) if py is not None else None
+        except (ValueError, TypeError):
+            py = None
+        return {
+            "turbulence": {"amount": F(t.get("amount", 0), 0),
+                           "scale": F(t.get("scale", 0.05), 0.05),
+                           "speed": F(t.get("speed", 1.0), 1.0)},
+            "vortex": {"strength": F(v.get("strength", 0), 0)},
+            "attractor": {"x": F(a.get("x", 0), 0), "y": F(a.get("y", 0), 0),
+                          "z": F(a.get("z", 0), 0),
+                          "strength": F(a.get("strength", 0), 0),
+                          "radius": max(0.0, F(a.get("radius", 200), 200))},
+            "collision": {"planeY": py, "bounce": F(c.get("bounce", 0.5), 0.5),
+                          "friction": F(c.get("friction", 0.1), 0.1)},
+        }
+
     def read_emitter(self):
         """Rebuild a type-correct emitter dict every read (like the Tk
         edition): switching 2D<->3D never leaks the other mode's keys,
@@ -480,6 +533,7 @@ class App:
         mode = str(src.get("mode", "Infinite"))
         rev = bool(src.get("reverse", False))
         ali = bool(src.get("alignDir", False))
+        fields = self._read_fields(src.get("fields"))
         if self.ptype == "3d":
             zs = str(z.get("shape", "sphere") or "sphere").lower()
             if zs not in PS.ZONE_3D:
@@ -512,6 +566,7 @@ class App:
                     "showCone": bool(c.get("showCone", True))},
                 "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
                 "seed": int(src.get("seed", 0) or 0),
+                "fields": fields,
             }
         zs = str(z.get("shape", "Circle") or "Circle")
         if zs not in PS.ZONE_2D:
@@ -537,6 +592,7 @@ class App:
                 "showCone": bool(c.get("showCone", True))},
             "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
             "seed": int(src.get("seed", 0) or 0),
+            "fields": fields,
         }
 
     def current_effect(self):
@@ -1454,6 +1510,44 @@ def cb_em_seed(sender=None, app_data=None, *r):
         pass
 
 
+def _field_col():
+    f = APP.em.get("fields")
+    if not isinstance(f, dict):
+        f = {}
+        APP.em["fields"] = f
+    c = f.get("collision")
+    if not isinstance(c, dict):
+        c = {}
+        f["collision"] = c
+    return c
+
+
+def cb_field_plane_toggle(sender=None, app_data=None, *r):
+    """Plane checkbox: enable at 300 (or keep) / disable to null."""
+    try:
+        c = _field_col()
+        if app_data:
+            if c.get("planeY") is None:
+                c["planeY"] = 300.0
+                dpg.set_value("em_planey", 300.0)
+        else:
+            c["planeY"] = None
+        APP.mark_dirty()
+    except (ValueError, TypeError):
+        pass
+
+
+def cb_field_plane_y(sender=None, app_data=None, *r):
+    """Plane Y value: setting a number implicitly enables the plane."""
+    try:
+        c = _field_col()
+        c["planeY"] = float(app_data)
+        dpg.set_value("em_plane_on", True)
+        APP.mark_dirty()
+    except (ValueError, TypeError):
+        pass
+
+
 def cb_em_combo(path, lower=False):
     def _cb(sender=None, app_data=None, *r):
         em_set(path, str(app_data).lower() if lower else str(app_data))
@@ -1769,6 +1863,33 @@ def sync_state_form(self):
 App.sync_state_form = sync_state_form
 
 
+def _sync_fields_form(f):
+    """Push the fields block into the sidebar widgets (defaults when absent)."""
+    d = PS.default_fields()
+    if isinstance(f, dict):
+        for k in ("turbulence", "vortex", "attractor", "collision"):
+            if isinstance(f.get(k), dict):
+                d[k].update(f[k])
+    t, v, a, c = d["turbulence"], d["vortex"], d["attractor"], d["collision"]
+    _set("em_turb", float(t.get("amount", 0) or 0))
+    _set("em_turbsc", float(t.get("scale", 0.05) or 0))
+    _set("em_turbsp", float(t.get("speed", 1.0) or 0))
+    _set("em_vortex", float(v.get("strength", 0) or 0))
+    _set("em_attr", float(a.get("strength", 0) or 0))
+    _set("em_attrr", float(a.get("radius", 200) or 0))
+    _set("em_attrx", float(a.get("x", 0) or 0))
+    _set("em_attry", float(a.get("y", 0) or 0))
+    py = c.get("planeY")
+    try:
+        py = float(py) if py is not None else None
+    except (ValueError, TypeError):
+        py = None
+    _set("em_plane_on", py is not None)
+    _set("em_planey", py if py is not None else 300.0)
+    _set("em_bounce", float(c.get("bounce", 0.5) or 0))
+    _set("em_fric", float(c.get("friction", 0.1) or 0))
+
+
 def sync_emitter_form(self):
     e = self.em
     g = e.get("gravity", {})
@@ -1781,6 +1902,7 @@ def sync_emitter_form(self):
     _set("em_align", bool(e.get("alignDir", False)))
     _set("em_blend", str(e.get("blendingMode", "Normal")))
     _set("em_seed", int(e.get("seed", 0) or 0))
+    _sync_fields_form(e.get("fields"))
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -1909,6 +2031,21 @@ def build_sidebar():
         dpg.add_text("Seed", color=list(MUTED) + [255])
         dpg.add_input_int(tag="em_seed", default_value=0, width=-1,
                           callback=cb_em_seed)
+    dpg.add_text("FORCE FIELDS", color=list(MUTED) + [255])
+    num_row("Turb amount", "em_turb", 0, cb_em_float(("fields", "turbulence", "amount")))
+    num_row("Turb scale", "em_turbsc", 0.05, cb_em_float(("fields", "turbulence", "scale")))
+    num_row("Turb speed", "em_turbsp", 1.0, cb_em_float(("fields", "turbulence", "speed")))
+    num_row("Vortex", "em_vortex", 0, cb_em_float(("fields", "vortex", "strength")))
+    num_row("Attr strength", "em_attr", 0, cb_em_float(("fields", "attractor", "strength")))
+    num_row("Attr radius", "em_attrr", 200, cb_em_float(("fields", "attractor", "radius")))
+    num_row("Attr X", "em_attrx", 0, cb_em_float(("fields", "attractor", "x")))
+    num_row("Attr Y", "em_attry", 0, cb_em_float(("fields", "attractor", "y")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Plane", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_plane_on", callback=cb_field_plane_toggle)
+    num_row("Plane Y", "em_planey", 300, cb_field_plane_y)
+    num_row("Bounce", "em_bounce", 0.5, cb_em_float(("fields", "collision", "bounce")))
+    num_row("Friction", "em_fric", 0.1, cb_em_float(("fields", "collision", "friction")))
     dpg.add_text("GRAVITY", color=list(MUTED) + [255])
     num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))

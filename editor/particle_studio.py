@@ -419,6 +419,90 @@ def default_state(role="intermediate", idx=0):
     }
 
 
+def default_fields():
+    """Force-field block (format 1.1, all off = bit-identical legacy motion).
+    turbulence: age-phased sinusoidal force; vortex: tangential flow around
+    the world Y axis through the emitter point; attractor: linear-falloff
+    pull toward a world point inside radius; collision: horizontal plane
+    (native coords, y < planeY triggers) with bounce + friction.
+    planeY None disables the plane."""
+    return {
+        "turbulence": {"amount": 0.0, "scale": 0.05, "speed": 1.0},
+        "vortex": {"strength": 0.0},
+        "attractor": {"x": 0.0, "y": 0.0, "z": 0.0,
+                      "strength": 0.0, "radius": 200.0},
+        "collision": {"planeY": None, "bounce": 0.5, "friction": 0.1},
+    }
+
+
+def fields_active(f):
+    """Single cheap gate: no active field -> skip all field math."""
+    if not isinstance(f, dict):
+        return False
+    try:
+        t = f.get("turbulence") or {}
+        v = f.get("vortex") or {}
+        a = f.get("attractor") or {}
+        c = f.get("collision") or {}
+        return (float(t.get("amount", 0.0)) != 0.0
+                or float(v.get("strength", 0.0)) != 0.0
+                or float(a.get("strength", 0.0)) != 0.0
+                or (c.get("planeY") is not None))
+    except (ValueError, TypeError):
+        return False
+
+
+def field_accel(x, y, z, age, f, ex, ey, ez, flat):
+    """Pure acceleration from force fields (shared spec ×4 renderers).
+
+    flat=True rotates the vortex in the x-y plane (2D), else x-z (3D).
+    Attractor uses full 3D distance (z terms vanish in 2D). Returns
+    (ax, ay, az). Collision is positional (handled at the call site).
+    """
+    if not isinstance(f, dict):
+        return 0.0, 0.0, 0.0
+    ax = ay = az = 0.0
+    t = f.get("turbulence") or {}
+    amount = float(t.get("amount", 0.0) or 0.0)
+    if amount != 0.0:
+        sc = float(t.get("scale", 0.05) or 0.0)
+        sp = float(t.get("speed", 1.0) or 0.0)
+        ax += amount * math.sin(y * sc + age * sp)
+        ay += amount * math.sin(z * sc * 1.3 + age * sp * 1.1)
+        az += amount * math.sin(x * sc * 0.7 + age * sp * 0.9)
+    st = float((f.get("vortex") or {}).get("strength", 0.0) or 0.0)
+    if st != 0.0:
+        if flat:
+            dx, dy = x - ex, y - ey
+            r = math.hypot(dx, dy)
+            if r > 1e-6:
+                s = st / max(r, 1.0)
+                ax += -dy * s
+                ay += dx * s
+        else:
+            dx, dz = x - ex, z - ez
+            r = math.hypot(dx, dz)
+            if r > 1e-6:
+                s = st / max(r, 1.0)
+                ax += -dz * s
+                az += dx * s
+    a = f.get("attractor") or {}
+    astr = float(a.get("strength", 0.0) or 0.0)
+    if astr != 0.0:
+        rad = float(a.get("radius", 200.0) or 0.0)
+        if rad > 0.0:
+            dx = x - float(a.get("x", 0.0) or 0.0)
+            dy = y - float(a.get("y", 0.0) or 0.0)
+            dz = z - float(a.get("z", 0.0) or 0.0)
+            r = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if r < rad and r > 1e-6:
+                k = astr * (1.0 - r / rad) / r
+                ax -= dx * k
+                ay -= dy * k
+                az -= dz * k
+    return ax, ay, az
+
+
 def default_emitter(ptype="2d"):
     if ptype == "3d":
         return {
@@ -435,6 +519,7 @@ def default_emitter(ptype="2d"):
                                 "directionZ": 0, "spread": 90, "showCone": True},
             "blendingMode": "Normal",
             "seed": 0,
+            "fields": default_fields(),
         }
     return {
         "flow": 40, "flowMode": "rate", "flowInterval": 1,
@@ -448,6 +533,7 @@ def default_emitter(ptype="2d"):
         "propagationCone": {"direction": 0, "spread": 90, "showCone": True},
         "blendingMode": "Normal",
         "seed": 0,
+        "fields": default_fields(),
     }
 
 
@@ -1722,6 +1808,8 @@ class StudioApp(tk.Tk):
         bm = em.get("blendingMode")
         self._em_blending = bm if bm in BLEND_MODES else "Normal"
         self._em_seed = int(em.get("seed", 0) or 0)
+        fld = em.get("fields")
+        self._em_fields = dict(fld) if isinstance(fld, dict) else default_fields()
         self.v_flow.set(str(em.get("flow", 40)))
         self.v_max.set(str(em.get("maxParticles", 300)))
         self.v_mode.set(em.get("mode", "Infinite"))
@@ -1769,6 +1857,7 @@ class StudioApp(tk.Tk):
                                         "showCone": bool(self.v_showcone.get())},
                     "blendingMode": getattr(self, "_em_blending", "Normal"),
                     "seed": getattr(self, "_em_seed", 0),
+                    "fields": getattr(self, "_em_fields", None) or default_fields(),
                 }
             zshape2 = zraw if zraw in ZONE_2D else "Circle"
             return {
@@ -1787,6 +1876,7 @@ class StudioApp(tk.Tk):
                                     "showCone": bool(self.v_showcone.get())},
                 "blendingMode": getattr(self, "_em_blending", "Normal"),
                 "seed": getattr(self, "_em_seed", 0),
+                "fields": getattr(self, "_em_fields", None) or default_fields(),
             }
         except ValueError:
             if not silent:

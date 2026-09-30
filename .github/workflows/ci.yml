@@ -59,6 +59,7 @@ jobs:
           python tests/test_imgui_raster.py
           python tests/test_blend_modes.py
           python tests/test_seed.py
+          python tests/test_fields.py
           python tests/test_preview_blobs.py
 
       - name: Python tests (GL + preview server, headless-tolerant)
@@ -81,6 +82,7 @@ jobs:
           node preview/test_ext_bake.mjs
           node preview/test_blend.mjs
           node preview/test_seed.mjs
+          node preview/test_fields.mjs
 
       - name: Runtime typecheck + loader test
         run: |

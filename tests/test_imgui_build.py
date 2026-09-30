@@ -36,6 +36,22 @@ try:
     assert eff["emitter"].get("seed") == 4242
     assert eff["version"] == "1.1"
     assert PS.validate_effect(eff) == []
+    # fields widgets round-trip into the effect + export
+    dpg.set_value("em_turb", 60.0)
+    S.cb_em_float(("fields", "turbulence", "amount"))("em_turb", 60.0)
+    dpg.set_value("em_vortex", 30.0)
+    S.cb_em_float(("fields", "vortex", "strength"))("em_vortex", 30.0)
+    eff = S.APP.current_effect()
+    assert eff["emitter"]["fields"]["turbulence"]["amount"] == 60.0
+    assert eff["emitter"]["fields"]["vortex"]["strength"] == 30.0
+    assert eff["emitter"]["fields"]["collision"]["planeY"] is None
+    assert PS.validate_effect(eff) == []
+    assert PS.validate_against_schema(eff) == []
+    dpg.set_value("em_plane_on", True)
+    S.cb_field_plane_toggle("em_plane_on", True)
+    eff = S.APP.current_effect()
+    assert eff["emitter"]["fields"]["collision"]["planeY"] == 300.0
+    assert PS.validate_against_schema(eff) == []
     print("UI-BUILD-OK")
 finally:
     dpg.destroy_context()

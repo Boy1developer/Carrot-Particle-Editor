@@ -36,6 +36,41 @@ function normMode(m) {
 function normZone(s) {
     return String(s ?? "circle").trim().toLowerCase();
 }
+function num(v, fb) {
+    const n = Number(v ?? fb);
+    return isFinite(n) ? n : fb;
+}
+/** Normalize the optional format-1.1 force-field block (absent = all off). */
+function normFields(f) {
+    const d = (f !== null && typeof f === "object" ? f : {});
+    const sub = (k) => {
+        const v = d[k];
+        return (v !== null && typeof v === "object" ? v : {});
+    };
+    const tb = sub("turbulence"), vx = sub("vortex"), at = sub("attractor"), cl = sub("collision");
+    const planeRaw = cl.planeY;
+    const hasPlane = planeRaw !== null && planeRaw !== undefined &&
+        isFinite(Number(planeRaw));
+    const out = {
+        turbAmount: num(tb.amount, 0),
+        turbScale: num(tb.scale, 0.05),
+        turbSpeed: num(tb.speed, 1.0),
+        vortexStrength: num(vx.strength, 0),
+        attrX: num(at.x, 0),
+        attrY: num(at.y, 0),
+        attrZ: num(at.z, 0),
+        attrStrength: num(at.strength, 0),
+        attrRadius: num(at.radius, 200),
+        hasPlane,
+        planeY: hasPlane ? Number(planeRaw) : 0,
+        planeBounce: num(cl.bounce, 0.5),
+        planeFriction: num(cl.friction, 0.1),
+        active: false,
+    };
+    out.active = out.turbAmount !== 0 || out.vortexStrength !== 0 ||
+        out.attrStrength !== 0 || out.hasPlane;
+    return out;
+}
 export class ParticleEngine {
     constructor() {
         // SoA pool — allocated once
@@ -124,6 +159,7 @@ export class ParticleEngine {
                 directionY: Number(pc.directionY ?? 0),
                 spread: Number(pc.spread ?? 90),
             },
+            fields: normFields(raw.fields),
         };
         this.randState = this.emitter.seed | 0;
         const states = Array.isArray(eff.states) ? eff.states : [];
@@ -412,6 +448,13 @@ export class ParticleEngine {
             this.gx[i] += gx;
             this.gy[i] += gy;
             this.gz[i] += gz;
+            const fl = e.fields;
+            if (fl.active) {
+                const fa = this.fieldAccel(this.px[i], this.py[i], this.pz[i], this.age[i], cx, cy);
+                this.gx[i] += fa[0] * dt;
+                this.gy[i] += fa[1] * dt;
+                this.gz[i] += fa[2] * dt;
+            }
             const spd = this.sampleSpeed(this.age[i], i);
             this.vx[i] = this.dx[i] * spd + this.gx[i];
             this.vy[i] = this.dy[i] * spd + this.gy[i];
@@ -419,7 +462,54 @@ export class ParticleEngine {
             this.px[i] += this.vx[i] * dt;
             this.py[i] += this.vy[i] * dt;
             this.pz[i] += this.vz[i] * dt;
+            if (fl.hasPlane && this.py[i] < fl.planeY) {
+                this.py[i] = fl.planeY;
+                this.vx[i] *= (1 - fl.planeFriction);
+                this.vy[i] = -this.vy[i] * fl.planeBounce;
+                this.vz[i] *= (1 - fl.planeFriction);
+            }
         }
+    }
+    /** Force-field acceleration (mirrors particle_studio.field_accel). */
+    fieldAccel(x, y, z, age, ex, ey) {
+        const fl = this.emitter.fields;
+        let ax = 0, ay = 0, az = 0;
+        if (fl.turbAmount !== 0) {
+            ax += fl.turbAmount * Math.sin(y * fl.turbScale + age * fl.turbSpeed);
+            ay += fl.turbAmount * Math.sin(z * fl.turbScale * 1.3 + age * fl.turbSpeed * 1.1);
+            az += fl.turbAmount * Math.sin(x * fl.turbScale * 0.7 + age * fl.turbSpeed * 0.9);
+        }
+        if (fl.vortexStrength !== 0) {
+            if (!this.is3D) {
+                const dx = x - ex, dy = y - ey;
+                const r = Math.hypot(dx, dy);
+                if (r > 1e-6) {
+                    const s = fl.vortexStrength / Math.max(r, 1.0);
+                    ax += -dy * s;
+                    ay += dx * s;
+                }
+            }
+            else {
+                const dx = x - ex, dz = z;
+                const r = Math.hypot(dx, dz);
+                if (r > 1e-6) {
+                    const s = fl.vortexStrength / Math.max(r, 1.0);
+                    ax += -dz * s;
+                    az += dx * s;
+                }
+            }
+        }
+        if (fl.attrStrength !== 0 && fl.attrRadius > 0) {
+            const dx = x - fl.attrX, dy = y - fl.attrY, dz = z - fl.attrZ;
+            const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (r < fl.attrRadius && r > 1e-6) {
+                const k = fl.attrStrength * (1 - r / fl.attrRadius) / r;
+                ax -= dx * k;
+                ay -= dy * k;
+                az -= dz * k;
+            }
+        }
+        return [ax, ay, az];
     }
     /** Model ref sampled like shape (mid-segment flip), "" when none. */
     modelRefAt(age) {

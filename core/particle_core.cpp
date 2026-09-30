@@ -86,6 +86,13 @@ struct Emitter {
     double radius = 10, width = 100, height = 60, length = 100, depth = 60, rot = 0;
     // cone
     double direction = 0, directionY = 0, spread = 90;
+    // force fields (format 1.1, all off = legacy motion)
+    double turbAmount = 0, turbScale = 0.05, turbSpeed = 1.0;
+    double vortexStrength = 0;
+    double attrX = 0, attrY = 0, attrZ = 0, attrStrength = 0, attrRadius = 200;
+    bool hasPlane = false;
+    double planeY = 0, planeBounce = 0.5, planeFriction = 0.1;
+    bool hasFields = false;  // any accel field or plane active: skip math if false
 };
 
 // ---- Python dict helpers (borrowed refs, defaults on missing) ----
@@ -194,6 +201,49 @@ struct Engine {
         double mn = a.minSpd + (b.minSpd - a.minSpd) * e;
         double mx = a.maxSpd + (b.maxSpd - a.maxSpd) * e;
         return mn + (mx - mn) * sr;
+    }
+
+    // Force-field acceleration (mirrors particle_studio.field_accel).
+    // Called only when em.hasFields is set; all-off = legacy motion.
+    void field_accel(double px, double py, double pz, double ageV,
+                     double ex, double ey, double ez, bool flat,
+                     double &ax, double &ay, double &az) const {
+        ax = ay = az = 0.0;
+        const Emitter &m = em;
+        if (m.turbAmount != 0.0) {
+            ax += m.turbAmount * sin(py * m.turbScale + ageV * m.turbSpeed);
+            ay += m.turbAmount * sin(pz * m.turbScale * 1.3 + ageV * m.turbSpeed * 1.1);
+            az += m.turbAmount * sin(px * m.turbScale * 0.7 + ageV * m.turbSpeed * 0.9);
+        }
+        if (m.vortexStrength != 0.0) {
+            if (flat) {
+                double dx = px - ex, dy = py - ey;
+                double r = sqrt(dx * dx + dy * dy);
+                if (r > 1e-6) {
+                    double s = m.vortexStrength / (r > 1.0 ? r : 1.0);
+                    ax += -dy * s;
+                    ay += dx * s;
+                }
+            } else {
+                double dx = px - ex, dz = pz - ez;
+                double r = sqrt(dx * dx + dz * dz);
+                if (r > 1e-6) {
+                    double s = m.vortexStrength / (r > 1.0 ? r : 1.0);
+                    ax += -dz * s;
+                    az += dx * s;
+                }
+            }
+        }
+        if (m.attrStrength != 0.0 && m.attrRadius > 0.0) {
+            double dx = px - m.attrX, dy = py - m.attrY, dz = pz - m.attrZ;
+            double r = sqrt(dx * dx + dy * dy + dz * dz);
+            if (r < m.attrRadius && r > 1e-6) {
+                double k = m.attrStrength * (1.0 - r / m.attrRadius) / r;
+                ax -= dx * k;
+                ay -= dy * k;
+                az -= dz * k;
+            }
+        }
     }
 
     void cone_dir3(double bx, double by, double bz, double spread,
@@ -343,6 +393,34 @@ static bool parse_emitter(PyObject *em, bool is3d, Emitter &out) {
     out.depth = dget(zone, "depth", 60);
     out.zmode = lower_str(sget(zone, "mode", "Surface"));
     out.spread = dget(cone, "spread", 90);
+    // force fields (format 1.1, optional: absent = all off)
+    PyObject *fields = PyDict_GetItemString(em, "fields");
+    if (fields && !PyDict_Check(fields)) fields = nullptr;
+    auto sub = [](PyObject *d, const char *k) -> PyObject * {
+        if (!d) return nullptr;
+        PyObject *v = PyDict_GetItemString(d, k);
+        return (v && PyDict_Check(v)) ? v : nullptr;
+    };
+    PyObject *turb = sub(fields, "turbulence");
+    PyObject *vort = sub(fields, "vortex");
+    PyObject *attr = sub(fields, "attractor");
+    PyObject *coll = sub(fields, "collision");
+    out.turbAmount = dget(turb, "amount", 0);
+    out.turbScale = dget(turb, "scale", 0.05);
+    out.turbSpeed = dget(turb, "speed", 1.0);
+    out.vortexStrength = dget(vort, "strength", 0);
+    out.attrX = dget(attr, "x", 0);
+    out.attrY = dget(attr, "y", 0);
+    out.attrZ = dget(attr, "z", 0);
+    out.attrStrength = dget(attr, "strength", 0);
+    out.attrRadius = dget(attr, "radius", 200);
+    PyObject *py = coll ? PyDict_GetItemString(coll, "planeY") : nullptr;
+    out.hasPlane = (py && py != Py_None);
+    out.planeY = out.hasPlane ? dget(coll, "planeY", 0) : 0;
+    out.planeBounce = dget(coll, "bounce", 0.5);
+    out.planeFriction = dget(coll, "friction", 0.1);
+    out.hasFields = (out.turbAmount != 0.0 || out.vortexStrength != 0.0 ||
+                     out.attrStrength != 0.0 || out.hasPlane);
     return true;
 }
 
@@ -451,12 +529,24 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
         for (long i = (long)e.count() - 1; i >= 0; i--) {
             size_t u = (size_t)i;
             e.gx[u] += gxv; e.gy[u] += gyv; e.gz[u] += gzv;
+            if (e.em.hasFields) {
+                double ax, ay, az;
+                e.field_accel(e.x[u], e.y[u], e.z[u], e.age[u],
+                              ex, ey, ez, !e.is3d, ax, ay, az);
+                e.gx[u] += ax * dt; e.gy[u] += ay * dt; e.gz[u] += az * dt;
+            }
             double spd = e.sample_speed(e.jitter[u], e.age[u], e.spdRatio[u]);
             e.vx[u] = e.dx[u] * spd + e.gx[u];
             e.vy[u] = e.dy[u] * spd + e.gy[u];
             e.vz[u] = e.dz[u] * spd + e.gz[u];
             e.x[u] += e.vx[u] * dt; e.y[u] += e.vy[u] * dt; e.z[u] += e.vz[u] * dt;
             e.age[u] += dt;
+            if (e.em.hasPlane && e.y[u] < e.em.planeY) {
+                e.y[u] = e.em.planeY;
+                e.gx[u] += e.vx[u] * -e.em.planeFriction;
+                e.gy[u] += -e.vy[u] * (1.0 + e.em.planeBounce);
+                e.gz[u] += e.vz[u] * -e.em.planeFriction;
+            }
             if (e.age[u] >= e.life[u]) e.kill(u);
         }
         if ((long)e.count() > maxp) {  // trim oldest (keep newest), like [-maxp:]

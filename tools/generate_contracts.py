@@ -132,6 +132,40 @@ def schema_file(c):
                     "maxParticles": {"type": "number"},
                     "blendingMode": {"enum": c["blend_modes"]},
                     "seed": {"type": "number"},
+                    "fields": {
+                        "type": "object",
+                        "properties": {
+                            "turbulence": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {"type": "number"},
+                                    "scale": {"type": "number"},
+                                    "speed": {"type": "number"},
+                                },
+                            },
+                            "vortex": {
+                                "type": "object",
+                                "properties": {"strength": {"type": "number"}},
+                            },
+                            "attractor": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {"type": "number"},
+                                    "y": {"type": "number"},
+                                    "z": {"type": "number"},
+                                    "strength": {"type": "number"},
+                                    "radius": {"type": "number"},
+                                },
+                            },
+                            "collision": {
+                                "type": "object",
+                                "properties": {
+                                    "bounce": {"type": "number"},
+                                    "friction": {"type": "number"},
+                                },
+                            },
+                        },
+                    },
                 },
             },
             "states": {

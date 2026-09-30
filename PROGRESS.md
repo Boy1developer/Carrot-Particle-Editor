@@ -13,7 +13,7 @@ _Not yet — run in progress._
 - [x] Phase 4: Simulation core performance — DONE (`phase-4-done`, 10x target MISSED — see below)
 - [x] Phase 5: Runtime rendering efficiency — DONE (`phase-5-done`)
 - [x] Phase 6: Blend modes — DONE (`phase-6-done`)
-- [ ] Phase 7: Effekseer-class features — IN PROGRESS (format 1.1 DONE + seed DONE; force fields next; trails/curves/materials/tree/UX deferred — see decision)
+- [x] Phase 7: Effekseer-class features — DONE (`phase-7-seed`, `phase-7-fields`; trails/curves/materials/tree/UX deferred — see decision)
 - [ ] Phase 2: Single source of truth for contracts
 - [ ] Phase 3: Viewport handoff (Dear PyGui)
 - [ ] Phase 4: Simulation core performance
@@ -36,7 +36,7 @@ _Not yet — run in progress._
 - Phase 3: DPG raw-texture row 0 = top is assumed (matches the numerically verified PPM orientation: canvas-top dot → row 5/214); could not verify visually headless. If the raster image ever appears vertically flipped in-app, flip the row order in `ppm_to_floats`.
 
 ## Test results
-- Phase 7.5 full run: ALL GREEN (parity 99/99, behavior, seed replay Python + C++ + preview + extension-RNG extraction, all headless UI incl. seed box, GL + clip + cost + pixel blend, preview server, all 9 Node tests, runtime loader, contracts + `--check`, extension `node --check`).
+- Phase 7 full run: ALL GREEN (parity 99/99, behavior, seed replay Py+C+++preview+extension-RNG, fields formulas/off/perturb/replay/collision/attractor Py+C+++preview+extension-helpers, all headless UI incl. seed box + fields widgets, GL + clip + cost + pixel blend, preview server, all 10 Node tests, runtime loader, contracts + `--check`, extension `node --check`).
 - `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
@@ -69,7 +69,8 @@ _Not yet — run in progress._
 - Phase 6b/c DONE: extension 0.1.2 (`tools/patch_blend.py`, anchored + idempotent, `node --check`); pure mapping fns tested headless (`preview/test_blend.mjs`); editor dropdown (DPG; Tk preserves loaded value, can't edit — documented); `GLView.set_blend` + per-call `blend=`; raster passes emitter mode; preview honors effect mode both scenes; `sample_blend_layers.json` (Additive/Normal/Screen).
 - Phase 6 bugs found & fixed: (1) extension 3D referenced `THREE.SubtractBlending` (does not exist — real name `SubtractiveBlending`), so shipped 3D Subtractive silently rendered Normal; now truly subtractive. (2) My own `GL_ONE_MINUS_SRC_COLOR` was 0x0307 (= ONE_MINUS_DST_COLOR); the new pixel test caught it — correct is 0x0301. All six GL modes now match analytic formulas pixel-exact.
 - Phase 6 6c runtime note: single emitter per object makes the existing resolution (JSON→emitter's `_originalBlendingMode`, explicit→force) already per-emitter-correct; `F.resolveEmitterBlend` added tested for the multi-emitter future. Pool key blend-aware since Phase 5; `depthWrite=false` already set; single group → no renderOrder deltas needed.
-- Phase 7 SCOPE decision (autonomy rule 6/7): the 7-item list exceeds a single clean run — each needs lockstep Python+C+++preview+extension+version+migration+tests. Shipping order: (a) ONE format bump 1.0→1.1 for the batch (all new keys optional; 1.0 migrates with defaults); (b) 7.5 deterministic seed (unlocks replay/timeline/golden tests; bounded, fully testable); (c) 7.3 force fields (turbulence/vortex/attractor/collision plane — bounded integration terms, testable on/off). DEFERRED with specs in PROGRESS: 7.1 trails (needs stable particle identity + history buffers — deepest surgery, touches the 22-field boundary), 7.2 Bezier/gradient curves (needs evaluators ×4 codebases + gradient editor UI), 7.4 flipbook/UV-scroll/soft particles (renderer/shader work ×3), 7.6 node tree/sub-emitters (recursive emitter format), 7.7 timeline scrubbing (needs 7.5 ✓ will land) + preset library (templates exist; gallery UI deferred).
+- Phase 7 7.3 DONE (`phase-7-fields`): `PS.default_fields/fields_active/field_accel` + SimEngine integration (accumulator fold + accumulator-surgery bounce, mirroring gravity); C++ struct + parse + loop (same); preview `normFields/fieldAccel` + update (stateful-velocity direct response); extension `F.fieldsActive/fieldAccel/fieldCollision` pure + update-loop wiring (`tools/patch_fields.py`, anchored + idempotent, `node --check`); JS helpers match Python to 1e-9; fields-off ≡ legacy proved per renderer; DPG fields section + Tk stash round-trip; schema sub-schema; `sample` files carry `seed: 0`.
+- Phase 7 deferred specs (for a follow-up run): 7.1 trails — needs stable per-particle identity + history buffers in all sims (touches the 22-field boundary; needs boundary-v2 from the Phase 4 proposal); 7.2 curves — per-track Bezier evaluators ×4 codebases + gradient editor UI; 7.4 materials — flipbook atlas UVs + UV scroll + soft particles (shader work in gl_view/extension/preview); 7.6 node tree — recursive emitter format + spawn-on-event wiring; 7.7 timeline scrubbing (unblocked by 7.5: seed_sim + reset + step) + preset gallery UI (templates exist as data).
 
 ## Known limitations / unverified
 - Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop. In particular Phase 5's extension pooling/temps patch is syntax-checked (`node --check`) and logic-reviewed but NOT run in GDevelop.
