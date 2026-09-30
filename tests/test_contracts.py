@@ -27,10 +27,16 @@ assert GEN.RECORD_INDEX["speedRatio"] == 21 and GEN.RECORD_INDEX["x"] == 0
 assert (GEN.MORPH_LO, GEN.MORPH_HI) == (0.25, 0.75)
 print("bindings match source: OK")
 
-# 2) C++ module shape order == source (built from the generated header)
-import particle_core as core
-assert list(core.SHAPE_ORDER) == C["shape_order"], core.SHAPE_ORDER
-print("c++ shape order: OK")
+# 2) C++ module shape order == source (built from the generated header).
+# Skips gracefully when no compiled core exists (fresh checkout); fails
+# when present but drifted.
+try:
+    import particle_core as core
+except ImportError:
+    print("c++ shape order: SKIPPED (no built core)")
+else:
+    assert list(core.SHAPE_ORDER) == C["shape_order"], core.SHAPE_ORDER
+    print("c++ shape order: OK")
 
 # 3) generator is byte-stable (no drift between runs)
 r = subprocess.run([sys.executable, "tools/generate_contracts.py", "--check"],

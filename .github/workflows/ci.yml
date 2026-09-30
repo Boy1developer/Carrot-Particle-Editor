@@ -34,13 +34,13 @@ jobs:
       - name: Validate extension JSON
         run: python -c "import json; d=json.load(open('AdvancedParticleEmitter.json',encoding='utf-8')); print('extension', d['version'], 'objects:', [o['name'] for o in d['eventsBasedObjects']])"
 
+      - name: Build C++ core (if compiler available)
+        run: python core/build_core.py
+
       - name: Contract check (generated files fresh, consumers in sync)
         run: |
           python tools/generate_contracts.py --check
           python tests/test_contracts.py
-
-      - name: Build C++ core (if compiler available)
-        run: python core/build_core.py
 
       - name: Python tests (core parity + behavior)
         run: |
