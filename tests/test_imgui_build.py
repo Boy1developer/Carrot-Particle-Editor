@@ -52,6 +52,23 @@ try:
     eff = S.APP.current_effect()
     assert eff["emitter"]["fields"]["collision"]["planeY"] == 300.0
     assert PS.validate_against_schema(eff) == []
+    # export round-trip through the dialog-free write/load path
+    import json as _json
+    import os as _os
+    import tempfile as _tf
+    _tmp = _os.path.join(_tf.mkdtemp(prefix="carrot_export_"), "roundtrip.json")
+    _old_fp = S.APP.filepath
+    try:
+        assert S._write_path(_tmp) == _tmp
+        assert _os.path.isfile(_tmp)
+        with open(_tmp, encoding="utf-8") as _f:
+            _back = _json.load(_f)
+        assert PS.validate_effect(_back) == []
+        _mig, _warns = PS.migrate_effect(_back)
+        S._load_path(_tmp)
+        assert S.APP.filepath == _tmp
+    finally:
+        S.APP.filepath = _old_fp
     print("UI-BUILD-OK")
 finally:
     dpg.destroy_context()

@@ -107,10 +107,14 @@ def main():
                      if "object.__apfx%sFns = {};" % ns in t]
         assert len(defs_hits) == 1, "%s defs chunk x%d" % (ns, len(defs_hits))
         ev, text = defs_hits[0]
+        # NOTE: `var F` must precede the defs: this spot runs before the
+        # chunk's own `var F = ...` line (F hoisted but undefined there).
+        # Later duplicate `var F` re-declaration is harmless (same value).
         text = _replace_once(
             text,
             "object.__apfx%sFns = {};" % ns,
-            "object.__apfx%sFns = {};\n%s" % (ns, _indent(SEED_DEFS)),
+            "object.__apfx%sFns = {};\n  var F = object.__apfx%sFns;\n%s"
+            % (ns, ns, _indent(SEED_DEFS)),
             "%s seed defs" % ns)
         ev["inlineCode"] = text.split("\n")
         changed.append(("%s defs" % ns, text))

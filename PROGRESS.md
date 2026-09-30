@@ -37,7 +37,7 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 
 ## Test results
 - FINAL full run: ALL GREEN (parity 99/99, behavior, seed + fields replay Py+C+++preview+extension, all headless UI, GL + clip + cost + pixel blend, preview server, all 11 Node tests, runtime loader, contracts + `--check`, extension `node --check`, perf gate 1069 vs floor 300).
-- `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.1, 2 objects).
+- `py_compile` on editor/render/tools/core: OK. Extension JSON parses (v0.1.2, 2 objects).
 - `core/test_parity.py`: 99/99. `core/test_behavior.py`: all invariants OK, C++ step 3.90ms @~2000 particles.
 - Headless UI: build/logic/nav/color/mesh/morph/upload/blobs all OK.
 - GL (run as `python -m render.test_*`; direct `python render/test_x.py` fails with ModuleNotFoundError — pre-existing, no bootstrap): GL_RENDER OK, clip 0/3000, cost raw 14ms / quantized 14ms.
@@ -74,6 +74,7 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 - Phase 8: golden-image editor-vs-browser tests BLOCKED (no browser automation in this environment; preview needs DOM + WebGL canvas). Landed instead: `tools/check_perf.py` CI gate (C++ floor 300 particles/ms @1k: ~27% below the original 410 baseline, ~3.7x below current ~1070 — flakesafe, catches catastrophic regressions).
 
 ## Known limitations / unverified
+- Extension crash-on-add (2026-09-30, user report, reproduced headless): seed/field helper defs were inserted before the chunk's `var F` assignment — `F` hoisted-but-undefined → TypeError on frame 1, i.e. every object add crashed. Fixed via `tools/patch_fn_scope.py` (bind `var F` first) + permanent headless runtime harness `preview/test_ext_runtime.mjs` (runs the shipped 3D chunk with stub gdjs + real three.js: init, 120 frames, seeded replay, editor static-preview, guides/shadows/burst/align/camera/reset matrix, missing-model fallback). Patch scripts updated so fresh runs emit the fixed form.
 - Anything only visible inside a running GDevelop game (extension 2D/3D runtime, blend modes, PixiJS version behavior) is unverified until tested in GDevelop. In particular Phase 5's extension pooling/temps patch is syntax-checked (`node --check`) and logic-reviewed but NOT run in GDevelop.
 - Phase 3's DPG raster image orientation (row 0 = top) is assumed from the numerically verified PPM layout; flip rows in `ppm_to_floats` if the in-app image ever appears upside down.
 - GL tests (`render/test_*.py`) need a GPU/GLFW context; may fail on headless CI — workflow runs them `continue-on-error`.
@@ -82,4 +83,5 @@ Next steps: 1) review + merge this branch; 2) in-GDevelop smoke of seeded/field/
 
 ## Standing instructions
 - User granted full autonomy (2026-09-30): in all future requests, decide freely and act — no conservative-option fallback, no approval-seeking. Document decisions briefly, keep moving.
+- DPG file dialogs are unusable on this setup (deliver empty payloads: `DLG-SAVE []` in the log) — Save/Export/Open must use OS-native tkinter filedialogs, same as model/image picking already does. The DPG `dlg_open`/`dlg_save` widgets stay defined but unused.
 - Finish protocol (2026-09-30): when any task is done, `push` the branch and open/update a pull request to `main` so the user can accept + merge quickly. Never merge into `main` locally.

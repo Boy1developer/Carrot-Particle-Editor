@@ -60,7 +60,7 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = _GEN_VERSION if _HAVE_CONTRACTS else "1.0"  # effect JSON format (extension contract — do NOT bump with the app)
-APP_VERSION = "0.1.1"  # Carrot Particle Editor release version (title bar)
+APP_VERSION = "0.1.2"  # Carrot Particle Editor release version (title bar)
 BUILD_ID = "b20260930-extcompat"  # bump on every shipped change; shown in title
 
 
