@@ -37,6 +37,11 @@ import particle_studio as PS
 import mesh_cache
 
 try:
+    import raster_view as RV
+except Exception:
+    RV = None
+
+try:
     import particle_core as _CPP_MOD
     HAS_CPP_CORE = True
 except Exception:
@@ -981,7 +986,8 @@ def dot_style(app, p):
     return (_c(col), r0, shp if shp in ok else ok[0])
 
 
-def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
+def paint_bg_grid_2d(app, dl, W, H, cx, cy):
+    """Viewport backdrop + perspective grid (no guides, no particles)."""
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[22, 23, 31, 255], parent=dl)
     gx, gy = cx + app.cam["ox"], cy + app.cam["oy"]
@@ -995,6 +1001,11 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     for i in range(-10, 11):
         dpg.draw_line([gx, horizon], [gx + i * step, H],
                       color=[44, 46, 68, 255], parent=dl)
+    return gx, horizon, ex, ey
+
+
+def paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey):
+    """Emission zone + propagation cone guides."""
     if eff is not None:
         em = eff["emitter"]
         if bool(em.get("emissionZone", {}).get("showZone", True)):
@@ -1035,6 +1046,18 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                         ey + math.sin(math.radians(base - spread / 2 + spread * k / 16)) * L]
                        for k in range(17)]
                 dpg.draw_polyline(arc, color=list(YELLOW) + [255], parent=dl)
+    return ex, ey
+
+
+def paint_back_2d(app, dl, W, H, cx, cy, eff):
+    """Viewport backdrop + grid + zone/cone guides (no particles)."""
+    gx, horizon, ex, ey = paint_bg_grid_2d(app, dl, W, H, cx, cy)
+    paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey)
+    return ex, ey
+
+
+def paint_dots_2d(app, dl, tracks):
+    """Particle dots only (vector path)."""
     out = app.sim._cpp_out
     if out is not None:
         xs, ys, rs, cs, ss = out["x"], out["y"], out["r"], out["color"], out["shape"]
@@ -1091,6 +1114,10 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                 gc = [fill[0] * 35 // 100, fill[1] * 35 // 100,
                       fill[2] * 35 // 100, 255]
             _draw_morph_2d(dl, x, y, r, fill, a, b, bt, gc)
+
+
+def paint_front_2d(dl, W, H, ex, ey):
+    """Vignette + emitter gizmo overlay."""
     # vignette strips + gizmo
     m = min(W, H)
     t = max(14, m * 0.07)
@@ -1108,7 +1135,14 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                     segments=20)
 
 
-def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
+def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
+    ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
+    paint_dots_2d(app, dl, tracks)
+    paint_front_2d(dl, W, H, ex, ey)
+
+
+def paint_bg_grid_3d(app, dl, W, H, cx, cy):
+    """Viewport backdrop + perspective floor grid (no guides, no particles)."""
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[20, 21, 28, 255], parent=dl)
     app.cam["focal"] = ((max(100, H) * 0.5) /
@@ -1123,6 +1157,11 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
         x1, y1, _, _ = P(d, 0, -R)
         x2, y2, _, _ = P(d, 0, R)
         dpg.draw_line([x1, y1], [x2, y2], color=[44, 46, 68, 255], parent=dl)
+
+
+def paint_guides_3d(app, dl, cx, cy, em):
+    """Emission zone + propagation cone guides."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
     zone = em.get("emissionZone", {})
     EX, EY, EZ = app.emitter_pos
     blue = [77, 159, 255, 255]
@@ -1177,6 +1216,17 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                                   EZ + dz / n2 * L)
                 dpg.draw_line([x1, y1], [x2, y2],
                               color=list(YELLOW) + [255], parent=dl)
+
+
+def paint_back_3d(app, dl, W, H, cx, cy, em):
+    """Viewport backdrop + floor grid + zone/cone guides (no particles)."""
+    paint_bg_grid_3d(app, dl, W, H, cx, cy)
+    paint_guides_3d(app, dl, cx, cy, em)
+
+
+def paint_dots_3d(app, dl, cx, cy, tracks):
+    """Particle dots only (vector path, painter-sorted)."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
     out = app.sim._cpp_out
     focal = app.cam.get("focal", 620.0)
     if out is not None:
@@ -1255,6 +1305,12 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                     mctx = (p[0], p[1], p[10], r)
             _draw_morph_3d(dl, mctx, sx, sy, rs, colA,
                            (shpA, refA), (shpB, refB), bt, fm)
+
+
+def paint_front_3d(app, dl, W, H, cx, cy):
+    """Vignette + 3D emitter gizmo overlay."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
+    EX, EY, EZ = app.emitter_pos
     m = min(W, H)
     t = max(14, m * 0.07)
     vc = [14, 16, 22, 255]
@@ -1270,6 +1326,12 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                        parent=dl)
     dpg.draw_circle([ox, oy], 8, color=[0, 0, 0, 0], fill=[255, 255, 255, 255],
                     parent=dl, segments=16)
+
+
+def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
+    paint_back_3d(app, dl, W, H, cx, cy, em)
+    paint_dots_3d(app, dl, cx, cy, tracks)
+    paint_front_3d(app, dl, W, H, cx, cy)
 
 
 # ================= ImGui UI =================
@@ -2991,7 +3053,40 @@ def frame():
             dpg.delete_item("vp_draw", children_only=True)
             is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
                     eff.get("emitter", {}).get("propagationCone", {}))
-            if is3d:
+            n_show = cpp_n if cpp_active else len(APP.sim.parts)
+            _fr, _tag = None, ""
+            if RV is not None and RV.should_raster(APP, n_show):
+                try:
+                    if is3d:
+                        _fr = RV.frame_3d(APP, APP.sim._cpp_out, W, H, cx, cy)
+                    else:
+                        _fr = RV.frame_2d(APP, APP.sim._cpp_out, W, H)
+                except Exception:
+                    _fr = None
+                if _fr is not None:
+                    _tag = RV.ensure_texture(_fr[0], _fr[1])
+                    if not (_tag and RV.update_texture(_fr[2])):
+                        _fr = None
+            APP._raster_on = _fr is not None
+            if _fr is not None:
+                # raster particle layer (bg+grid+dots via GL), then vector
+                # guides/front on top. bg+grid draw first (cheap) so the
+                # guide painters can reuse their geometry math, then the
+                # image covers them.
+                if is3d:
+                    paint_bg_grid_3d(APP, "vp_draw", W, H, cx, cy)
+                else:
+                    _gx, _hz, _ex, _ey = paint_bg_grid_2d(
+                        APP, "vp_draw", W, H, cx, cy)
+                dpg.draw_image(_tag, [0, 0], [W, H], parent="vp_draw")
+                if is3d:
+                    paint_guides_3d(APP, "vp_draw", cx, cy, eff["emitter"])
+                    paint_front_3d(APP, "vp_draw", W, H, cx, cy)
+                else:
+                    paint_guides_2d(APP, "vp_draw", W, H, cx, cy, eff,
+                                    _gx, _hz, _ex, _ey)
+                    paint_front_2d("vp_draw", W, H, _ex, _ey)
+            elif is3d:
                 draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"],
                              tracks)
             else:
