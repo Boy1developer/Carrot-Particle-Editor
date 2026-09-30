@@ -144,6 +144,8 @@ export class ThreeScene {
   private tmpColor: THREE.Color = new THREE.Color();
   private lastW = 0;
   private lastH = 0;
+  // reused per-frame instance counters (no per-frame allocation)
+  private counts: number[] = [];
   // uploaded-model rendering (custom shape): normalized templates + clone pool
   private modelCache = new Map<string, THREE.Group>();
   private modelLoading = new Set<string>();
@@ -494,7 +496,9 @@ export class ThreeScene {
       d * cp * Math.sin(cam.yaw), d * sp, d * cp * Math.cos(cam.yaw));
     this.camera.lookAt(0, 0, 0);
 
-    const counts: number[] = new Array<number>(this.meshes.length).fill(0);
+    const counts: number[] = this.counts.length === this.meshes.length
+      ? (this.counts.fill(0), this.counts)
+      : (this.counts = new Array<number>(this.meshes.length).fill(0));
     const n: number = this.engine.activeCount;
     for (let i = 0; i < n; i++) {
       const st = this.engine.particleState(i);
@@ -512,6 +516,8 @@ export class ThreeScene {
     }
     for (let m = 0; m < this.meshes.length; m++) {
       this.meshes[m].count = counts[m];
+      // empty buckets cost no draw call (guides/floor are separate objects)
+      this.meshes[m].visible = counts[m] > 0;
       this.meshes[m].instanceMatrix.needsUpdate = true;
       const ic = this.meshes[m].instanceColor;
       if (ic) ic.needsUpdate = true;
