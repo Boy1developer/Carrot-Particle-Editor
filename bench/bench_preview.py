@@ -139,6 +139,45 @@ def stage_dpg(n, reps):
         return {"dpg-drawlist": ("UNAVAILABLE: " + str(e)[:100], 0.0, 0)}
 
 
+def stage_raster(n, reps):
+    """Phase 3 path: GL small-frame render + PPM->floats + texture upload."""
+    try:
+        import particle_studio as PS
+        import studio_imgui as S
+        import raster_view as RV
+        import dearpygui.dearpygui as dpg
+        dpg.create_context()
+        try:
+            app = S.App()
+            app.states = [PS.default_state("birth", 0), PS.default_state("death", 1)]
+            app.em = PS.default_emitter("2d")
+            app.em["mode"] = "Infinite"
+            app.em["flow"] = 5000.0
+            app.em["maxParticles"] = n
+            eff = app.current_effect()
+            tracks = S.SimEngine._build_tracks(app.states, "2d")
+            for _ in range(90):
+                app.sim.step_cpp(eff, app.em, "2d", tracks, False, DT,
+                                 400, 300, (0, 0, 0), app.cam, 620.0,
+                                 400, 300, 0, 0, 0, n, ("bench", 0))
+            out = app.sim._cpp_out
+            cnt = len(out["x"])
+            RV.frame_2d(app, out, 800, 536)
+            ts = []
+            for _ in range(reps):
+                t0 = time.perf_counter()
+                fr = RV.frame_2d(app, out, 800, 536)
+                tag = RV.ensure_texture(fr[0], fr[1])
+                RV.update_texture(fr[2])
+                ts.append((time.perf_counter() - t0) * 1000.0)
+            return {"raster-2d": (statistics.mean(ts), statistics.pstdev(ts), cnt)}
+        finally:
+            dpg.destroy_context()
+            RV._tex_size = None
+    except Exception as e:  # noqa: BLE001
+        return {"raster-2d": ("UNAVAILABLE: " + str(e)[:100], 0.0, 0)}
+
+
 def stage_tk_photo(png_bytes, reps):
     try:
         import tkinter as tk
@@ -170,6 +209,7 @@ def main():
     stages.update(stage_sim(n))
     stages.update(stage_gl(n, args.reps))
     stages.update(stage_dpg(n, args.reps))
+    stages.update(stage_raster(n, args.reps))
     # legacy Tk handoff measured on a small frame (needs GL bytes first)
     png_small = b""
     try:
