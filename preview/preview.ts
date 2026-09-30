@@ -10,9 +10,19 @@ export interface Vec2 { x: number; y: number }
 
 interface RGB { r: number; g: number; b: number }
 
+interface FieldCfg {
+  turbAmount: number; turbScale: number; turbSpeed: number;
+  vortexStrength: number;
+  attrX: number; attrY: number; attrZ: number;
+  attrStrength: number; attrRadius: number;
+  hasPlane: boolean; planeY: number; planeBounce: number; planeFriction: number;
+  active: boolean;
+}
+
 interface EmitterCfg {
   flow: number; maxParticles: number; reservoir: number;
-  mode: string; reverse: boolean;
+  mode: string; reverse: boolean; blending: string; seed: number;
+  fields: FieldCfg;
   gravity: { x: number; y: number; z: number };
   zone: {
     shape: string; radius: number; width: number; height: number;
@@ -57,6 +67,45 @@ function normZone(s: unknown): string {
   return String(s ?? "circle").trim().toLowerCase();
 }
 
+function num(v: unknown, fb: number): number {
+  const n: number = Number(v ?? fb);
+  return isFinite(n) ? n : fb;
+}
+
+/** Normalize the optional format-1.1 force-field block (absent = all off). */
+function normFields(f: unknown): FieldCfg {
+  const d: Record<string, unknown> =
+    (f !== null && typeof f === "object" ? f : {}) as Record<string, unknown>;
+  const sub = (k: string): Record<string, unknown> => {
+    const v: unknown = d[k];
+    return (v !== null && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  };
+  const tb = sub("turbulence"), vx = sub("vortex"),
+    at = sub("attractor"), cl = sub("collision");
+  const planeRaw: unknown = cl.planeY;
+  const hasPlane: boolean = planeRaw !== null && planeRaw !== undefined &&
+    isFinite(Number(planeRaw));
+  const out: FieldCfg = {
+    turbAmount: num(tb.amount, 0),
+    turbScale: num(tb.scale, 0.05),
+    turbSpeed: num(tb.speed, 1.0),
+    vortexStrength: num(vx.strength, 0),
+    attrX: num(at.x, 0),
+    attrY: num(at.y, 0),
+    attrZ: num(at.z, 0),
+    attrStrength: num(at.strength, 0),
+    attrRadius: num(at.radius, 200),
+    hasPlane,
+    planeY: hasPlane ? Number(planeRaw) : 0,
+    planeBounce: num(cl.bounce, 0.5),
+    planeFriction: num(cl.friction, 0.1),
+    active: false,
+  };
+  out.active = out.turbAmount !== 0 || out.vortexStrength !== 0 ||
+    out.attrStrength !== 0 || out.hasPlane;
+  return out;
+}
+
 export class ParticleEngine {
   // SoA pool — allocated once
   private px = new Float32Array(MAX_POOL);
@@ -76,6 +125,18 @@ export class ParticleEngine {
   private sizeRatio = new Float32Array(MAX_POOL);
   private spdRatio = new Float32Array(MAX_POOL);
   private count = 0;
+  // Deterministic RNG (mulberry32): nonzero emitter.seed replays identically.
+  private randState = 0;
+
+  private rnd(): number {
+    if (!this.randState) return Math.random();
+    let x: number = (this.randState |= 0);
+    x = (x + 0x6d2b79f5) | 0;
+    this.randState = x;
+    let t: number = Math.imul(x ^ (x >>> 15), 1 | x);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
 
   readonly cam = { yaw: 0.7, pitch: 0.42, zoom: 1.0, auto: true };
   is3D = false;
@@ -86,6 +147,9 @@ export class ParticleEngine {
 
   /** Bumped on every loadEffect — render layers rebuild guides on change. */
   get effectVersion(): number { return this.effectRev; }
+
+  /** Emitter blend mode for the render layers (same fallbacks as the game runtime). */
+  blendingMode(): string { return this.emitter.blending; }
 
   /** Copy of the normalized emission-zone config (for guide rendering). */
   zoneInfo(): { shape: string; radius: number; width: number; height: number;
@@ -121,6 +185,8 @@ export class ParticleEngine {
       reservoir: Number(raw.reservoir ?? 50),
       mode: normMode(raw.mode),
       reverse: Boolean(raw.reverse),
+      blending: String(raw.blendingMode ?? "Normal"),
+      seed: Math.floor(Number(raw.seed ?? 0)),
       gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
       zone: {
         shape: normZone(z.shape),
@@ -137,7 +203,9 @@ export class ParticleEngine {
         directionY: Number(pc.directionY ?? 0),
         spread: Number(pc.spread ?? 90),
       },
+      fields: normFields(raw.fields),
     };
+    this.randState = this.emitter.seed | 0;
     const states: any[] = Array.isArray(eff.states) ? eff.states : [];
     let prevShape = this.is3D ? "sphere" : "circle";
     this.kf = states.map((s: any): Keyframe => {
@@ -209,8 +277,8 @@ export class ParticleEngine {
     const by: number = Math.sin(el);
     const bz: number = Math.cos(el) * Math.sin(az);
     const half: number = (this.emitter.cone.spread / 2) * Math.PI / 180;
-    const th: number = Math.random() * Math.PI * 2;
-    const r: number = Math.tan(half) * Math.sqrt(Math.random());
+    const th: number = this.rnd() * Math.PI * 2;
+    const r: number = Math.tan(half) * Math.sqrt(this.rnd());
     let ux = 0, uy = 1, uz = 0;
     if (Math.abs(by) > 0.95) { ux = 1; uy = 0; }
     let cx1: number = by * uz - bz * uy, cy1: number = bz * ux - bx * uz, cz1: number = bx * uy - by * ux;
@@ -230,10 +298,10 @@ export class ParticleEngine {
     if (!this.kf.length) return;
     const e: EmitterCfg = this.emitter;
     const i: number = this.count++;
-    const jitter: number = 0.9 + Math.random() * 0.2;
+    const jitter: number = 0.9 + this.rnd() * 0.2;
     this.life[i] = this.kfLife * jitter;
-    this.sizeRatio[i] = Math.random();
-    this.spdRatio[i] = Math.random();
+    this.sizeRatio[i] = this.rnd();
+    this.spdRatio[i] = this.rnd();
     this.gx[i] = 0; this.gy[i] = 0; this.gz[i] = 0;
     const spd: number = this.sampleSpeed(0, i);
     if (this.is3D) {
@@ -242,16 +310,16 @@ export class ParticleEngine {
       const cr: number = Math.cos(rot), sr: number = Math.sin(rot);
       let sx = 0, sy = 0, sz = 0;
       if (z.shape === "sphere" || z.shape === "circle") {
-        const th: number = Math.random() * Math.PI * 2;
-        const ph: number = Math.acos(2 * Math.random() - 1);
-        const rr: number = z.radius * Math.cbrt(Math.random());
+        const th: number = this.rnd() * Math.PI * 2;
+        const ph: number = Math.acos(2 * this.rnd() - 1);
+        const rr: number = z.radius * Math.cbrt(this.rnd());
         sx = rr * Math.sin(ph) * Math.cos(th); sy = rr * Math.cos(ph); sz = rr * Math.sin(ph) * Math.sin(th);
       } else if (z.shape === "box" || z.shape === "rectangle") {
-        sx = (Math.random() - 0.5) * z.width; sy = (Math.random() - 0.5) * z.height; sz = (Math.random() - 0.5) * z.depth;
+        sx = (this.rnd() - 0.5) * z.width; sy = (this.rnd() - 0.5) * z.height; sz = (this.rnd() - 0.5) * z.depth;
         const rx: number = sx * cr - sy * sr, ry: number = sx * sr + sy * cr;
         sx = rx; sy = ry;
       } else if (z.shape === "line") {
-        sx = (Math.random() - 0.5) * z.length;
+        sx = (this.rnd() - 0.5) * z.length;
         const rx: number = sx * cr; sy = sx * sr; sx = rx;
       }
       const [dx, dy, dz] = this.coneDir3();
@@ -267,26 +335,26 @@ export class ParticleEngine {
       this.vx[i] = this.dx[i] * spd; this.vy[i] = this.dy[i] * spd; this.vz[i] = this.dz[i] * spd;
     } else {
       const half: number = e.cone.spread / 2;
-      const ang: number = (e.cone.direction + (Math.random() * 2 - 1) * half) * Math.PI / 180;
+      const ang: number = (e.cone.direction + (this.rnd() * 2 - 1) * half) * Math.PI / 180;
       let dx: number = Math.cos(ang), dy: number = Math.sin(ang);
       const z = e.zone;
       const rot: number = (z.rot || 0) * Math.PI / 180;
       const cr: number = Math.cos(rot), sr: number = Math.sin(rot);
       let lx = 0, ly = 0;
       if (z.shape === "circle" || z.shape === "sphere") {
-        const a: number = Math.random() * Math.PI * 2;
+        const a: number = this.rnd() * Math.PI * 2;
         if (z.mode === "edge") { lx = Math.cos(a) * z.radius; ly = Math.sin(a) * z.radius; }
-        else { const r: number = Math.sqrt(Math.random()) * z.radius; lx = Math.cos(a) * r; ly = Math.sin(a) * r; }
+        else { const r: number = Math.sqrt(this.rnd()) * z.radius; lx = Math.cos(a) * r; ly = Math.sin(a) * r; }
       } else if (z.shape === "rectangle" || z.shape === "box") {
         if (z.mode === "edge") {
-          const per: number = 2 * (z.width + z.height), d: number = Math.random() * per;
+          const per: number = 2 * (z.width + z.height), d: number = this.rnd() * per;
           if (d < z.width) { lx = d - z.width / 2; ly = -z.height / 2; }
           else if (d < z.width + z.height) { lx = z.width / 2; ly = (d - z.width) - z.height / 2; }
           else if (d < 2 * z.width + z.height) { lx = z.width / 2 - (d - z.width - z.height); ly = z.height / 2; }
           else { lx = -z.width / 2; ly = z.height / 2 - (d - 2 * z.width - z.height); }
-        } else { lx = (Math.random() - 0.5) * z.width; ly = (Math.random() - 0.5) * z.height; }
+        } else { lx = (this.rnd() - 0.5) * z.width; ly = (this.rnd() - 0.5) * z.height; }
       } else if (z.shape === "line") {
-        lx = (Math.random() - 0.5) * z.length;
+        lx = (this.rnd() - 0.5) * z.length;
       }
       const ox: number = lx * cr - ly * sr, oy: number = lx * sr + ly * cr;
       if (e.reverse) { dx = -dx; dy = -dy; }
@@ -347,12 +415,62 @@ export class ParticleEngine {
       this.age[i] += dt;
       if (this.age[i] >= this.life[i]) { this.kill(i); continue; }
       this.gx[i] += gx; this.gy[i] += gy; this.gz[i] += gz;
+      const fl = e.fields;
+      if (fl.active) {
+        const fa = this.fieldAccel(this.px[i], this.py[i], this.pz[i],
+          this.age[i], cx, cy);
+        this.gx[i] += fa[0] * dt; this.gy[i] += fa[1] * dt; this.gz[i] += fa[2] * dt;
+      }
       const spd: number = this.sampleSpeed(this.age[i], i);
       this.vx[i] = this.dx[i] * spd + this.gx[i];
       this.vy[i] = this.dy[i] * spd + this.gy[i];
       this.vz[i] = this.dz[i] * spd + this.gz[i];
       this.px[i] += this.vx[i] * dt; this.py[i] += this.vy[i] * dt; this.pz[i] += this.vz[i] * dt;
+      if (fl.hasPlane && this.py[i] < fl.planeY) {
+        this.py[i] = fl.planeY;
+        this.vx[i] *= (1 - fl.planeFriction);
+        this.vy[i] = -this.vy[i] * fl.planeBounce;
+        this.vz[i] *= (1 - fl.planeFriction);
+      }
     }
+  }
+
+  /** Force-field acceleration (mirrors particle_studio.field_accel). */
+  fieldAccel(x: number, y: number, z: number, age: number,
+    ex: number, ey: number): [number, number, number] {
+    const fl = this.emitter.fields;
+    let ax = 0, ay = 0, az = 0;
+    if (fl.turbAmount !== 0) {
+      ax += fl.turbAmount * Math.sin(y * fl.turbScale + age * fl.turbSpeed);
+      ay += fl.turbAmount * Math.sin(z * fl.turbScale * 1.3 + age * fl.turbSpeed * 1.1);
+      az += fl.turbAmount * Math.sin(x * fl.turbScale * 0.7 + age * fl.turbSpeed * 0.9);
+    }
+    if (fl.vortexStrength !== 0) {
+      if (!this.is3D) {
+        const dx = x - ex, dy = y - ey;
+        const r = Math.hypot(dx, dy);
+        if (r > 1e-6) {
+          const s = fl.vortexStrength / Math.max(r, 1.0);
+          ax += -dy * s; ay += dx * s;
+        }
+      } else {
+        const dx = x - ex, dz = z;
+        const r = Math.hypot(dx, dz);
+        if (r > 1e-6) {
+          const s = fl.vortexStrength / Math.max(r, 1.0);
+          ax += -dz * s; az += dx * s;
+        }
+      }
+    }
+    if (fl.attrStrength !== 0 && fl.attrRadius > 0) {
+      const dx = x - fl.attrX, dy = y - fl.attrY, dz = z - fl.attrZ;
+      const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (r < fl.attrRadius && r > 1e-6) {
+        const k = fl.attrStrength * (1 - r / fl.attrRadius) / r;
+        ax -= dx * k; ay -= dy * k; az -= dz * k;
+      }
+    }
+    return [ax, ay, az];
   }
 
   /** Model ref sampled like shape (mid-segment flip), "" when none. */

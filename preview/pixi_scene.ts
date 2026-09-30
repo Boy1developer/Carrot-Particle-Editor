@@ -89,6 +89,7 @@ export class PixiScene {
   private prevN = 0;
   private lastW = 0;
   private lastH = 0;
+  private blend = "";
   ready = false;
 
   constructor(private canvas: HTMLCanvasElement, private engine: ParticleEngine) {}
@@ -120,6 +121,19 @@ export class PixiScene {
   private normShape(shape: string): string {
     const s: string = String(shape ?? "circle").toLowerCase();
     return Object.prototype.hasOwnProperty.call(this.tex, s) ? s : "circle";
+  }
+
+  /** Pixi blend string for an effect mode (same fallbacks as the extension). */
+  private pixiBlend(mode: string): string {
+    switch (String(mode ?? "Normal")) {
+      case "Additive": return "add";
+      case "Multiply": return "multiply";
+      case "Subtractive": return "erase";
+      case "Screen": return "screen";
+      case "Overlay": return "overlay";
+      case "Lighten": return "normal";
+      default: return "normal";
+    }
   }
 
   private drawGrid(W: number, H: number): void {
@@ -154,10 +168,21 @@ export class PixiScene {
       this.drawGrid(W, H);
     }
     const n: number = Math.min(this.engine.activeCount, POOL);
+    const wantBlend: string = this.pixiBlend(this.engine.blendingMode());
+    if (wantBlend !== this.blend) {
+      this.blend = wantBlend;
+      this.layer.blendMode = wantBlend as PIXI.BLEND_MODES;
+    }
+    // margin cull: fully off-screen sprites stay invisible (no fill cost)
+    const M = 96;
     for (let i = 0; i < n; i++) {
       const st = this.engine.particleState(i);
-      const sm = this.engine.sampleAt(st.age, i);
       const sp: PIXI.Sprite = this.pool[i];
+      if (st.x < -M || st.y < -M || st.x > W + M || st.y > H + M) {
+        sp.visible = false;
+        continue;
+      }
+      const sm = this.engine.sampleAt(st.age, i);
       sp.texture = this.tex[this.normShape(sm.shape)];
       sp.position.set(st.x, st.y);
       const s: number = Math.max(0.5, sm.size / TEX_R);

@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CarrotParticleEffect",
+  "type": "object",
+  "required": [
+    "version",
+    "type",
+    "emitter",
+    "states"
+  ],
+  "properties": {
+    "version": {
+      "enum": [
+        "1.1"
+      ]
+    },
+    "type": {
+      "enum": [
+        "2d",
+        "3d"
+      ]
+    },
+    "emitter": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "number"
+        },
+        "maxParticles": {
+          "type": "number"
+        },
+        "blendingMode": {
+          "enum": [
+            "Normal",
+            "Additive",
+            "Subtractive",
+            "Multiply",
+            "Screen",
+            "Lighten",
+            "Overlay"
+          ]
+        },
+        "seed": {
+          "type": "number"
+        },
+        "fields": {
+          "type": "object",
+          "properties": {
+            "turbulence": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "scale": {
+                  "type": "number"
+                },
+                "speed": {
+                  "type": "number"
+                }
+              }
+            },
+            "vortex": {
+              "type": "object",
+              "properties": {
+                "strength": {
+                  "type": "number"
+                }
+              }
+            },
+            "attractor": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "z": {
+                  "type": "number"
+                },
+                "strength": {
+                  "type": "number"
+                },
+                "radius": {
+                  "type": "number"
+                }
+              }
+            },
+            "collision": {
+              "type": "object",
+              "properties": {
+                "bounce": {
+                  "type": "number"
+                },
+                "friction": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "states": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "duration",
+          "shape",
+          "easing"
+        ],
+        "properties": {
+          "duration": {
+            "type": "number"
+          },
+          "shape": {
+            "type": "string"
+          },
+          "easing": {
+            "enum": [
+              "linear",
+              "ease-in",
+              "ease-out",
+              "ease-in-out"
+            ]
+          },
+          "appearance": {
+            "type": "object"
+          },
+          "movement": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "object"
+    }
+  }
+}

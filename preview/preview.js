@@ -36,6 +36,41 @@ function normMode(m) {
 function normZone(s) {
     return String(s ?? "circle").trim().toLowerCase();
 }
+function num(v, fb) {
+    const n = Number(v ?? fb);
+    return isFinite(n) ? n : fb;
+}
+/** Normalize the optional format-1.1 force-field block (absent = all off). */
+function normFields(f) {
+    const d = (f !== null && typeof f === "object" ? f : {});
+    const sub = (k) => {
+        const v = d[k];
+        return (v !== null && typeof v === "object" ? v : {});
+    };
+    const tb = sub("turbulence"), vx = sub("vortex"), at = sub("attractor"), cl = sub("collision");
+    const planeRaw = cl.planeY;
+    const hasPlane = planeRaw !== null && planeRaw !== undefined &&
+        isFinite(Number(planeRaw));
+    const out = {
+        turbAmount: num(tb.amount, 0),
+        turbScale: num(tb.scale, 0.05),
+        turbSpeed: num(tb.speed, 1.0),
+        vortexStrength: num(vx.strength, 0),
+        attrX: num(at.x, 0),
+        attrY: num(at.y, 0),
+        attrZ: num(at.z, 0),
+        attrStrength: num(at.strength, 0),
+        attrRadius: num(at.radius, 200),
+        hasPlane,
+        planeY: hasPlane ? Number(planeRaw) : 0,
+        planeBounce: num(cl.bounce, 0.5),
+        planeFriction: num(cl.friction, 0.1),
+        active: false,
+    };
+    out.active = out.turbAmount !== 0 || out.vortexStrength !== 0 ||
+        out.attrStrength !== 0 || out.hasPlane;
+    return out;
+}
 export class ParticleEngine {
     constructor() {
         // SoA pool — allocated once
@@ -56,6 +91,8 @@ export class ParticleEngine {
         this.sizeRatio = new Float32Array(MAX_POOL);
         this.spdRatio = new Float32Array(MAX_POOL);
         this.count = 0;
+        // Deterministic RNG (mulberry32): nonzero emitter.seed replays identically.
+        this.randState = 0;
         this.cam = { yaw: 0.7, pitch: 0.42, zoom: 1.0, auto: true };
         this.is3D = false;
         this.kf = [];
@@ -66,8 +103,20 @@ export class ParticleEngine {
         this.bursted = false;
         this.remaining = 0;
     }
+    rnd() {
+        if (!this.randState)
+            return Math.random();
+        let x = (this.randState |= 0);
+        x = (x + 0x6d2b79f5) | 0;
+        this.randState = x;
+        let t = Math.imul(x ^ (x >>> 15), 1 | x);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
     /** Bumped on every loadEffect — render layers rebuild guides on change. */
     get effectVersion() { return this.effectRev; }
+    /** Emitter blend mode for the render layers (same fallbacks as the game runtime). */
+    blendingMode() { return this.emitter.blending; }
     /** Copy of the normalized emission-zone config (for guide rendering). */
     zoneInfo() {
         return { ...this.emitter.zone };
@@ -92,6 +141,8 @@ export class ParticleEngine {
             reservoir: Number(raw.reservoir ?? 50),
             mode: normMode(raw.mode),
             reverse: Boolean(raw.reverse),
+            blending: String(raw.blendingMode ?? "Normal"),
+            seed: Math.floor(Number(raw.seed ?? 0)),
             gravity: { x: Number(raw.gravity?.x ?? 0), y: Number(raw.gravity?.y ?? 0), z: Number(raw.gravity?.z ?? 0) },
             zone: {
                 shape: normZone(z.shape),
@@ -108,7 +159,9 @@ export class ParticleEngine {
                 directionY: Number(pc.directionY ?? 0),
                 spread: Number(pc.spread ?? 90),
             },
+            fields: normFields(raw.fields),
         };
+        this.randState = this.emitter.seed | 0;
         const states = Array.isArray(eff.states) ? eff.states : [];
         let prevShape = this.is3D ? "sphere" : "circle";
         this.kf = states.map((s) => {
@@ -179,8 +232,8 @@ export class ParticleEngine {
         const by = Math.sin(el);
         const bz = Math.cos(el) * Math.sin(az);
         const half = (this.emitter.cone.spread / 2) * Math.PI / 180;
-        const th = Math.random() * Math.PI * 2;
-        const r = Math.tan(half) * Math.sqrt(Math.random());
+        const th = this.rnd() * Math.PI * 2;
+        const r = Math.tan(half) * Math.sqrt(this.rnd());
         let ux = 0, uy = 1, uz = 0;
         if (Math.abs(by) > 0.95) {
             ux = 1;
@@ -206,10 +259,10 @@ export class ParticleEngine {
             return;
         const e = this.emitter;
         const i = this.count++;
-        const jitter = 0.9 + Math.random() * 0.2;
+        const jitter = 0.9 + this.rnd() * 0.2;
         this.life[i] = this.kfLife * jitter;
-        this.sizeRatio[i] = Math.random();
-        this.spdRatio[i] = Math.random();
+        this.sizeRatio[i] = this.rnd();
+        this.spdRatio[i] = this.rnd();
         this.gx[i] = 0;
         this.gy[i] = 0;
         this.gz[i] = 0;
@@ -220,23 +273,23 @@ export class ParticleEngine {
             const cr = Math.cos(rot), sr = Math.sin(rot);
             let sx = 0, sy = 0, sz = 0;
             if (z.shape === "sphere" || z.shape === "circle") {
-                const th = Math.random() * Math.PI * 2;
-                const ph = Math.acos(2 * Math.random() - 1);
-                const rr = z.radius * Math.cbrt(Math.random());
+                const th = this.rnd() * Math.PI * 2;
+                const ph = Math.acos(2 * this.rnd() - 1);
+                const rr = z.radius * Math.cbrt(this.rnd());
                 sx = rr * Math.sin(ph) * Math.cos(th);
                 sy = rr * Math.cos(ph);
                 sz = rr * Math.sin(ph) * Math.sin(th);
             }
             else if (z.shape === "box" || z.shape === "rectangle") {
-                sx = (Math.random() - 0.5) * z.width;
-                sy = (Math.random() - 0.5) * z.height;
-                sz = (Math.random() - 0.5) * z.depth;
+                sx = (this.rnd() - 0.5) * z.width;
+                sy = (this.rnd() - 0.5) * z.height;
+                sz = (this.rnd() - 0.5) * z.depth;
                 const rx = sx * cr - sy * sr, ry = sx * sr + sy * cr;
                 sx = rx;
                 sy = ry;
             }
             else if (z.shape === "line") {
-                sx = (Math.random() - 0.5) * z.length;
+                sx = (this.rnd() - 0.5) * z.length;
                 const rx = sx * cr;
                 sy = sx * sr;
                 sx = rx;
@@ -262,27 +315,27 @@ export class ParticleEngine {
         }
         else {
             const half = e.cone.spread / 2;
-            const ang = (e.cone.direction + (Math.random() * 2 - 1) * half) * Math.PI / 180;
+            const ang = (e.cone.direction + (this.rnd() * 2 - 1) * half) * Math.PI / 180;
             let dx = Math.cos(ang), dy = Math.sin(ang);
             const z = e.zone;
             const rot = (z.rot || 0) * Math.PI / 180;
             const cr = Math.cos(rot), sr = Math.sin(rot);
             let lx = 0, ly = 0;
             if (z.shape === "circle" || z.shape === "sphere") {
-                const a = Math.random() * Math.PI * 2;
+                const a = this.rnd() * Math.PI * 2;
                 if (z.mode === "edge") {
                     lx = Math.cos(a) * z.radius;
                     ly = Math.sin(a) * z.radius;
                 }
                 else {
-                    const r = Math.sqrt(Math.random()) * z.radius;
+                    const r = Math.sqrt(this.rnd()) * z.radius;
                     lx = Math.cos(a) * r;
                     ly = Math.sin(a) * r;
                 }
             }
             else if (z.shape === "rectangle" || z.shape === "box") {
                 if (z.mode === "edge") {
-                    const per = 2 * (z.width + z.height), d = Math.random() * per;
+                    const per = 2 * (z.width + z.height), d = this.rnd() * per;
                     if (d < z.width) {
                         lx = d - z.width / 2;
                         ly = -z.height / 2;
@@ -301,12 +354,12 @@ export class ParticleEngine {
                     }
                 }
                 else {
-                    lx = (Math.random() - 0.5) * z.width;
-                    ly = (Math.random() - 0.5) * z.height;
+                    lx = (this.rnd() - 0.5) * z.width;
+                    ly = (this.rnd() - 0.5) * z.height;
                 }
             }
             else if (z.shape === "line") {
-                lx = (Math.random() - 0.5) * z.length;
+                lx = (this.rnd() - 0.5) * z.length;
             }
             const ox = lx * cr - ly * sr, oy = lx * sr + ly * cr;
             if (e.reverse) {
@@ -395,6 +448,13 @@ export class ParticleEngine {
             this.gx[i] += gx;
             this.gy[i] += gy;
             this.gz[i] += gz;
+            const fl = e.fields;
+            if (fl.active) {
+                const fa = this.fieldAccel(this.px[i], this.py[i], this.pz[i], this.age[i], cx, cy);
+                this.gx[i] += fa[0] * dt;
+                this.gy[i] += fa[1] * dt;
+                this.gz[i] += fa[2] * dt;
+            }
             const spd = this.sampleSpeed(this.age[i], i);
             this.vx[i] = this.dx[i] * spd + this.gx[i];
             this.vy[i] = this.dy[i] * spd + this.gy[i];
@@ -402,7 +462,54 @@ export class ParticleEngine {
             this.px[i] += this.vx[i] * dt;
             this.py[i] += this.vy[i] * dt;
             this.pz[i] += this.vz[i] * dt;
+            if (fl.hasPlane && this.py[i] < fl.planeY) {
+                this.py[i] = fl.planeY;
+                this.vx[i] *= (1 - fl.planeFriction);
+                this.vy[i] = -this.vy[i] * fl.planeBounce;
+                this.vz[i] *= (1 - fl.planeFriction);
+            }
         }
+    }
+    /** Force-field acceleration (mirrors particle_studio.field_accel). */
+    fieldAccel(x, y, z, age, ex, ey) {
+        const fl = this.emitter.fields;
+        let ax = 0, ay = 0, az = 0;
+        if (fl.turbAmount !== 0) {
+            ax += fl.turbAmount * Math.sin(y * fl.turbScale + age * fl.turbSpeed);
+            ay += fl.turbAmount * Math.sin(z * fl.turbScale * 1.3 + age * fl.turbSpeed * 1.1);
+            az += fl.turbAmount * Math.sin(x * fl.turbScale * 0.7 + age * fl.turbSpeed * 0.9);
+        }
+        if (fl.vortexStrength !== 0) {
+            if (!this.is3D) {
+                const dx = x - ex, dy = y - ey;
+                const r = Math.hypot(dx, dy);
+                if (r > 1e-6) {
+                    const s = fl.vortexStrength / Math.max(r, 1.0);
+                    ax += -dy * s;
+                    ay += dx * s;
+                }
+            }
+            else {
+                const dx = x - ex, dz = z;
+                const r = Math.hypot(dx, dz);
+                if (r > 1e-6) {
+                    const s = fl.vortexStrength / Math.max(r, 1.0);
+                    ax += -dz * s;
+                    az += dx * s;
+                }
+            }
+        }
+        if (fl.attrStrength !== 0 && fl.attrRadius > 0) {
+            const dx = x - fl.attrX, dy = y - fl.attrY, dz = z - fl.attrZ;
+            const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (r < fl.attrRadius && r > 1e-6) {
+                const k = fl.attrStrength * (1 - r / fl.attrRadius) / r;
+                ax -= dx * k;
+                ay -= dy * k;
+                az -= dz * k;
+            }
+        }
+        return [ax, ay, az];
     }
     /** Model ref sampled like shape (mid-segment flip), "" when none. */
     modelRefAt(age) {

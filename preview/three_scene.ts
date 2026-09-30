@@ -144,6 +144,8 @@ export class ThreeScene {
   private tmpColor: THREE.Color = new THREE.Color();
   private lastW = 0;
   private lastH = 0;
+  // reused per-frame instance counters (no per-frame allocation)
+  private counts: number[] = [];
   // uploaded-model rendering (custom shape): normalized templates + clone pool
   private modelCache = new Map<string, THREE.Group>();
   private modelLoading = new Set<string>();
@@ -151,6 +153,8 @@ export class ThreeScene {
     mats: { m: THREE.Material; base: { r: number; g: number; b: number } }[];
     used: boolean }[] = [];
   private modelRev = -1;
+  private blendMode = "";
+  private blendRev = -1;
 
   // flat shapes billboard toward the camera; solids tumble slowly with age
   private flat: Set<string> = new Set(
@@ -367,6 +371,38 @@ export class ThreeScene {
     return true;
   }
 
+  /** Apply the effect blend mode to every particle material (same fallbacks as the game runtime). */
+  private syncBlending(): void {
+    const mode: string = String(this.engine.blendingMode() ?? "Normal");
+    if (mode === this.blendMode) return;
+    this.blendMode = mode;
+    let blending: THREE.Blending = THREE.NormalBlending;
+    let equation: THREE.BlendingEquation | null = null;
+    let src: THREE.BlendingSrcFactor | null = null;
+    let dst: THREE.BlendingDstFactor | null = null;
+    if (mode === "Additive") blending = THREE.AdditiveBlending;
+    else if (mode === "Subtractive") blending = THREE.SubtractiveBlending;
+    else if (mode === "Multiply") blending = THREE.MultiplyBlending;
+    else if (mode === "Screen") {
+      blending = THREE.CustomBlending;
+      equation = THREE.AddEquation;
+      src = THREE.OneFactor; dst = THREE.OneMinusSrcColorFactor;
+    } else if (mode === "Lighten") {
+      blending = THREE.CustomBlending;
+      equation = THREE.MaxEquation;
+    }
+    const apply = (m: THREE.Material): void => {
+      m.blending = blending;
+      if (equation !== null) {
+        m.blendEquation = equation;
+        if (src !== null && dst !== null) { m.blendSrc = src; m.blendDst = dst; }
+      }
+      m.needsUpdate = true;
+    };
+    for (const im of this.meshes) apply(im.material as THREE.Material);
+    for (const p of this.modelPool) for (const e of p.mats) apply(e.m);
+  }
+
   /** Rebuild zone + cone wireframes when a new effect is loaded. */
   private rebuildGuides(): void {    while (this.guides.children.length) {
       const c = this.guides.children.pop() as THREE.Object3D | undefined;
@@ -485,6 +521,10 @@ export class ThreeScene {
       this.modelRev = this.engine.effectVersion;
       this.syncModels();
     }
+    if (this.blendRev !== this.engine.effectVersion) {
+      this.blendRev = this.engine.effectVersion;
+      this.syncBlending();
+    }
     for (const p of this.modelPool) p.used = false;
     // orbit camera from the shared engine.cam state
     const cam = this.engine.cam;
@@ -494,7 +534,9 @@ export class ThreeScene {
       d * cp * Math.sin(cam.yaw), d * sp, d * cp * Math.cos(cam.yaw));
     this.camera.lookAt(0, 0, 0);
 
-    const counts: number[] = new Array<number>(this.meshes.length).fill(0);
+    const counts: number[] = this.counts.length === this.meshes.length
+      ? (this.counts.fill(0), this.counts)
+      : (this.counts = new Array<number>(this.meshes.length).fill(0));
     const n: number = this.engine.activeCount;
     for (let i = 0; i < n; i++) {
       const st = this.engine.particleState(i);
@@ -512,6 +554,8 @@ export class ThreeScene {
     }
     for (let m = 0; m < this.meshes.length; m++) {
       this.meshes[m].count = counts[m];
+      // empty buckets cost no draw call (guides/floor are separate objects)
+      this.meshes[m].visible = counts[m] > 0;
       this.meshes[m].instanceMatrix.needsUpdate = true;
       const ic = this.meshes[m].instanceColor;
       if (ic) ic.needsUpdate = true;

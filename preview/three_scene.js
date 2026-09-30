@@ -157,11 +157,15 @@ export class ThreeScene {
         this.tmpColor = new THREE.Color();
         this.lastW = 0;
         this.lastH = 0;
+        // reused per-frame instance counters (no per-frame allocation)
+        this.counts = [];
         // uploaded-model rendering (custom shape): normalized templates + clone pool
         this.modelCache = new Map();
         this.modelLoading = new Set();
         this.modelPool = [];
         this.modelRev = -1;
+        this.blendMode = "";
+        this.blendRev = -1;
         // flat shapes billboard toward the camera; solids tumble slowly with age
         this.flat = new Set(["square", "billboard", "triangle", "star", "line", "circle", "custom"]);
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -367,6 +371,49 @@ export class ThreeScene {
         }
         return true;
     }
+    /** Apply the effect blend mode to every particle material (same fallbacks as the game runtime). */
+    syncBlending() {
+        const mode = String(this.engine.blendingMode() ?? "Normal");
+        if (mode === this.blendMode)
+            return;
+        this.blendMode = mode;
+        let blending = THREE.NormalBlending;
+        let equation = null;
+        let src = null;
+        let dst = null;
+        if (mode === "Additive")
+            blending = THREE.AdditiveBlending;
+        else if (mode === "Subtractive")
+            blending = THREE.SubtractiveBlending;
+        else if (mode === "Multiply")
+            blending = THREE.MultiplyBlending;
+        else if (mode === "Screen") {
+            blending = THREE.CustomBlending;
+            equation = THREE.AddEquation;
+            src = THREE.OneFactor;
+            dst = THREE.OneMinusSrcColorFactor;
+        }
+        else if (mode === "Lighten") {
+            blending = THREE.CustomBlending;
+            equation = THREE.MaxEquation;
+        }
+        const apply = (m) => {
+            m.blending = blending;
+            if (equation !== null) {
+                m.blendEquation = equation;
+                if (src !== null && dst !== null) {
+                    m.blendSrc = src;
+                    m.blendDst = dst;
+                }
+            }
+            m.needsUpdate = true;
+        };
+        for (const im of this.meshes)
+            apply(im.material);
+        for (const p of this.modelPool)
+            for (const e of p.mats)
+                apply(e.m);
+    }
     /** Rebuild zone + cone wireframes when a new effect is loaded. */
     rebuildGuides() {
         while (this.guides.children.length) {
@@ -490,6 +537,10 @@ export class ThreeScene {
             this.modelRev = this.engine.effectVersion;
             this.syncModels();
         }
+        if (this.blendRev !== this.engine.effectVersion) {
+            this.blendRev = this.engine.effectVersion;
+            this.syncBlending();
+        }
         for (const p of this.modelPool)
             p.used = false;
         // orbit camera from the shared engine.cam state
@@ -498,7 +549,9 @@ export class ThreeScene {
         const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
         this.camera.position.set(d * cp * Math.sin(cam.yaw), d * sp, d * cp * Math.cos(cam.yaw));
         this.camera.lookAt(0, 0, 0);
-        const counts = new Array(this.meshes.length).fill(0);
+        const counts = this.counts.length === this.meshes.length
+            ? (this.counts.fill(0), this.counts)
+            : (this.counts = new Array(this.meshes.length).fill(0));
         const n = this.engine.activeCount;
         for (let i = 0; i < n; i++) {
             const st = this.engine.particleState(i);
@@ -515,6 +568,8 @@ export class ThreeScene {
         }
         for (let m = 0; m < this.meshes.length; m++) {
             this.meshes[m].count = counts[m];
+            // empty buckets cost no draw call (guides/floor are separate objects)
+            this.meshes[m].visible = counts[m] > 0;
             this.meshes[m].instanceMatrix.needsUpdate = true;
             const ic = this.meshes[m].instanceColor;
             if (ic)

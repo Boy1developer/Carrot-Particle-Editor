@@ -1,0 +1,26 @@
+{
+  "_comment": "Single source of truth for Carrot Particle Editor shared contracts. Edit THIS file, then run: python tools/generate_contracts.py (CI fails if generated files are stale).",
+  "export_version": "1.1",
+  "record_fields": [
+    "x", "y", "vx", "vy", "age",
+    "c0", "c1", "s0", "s1", "life",
+    "z", "vz", "shape", "tracks",
+    "dx", "dy", "dz",
+    "gx", "gy", "gz",
+    "sizeRatio", "speedRatio"
+  ],
+  "shape_order": [
+    "circle", "square", "triangle", "star", "diamond", "line",
+    "custom", "sphere", "cube", "pyramid", "torus", "billboard"
+  ],
+  "shapes_2d": ["circle", "square", "triangle", "star", "diamond", "line", "custom"],
+  "shapes_3d": ["sphere", "cube", "pyramid", "diamond", "torus", "square", "triangle", "star", "line", "billboard", "custom"],
+  "easings": ["linear", "ease-in", "ease-out", "ease-in-out"],
+  "easing_aliases": {
+    "easeIn": "ease-in",
+    "easeOut": "ease-out",
+    "easeInOut": "ease-in-out"
+  },
+  "blend_modes": ["Normal", "Additive", "Subtractive", "Multiply", "Screen", "Lighten", "Overlay"],
+  "morph_window": {"lo": 0.25, "hi": 0.75}
+}

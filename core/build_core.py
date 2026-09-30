@@ -66,25 +66,36 @@ def main():
         print("removed", OUT)
     if not os.path.isfile(SRC):
         sys.exit("missing " + SRC)
+    # Try each available compiler in order; fall through on failure so one
+    # broken toolchain (e.g. cl without its env, or a bad linker pairing)
+    # never kills the build while another compiler could succeed.
+    built, last_err = False, "no compiler tried"
     if shutil.which("cl"):
         try:
             build_msvc()
-        except subprocess.CalledProcessError as e:
-            sys.exit(f"cl build failed: {e}")
-    elif shutil.which("g++") or shutil.which("clang++"):
+            built = True
+        except (subprocess.CalledProcessError, OSError) as e:
+            last_err = f"cl build failed: {e}"
+    if not built and (shutil.which("g++") or shutil.which("clang++")):
         cc = "g++" if shutil.which("g++") else "clang++"
         try:
             build_gnu(cc)
-        except subprocess.CalledProcessError as e:
-            sys.exit(f"{cc} build failed: {e}")
-    else:
-        zig = zig_exe() or pip_install_zig()
-        if not zig:
-            sys.exit("no C++ compiler found (need cl/g++/clang++ or pip install ziglang)")
+            built = True
+        except (subprocess.CalledProcessError, OSError) as e:
+            last_err = f"{cc} build failed: {e}"
+    if not built:
         try:
-            build_zig(zig)
-        except subprocess.CalledProcessError as e:
-            sys.exit(f"zig build failed: {e}")
+            zig = zig_exe() or pip_install_zig()
+        except (subprocess.CalledProcessError, OSError) as e:
+            zig, last_err = None, f"zig install failed: {e}"
+        if zig:
+            try:
+                build_zig(zig)
+                built = True
+            except (subprocess.CalledProcessError, OSError) as e:
+                last_err = f"zig build failed: {e}"
+    if not built:
+        sys.exit(f"no working C++ compiler ({last_err}; need cl/g++/clang++ or pip install ziglang)")
     # smoke test
     sys.path.insert(0, ROOT)
     import particle_core

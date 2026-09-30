@@ -37,6 +37,11 @@ import particle_studio as PS
 import mesh_cache
 
 try:
+    import raster_view as RV
+except Exception:
+    RV = None
+
+try:
     import particle_core as _CPP_MOD
     HAS_CPP_CORE = True
 except Exception:
@@ -104,6 +109,20 @@ class SimEngine:
         self._cpp_key = None
         self._cpp_out = None
         self._last_sim_mode = None
+        self._rand = random.Random()
+        self._seed = 0
+
+    def seed_sim(self, seed):
+        """Deterministic seed (0 = legacy unseeded behavior).
+
+        Nonzero seeds make every spawn draw from a fresh private stream, so
+        reloading the same effect replays identically in this renderer.
+        """
+        self._seed = int(seed or 0)
+        if self._seed:
+            self._rand.seed(self._seed)
+        else:
+            self._rand.seed()
 
     def reset(self):
         self.parts = []
@@ -213,7 +232,7 @@ class SimEngine:
         }
 
     @staticmethod
-    def _cone_dir3(bx, by, bz, spread_deg):
+    def _cone_dir3(rand, bx, by, bz, spread_deg):
         n = math.sqrt(bx * bx + by * by + bz * bz) or 1.0
         bx, by, bz = bx / n, by / n, bz / n
         ux, uy, uz = (0.0, 1.0, 0.0) if abs(by) < 0.95 else (1.0, 0.0, 0.0)
@@ -221,8 +240,8 @@ class SimEngine:
         n1 = math.sqrt(cx1 * cx1 + cy1 * cy1 + cz1 * cz1) or 1.0
         ux, uy, uz = cx1 / n1, cy1 / n1, cz1 / n1
         vx, vy, vz = by * uz - bz * uy, bz * ux - bx * uz, bx * uy - by * ux
-        a = random.random() * math.pi * 2
-        r = math.tan(math.radians(spread_deg / 2)) * math.sqrt(random.random())
+        a = rand.random() * math.pi * 2
+        r = math.tan(math.radians(spread_deg / 2)) * math.sqrt(rand.random())
         dx = bx + (ux * math.cos(a) + vx * math.sin(a)) * r
         dy = by + (uy * math.cos(a) + vy * math.sin(a)) * r
         dz = bz + (uz * math.cos(a) + vz * math.sin(a)) * r
@@ -234,11 +253,11 @@ class SimEngine:
         zone = em.get("emissionZone", {})
         is3d = "directionZ" in cone
         spread = cone.get("spread", 90)
-        jitter = 0.9 + random.random() * 0.2
+        jitter = 0.9 + self._rand.random() * 0.2
         for tr in tracks:
             tr["dur"] *= jitter
         life = max(0.1, sum(tr["dur"] for tr in tracks[:-1]))
-        sizeRatio, speedRatio = random.random(), random.random()
+        sizeRatio, speedRatio = self._rand.random(), self._rand.random()
         head = self.sample_tracks(tracks, 0.0, sizeRatio, speedRatio)
         spd0 = head["speed"]
         if is3d:
@@ -246,19 +265,19 @@ class SimEngine:
             rot3 = math.radians(zone.get("rotationZ", zone.get("rotation", 0)) or 0)
             cr3, sr3 = math.cos(rot3), math.sin(rot3)
             if zshape == "sphere":
-                th = random.random() * math.pi * 2
-                ph = math.acos(2 * random.random() - 1)
-                rr = (zone.get("radius", 10) or 10) * (random.random() ** (1 / 3))
+                th = self._rand.random() * math.pi * 2
+                ph = math.acos(2 * self._rand.random() - 1)
+                rr = (zone.get("radius", 10) or 10) * (self._rand.random() ** (1 / 3))
                 sx = rr * math.sin(ph) * math.cos(th)
                 sy = rr * math.cos(ph)
                 sz = rr * math.sin(ph) * math.sin(th)
             elif zshape == "box":
-                sx = (random.random() - 0.5) * (zone.get("width", 100) or 100)
-                sy = (random.random() - 0.5) * (zone.get("height", 60) or 60)
-                sz = (random.random() - 0.5) * (zone.get("depth", 60) or 60)
+                sx = (self._rand.random() - 0.5) * (zone.get("width", 100) or 100)
+                sy = (self._rand.random() - 0.5) * (zone.get("height", 60) or 60)
+                sz = (self._rand.random() - 0.5) * (zone.get("depth", 60) or 60)
                 sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
             elif zshape == "line":
-                sx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+                sx = (self._rand.random() - 0.5) * (zone.get("length", 100) or 100)
                 sy, sz = 0.0, 0.0
                 sx, sy = sx * cr3 - sy * sr3, sx * sr3 + sy * cr3
             else:
@@ -267,7 +286,7 @@ class SimEngine:
             el = math.radians(cone.get("directionY", 0))
             base = (math.cos(el) * math.cos(az), math.sin(el),
                     math.cos(el) * math.sin(az))
-            dx, dy, dz = self._cone_dir3(base[0], base[1], base[2], spread)
+            dx, dy, dz = self._cone_dir3(self._rand, base[0], base[1], base[2], spread)
             ex, ey, ez = emitter_pos
             if em.get("reverse"):
                 dist = spd0 * life
@@ -280,24 +299,24 @@ class SimEngine:
                     life, ez + sz, dz * spd0, head["shape"],
                     tracks, dx, dy, dz, 0.0, 0.0, 0.0, sizeRatio, speedRatio]
         ang = math.radians(cone.get("direction", 0) +
-                           random.uniform(-spread / 2, spread / 2))
+                           self._rand.uniform(-spread / 2, spread / 2))
         zshape = str(zone.get("shape", "Circle")).lower()
         rot = math.radians(zone.get("rotation", 0) or 0)
         zmode = str(zone.get("mode", "Surface")).lower()
         lx, ly = 0.0, 0.0
         if zshape == "circle":
             rr = zone.get("radius", 50) or 50
-            a = random.random() * math.pi * 2
+            a = self._rand.random() * math.pi * 2
             if zmode == "edge":
                 lx, ly = math.cos(a) * rr, math.sin(a) * rr
             else:
-                r = math.sqrt(random.random()) * rr
+                r = math.sqrt(self._rand.random()) * rr
                 lx, ly = math.cos(a) * r, math.sin(a) * r
         elif zshape == "rectangle":
             w, h = (zone.get("width", 100) or 100), (zone.get("height", 60) or 60)
             if zmode == "edge":
                 per = 2 * (w + h)
-                d = random.random() * per
+                d = self._rand.random() * per
                 if d < w:
                     lx, ly = d - w / 2, -h / 2
                 elif d < w + h:
@@ -307,9 +326,9 @@ class SimEngine:
                 else:
                     lx, ly = -w / 2, h / 2 - (d - 2 * w - h)
             else:
-                lx, ly = (random.random() - 0.5) * w, (random.random() - 0.5) * h
+                lx, ly = (self._rand.random() - 0.5) * w, (self._rand.random() - 0.5) * h
         elif zshape == "line":
-            lx = (random.random() - 0.5) * (zone.get("length", 100) or 100)
+            lx = (self._rand.random() - 0.5) * (zone.get("length", 100) or 100)
         ox = lx * math.cos(rot) - ly * math.sin(rot)
         oy = lx * math.sin(rot) + ly * math.cos(rot)
         dx, dy = math.cos(ang), math.sin(ang)
@@ -329,6 +348,19 @@ class SimEngine:
         gx = g.get("y", 0) * dt * 0.4
         gy = g.get("x", 0) * dt * 0.4
         gz = g.get("z", 0) * dt * 0.4
+        fld = em.get("fields")
+        fld_on = PS.fields_active(fld)
+        flat = (ptype != "3d")
+        ex, ey, ez = emitter_pos
+        col = (fld.get("collision") or {}) if isinstance(fld, dict) else {}
+        try:
+            planeY = col.get("planeY")
+            planeY = float(planeY) if planeY is not None else None
+        except (ValueError, TypeError):
+            planeY = None
+        bounce = float(col.get("bounce", 0.5) or 0.0)
+        friction = float(col.get("friction", 0.1) or 0.0)
+        plane_on = planeY is not None
         mode = em.get("mode", "Infinite")
         if mode != self._last_sim_mode:
             self._last_sim_mode = mode
@@ -354,6 +386,12 @@ class SimEngine:
             p[17] += gx
             p[18] += gy
             p[19] += gz
+            if fld_on:
+                ax, ay, az = PS.field_accel(p[0], p[1], p[10], p[4], fld,
+                                            ex, ey, ez, flat)
+                p[17] += ax * dt
+                p[18] += ay * dt
+                p[19] += az * dt
             smp = self.sample_tracks(p[13], p[4], p[20], p[21])
             p[2] = p[14] * smp["speed"] + p[17]
             p[3] = p[15] * smp["speed"] + p[18]
@@ -362,6 +400,13 @@ class SimEngine:
             p[1] += p[3] * dt
             p[10] += p[11] * dt
             p[4] += dt
+            if plane_on and p[1] < planeY:
+                # bounce via the gravity accumulator (velocities are rebuilt
+                # from dir*speed each frame, so impulses must persist there)
+                p[1] = planeY
+                p[17] += p[2] * -friction
+                p[18] += -p[3] * (1.0 + bounce)
+                p[19] += p[11] * -friction
         if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
             self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
         return len(self.parts)
@@ -446,6 +491,33 @@ class App:
             return default
         return f if math.isfinite(f) else default
 
+    def _read_fields(self, f):
+        """Sanitized fields block (None planeY stays None = disabled)."""
+        d = PS.default_fields()
+        if isinstance(f, dict):
+            for k in ("turbulence", "vortex", "attractor", "collision"):
+                if isinstance(f.get(k), dict):
+                    d[k].update(f[k])
+        F = self._fnum
+        t, v, a, c = d["turbulence"], d["vortex"], d["attractor"], d["collision"]
+        py = c.get("planeY")
+        try:
+            py = float(py) if py is not None else None
+        except (ValueError, TypeError):
+            py = None
+        return {
+            "turbulence": {"amount": F(t.get("amount", 0), 0),
+                           "scale": F(t.get("scale", 0.05), 0.05),
+                           "speed": F(t.get("speed", 1.0), 1.0)},
+            "vortex": {"strength": F(v.get("strength", 0), 0)},
+            "attractor": {"x": F(a.get("x", 0), 0), "y": F(a.get("y", 0), 0),
+                          "z": F(a.get("z", 0), 0),
+                          "strength": F(a.get("strength", 0), 0),
+                          "radius": max(0.0, F(a.get("radius", 200), 200))},
+            "collision": {"planeY": py, "bounce": F(c.get("bounce", 0.5), 0.5),
+                          "friction": F(c.get("friction", 0.1), 0.1)},
+        }
+
     def read_emitter(self):
         """Rebuild a type-correct emitter dict every read (like the Tk
         edition): switching 2D<->3D never leaks the other mode's keys,
@@ -461,6 +533,7 @@ class App:
         mode = str(src.get("mode", "Infinite"))
         rev = bool(src.get("reverse", False))
         ali = bool(src.get("alignDir", False))
+        fields = self._read_fields(src.get("fields"))
         if self.ptype == "3d":
             zs = str(z.get("shape", "sphere") or "sphere").lower()
             if zs not in PS.ZONE_3D:
@@ -491,7 +564,9 @@ class App:
                     "spread": max(0.0, min(360.0, F(c.get("spread", 90),
                                                     90))),
                     "showCone": bool(c.get("showCone", True))},
-                "blendingMode": "Normal",
+                "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
+                "seed": int(src.get("seed", 0) or 0),
+                "fields": fields,
             }
         zs = str(z.get("shape", "Circle") or "Circle")
         if zs not in PS.ZONE_2D:
@@ -515,7 +590,9 @@ class App:
                 "direction": F(c.get("direction", c.get("directionZ", 0))),
                 "spread": max(0.0, min(360.0, F(c.get("spread", 90), 90))),
                 "showCone": bool(c.get("showCone", True))},
-            "blendingMode": "Normal",
+            "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
+            "seed": int(src.get("seed", 0) or 0),
+            "fields": fields,
         }
 
     def current_effect(self):
@@ -981,7 +1058,8 @@ def dot_style(app, p):
     return (_c(col), r0, shp if shp in ok else ok[0])
 
 
-def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
+def paint_bg_grid_2d(app, dl, W, H, cx, cy):
+    """Viewport backdrop + perspective grid (no guides, no particles)."""
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[22, 23, 31, 255], parent=dl)
     gx, gy = cx + app.cam["ox"], cy + app.cam["oy"]
@@ -995,6 +1073,11 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     for i in range(-10, 11):
         dpg.draw_line([gx, horizon], [gx + i * step, H],
                       color=[44, 46, 68, 255], parent=dl)
+    return gx, horizon, ex, ey
+
+
+def paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey):
+    """Emission zone + propagation cone guides."""
     if eff is not None:
         em = eff["emitter"]
         if bool(em.get("emissionZone", {}).get("showZone", True)):
@@ -1035,6 +1118,18 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                         ey + math.sin(math.radians(base - spread / 2 + spread * k / 16)) * L]
                        for k in range(17)]
                 dpg.draw_polyline(arc, color=list(YELLOW) + [255], parent=dl)
+    return ex, ey
+
+
+def paint_back_2d(app, dl, W, H, cx, cy, eff):
+    """Viewport backdrop + grid + zone/cone guides (no particles)."""
+    gx, horizon, ex, ey = paint_bg_grid_2d(app, dl, W, H, cx, cy)
+    paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey)
+    return ex, ey
+
+
+def paint_dots_2d(app, dl, tracks):
+    """Particle dots only (vector path)."""
     out = app.sim._cpp_out
     if out is not None:
         xs, ys, rs, cs, ss = out["x"], out["y"], out["r"], out["color"], out["shape"]
@@ -1091,6 +1186,10 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                 gc = [fill[0] * 35 // 100, fill[1] * 35 // 100,
                       fill[2] * 35 // 100, 255]
             _draw_morph_2d(dl, x, y, r, fill, a, b, bt, gc)
+
+
+def paint_front_2d(dl, W, H, ex, ey):
+    """Vignette + emitter gizmo overlay."""
     # vignette strips + gizmo
     m = min(W, H)
     t = max(14, m * 0.07)
@@ -1108,7 +1207,14 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
                     segments=20)
 
 
-def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
+def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
+    ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
+    paint_dots_2d(app, dl, tracks)
+    paint_front_2d(dl, W, H, ex, ey)
+
+
+def paint_bg_grid_3d(app, dl, W, H, cx, cy):
+    """Viewport backdrop + perspective floor grid (no guides, no particles)."""
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[20, 21, 28, 255], parent=dl)
     app.cam["focal"] = ((max(100, H) * 0.5) /
@@ -1123,6 +1229,11 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
         x1, y1, _, _ = P(d, 0, -R)
         x2, y2, _, _ = P(d, 0, R)
         dpg.draw_line([x1, y1], [x2, y2], color=[44, 46, 68, 255], parent=dl)
+
+
+def paint_guides_3d(app, dl, cx, cy, em):
+    """Emission zone + propagation cone guides."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
     zone = em.get("emissionZone", {})
     EX, EY, EZ = app.emitter_pos
     blue = [77, 159, 255, 255]
@@ -1177,6 +1288,17 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                                   EZ + dz / n2 * L)
                 dpg.draw_line([x1, y1], [x2, y2],
                               color=list(YELLOW) + [255], parent=dl)
+
+
+def paint_back_3d(app, dl, W, H, cx, cy, em):
+    """Viewport backdrop + floor grid + zone/cone guides (no particles)."""
+    paint_bg_grid_3d(app, dl, W, H, cx, cy)
+    paint_guides_3d(app, dl, cx, cy, em)
+
+
+def paint_dots_3d(app, dl, cx, cy, tracks):
+    """Particle dots only (vector path, painter-sorted)."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
     out = app.sim._cpp_out
     focal = app.cam.get("focal", 620.0)
     if out is not None:
@@ -1255,6 +1377,12 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                     mctx = (p[0], p[1], p[10], r)
             _draw_morph_3d(dl, mctx, sx, sy, rs, colA,
                            (shpA, refA), (shpB, refB), bt, fm)
+
+
+def paint_front_3d(app, dl, W, H, cx, cy):
+    """Vignette + 3D emitter gizmo overlay."""
+    P = lambda x, y, z: app.proj(x, y, z, cx, cy)
+    EX, EY, EZ = app.emitter_pos
     m = min(W, H)
     t = max(14, m * 0.07)
     vc = [14, 16, 22, 255]
@@ -1270,6 +1398,12 @@ def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
                        parent=dl)
     dpg.draw_circle([ox, oy], 8, color=[0, 0, 0, 0], fill=[255, 255, 255, 255],
                     parent=dl, segments=16)
+
+
+def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
+    paint_back_3d(app, dl, W, H, cx, cy, em)
+    paint_dots_3d(app, dl, cx, cy, tracks)
+    paint_front_3d(app, dl, W, H, cx, cy)
 
 
 # ================= ImGui UI =================
@@ -1365,6 +1499,53 @@ def cb_em_int(path):
         except (ValueError, TypeError):
             pass
     return _cb
+
+
+def cb_em_seed(sender=None, app_data=None, *r):
+    """Seed box: store the value and reseed the spawn stream immediately."""
+    try:
+        em_set(("seed",), int(app_data))
+        APP.sim.seed_sim(int(app_data))
+    except (ValueError, TypeError):
+        pass
+
+
+def _field_col():
+    f = APP.em.get("fields")
+    if not isinstance(f, dict):
+        f = {}
+        APP.em["fields"] = f
+    c = f.get("collision")
+    if not isinstance(c, dict):
+        c = {}
+        f["collision"] = c
+    return c
+
+
+def cb_field_plane_toggle(sender=None, app_data=None, *r):
+    """Plane checkbox: enable at 300 (or keep) / disable to null."""
+    try:
+        c = _field_col()
+        if app_data:
+            if c.get("planeY") is None:
+                c["planeY"] = 300.0
+                dpg.set_value("em_planey", 300.0)
+        else:
+            c["planeY"] = None
+        APP.mark_dirty()
+    except (ValueError, TypeError):
+        pass
+
+
+def cb_field_plane_y(sender=None, app_data=None, *r):
+    """Plane Y value: setting a number implicitly enables the plane."""
+    try:
+        c = _field_col()
+        c["planeY"] = float(app_data)
+        dpg.set_value("em_plane_on", True)
+        APP.mark_dirty()
+    except (ValueError, TypeError):
+        pass
 
 
 def cb_em_combo(path, lower=False):
@@ -1682,6 +1863,33 @@ def sync_state_form(self):
 App.sync_state_form = sync_state_form
 
 
+def _sync_fields_form(f):
+    """Push the fields block into the sidebar widgets (defaults when absent)."""
+    d = PS.default_fields()
+    if isinstance(f, dict):
+        for k in ("turbulence", "vortex", "attractor", "collision"):
+            if isinstance(f.get(k), dict):
+                d[k].update(f[k])
+    t, v, a, c = d["turbulence"], d["vortex"], d["attractor"], d["collision"]
+    _set("em_turb", float(t.get("amount", 0) or 0))
+    _set("em_turbsc", float(t.get("scale", 0.05) or 0))
+    _set("em_turbsp", float(t.get("speed", 1.0) or 0))
+    _set("em_vortex", float(v.get("strength", 0) or 0))
+    _set("em_attr", float(a.get("strength", 0) or 0))
+    _set("em_attrr", float(a.get("radius", 200) or 0))
+    _set("em_attrx", float(a.get("x", 0) or 0))
+    _set("em_attry", float(a.get("y", 0) or 0))
+    py = c.get("planeY")
+    try:
+        py = float(py) if py is not None else None
+    except (ValueError, TypeError):
+        py = None
+    _set("em_plane_on", py is not None)
+    _set("em_planey", py if py is not None else 300.0)
+    _set("em_bounce", float(c.get("bounce", 0.5) or 0))
+    _set("em_fric", float(c.get("friction", 0.1) or 0))
+
+
 def sync_emitter_form(self):
     e = self.em
     g = e.get("gravity", {})
@@ -1692,6 +1900,9 @@ def sync_emitter_form(self):
     _set("em_mode", str(e.get("mode", "Infinite")))
     _set("em_rev", bool(e.get("reverse", False)))
     _set("em_align", bool(e.get("alignDir", False)))
+    _set("em_blend", str(e.get("blendingMode", "Normal")))
+    _set("em_seed", int(e.get("seed", 0) or 0))
+    _sync_fields_form(e.get("fields"))
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -1812,6 +2023,29 @@ def build_sidebar():
         dpg.add_text("Align dir.", color=list(MUTED) + [255])
         dpg.add_checkbox(tag="em_align", default_value=True,
                          callback=cb_em_bool(("alignDir",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Blend", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_blend", items=PS.BLEND_MODES, default_value="Normal",
+                      width=-1, callback=cb_em_combo(("blendingMode",)))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Seed", color=list(MUTED) + [255])
+        dpg.add_input_int(tag="em_seed", default_value=0, width=-1,
+                          callback=cb_em_seed)
+    dpg.add_text("FORCE FIELDS", color=list(MUTED) + [255])
+    num_row("Turb amount", "em_turb", 0, cb_em_float(("fields", "turbulence", "amount")))
+    num_row("Turb scale", "em_turbsc", 0.05, cb_em_float(("fields", "turbulence", "scale")))
+    num_row("Turb speed", "em_turbsp", 1.0, cb_em_float(("fields", "turbulence", "speed")))
+    num_row("Vortex", "em_vortex", 0, cb_em_float(("fields", "vortex", "strength")))
+    num_row("Attr strength", "em_attr", 0, cb_em_float(("fields", "attractor", "strength")))
+    num_row("Attr radius", "em_attrr", 200, cb_em_float(("fields", "attractor", "radius")))
+    num_row("Attr X", "em_attrx", 0, cb_em_float(("fields", "attractor", "x")))
+    num_row("Attr Y", "em_attry", 0, cb_em_float(("fields", "attractor", "y")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Plane", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_plane_on", callback=cb_field_plane_toggle)
+    num_row("Plane Y", "em_planey", 300, cb_field_plane_y)
+    num_row("Bounce", "em_bounce", 0.5, cb_em_float(("fields", "collision", "bounce")))
+    num_row("Friction", "em_fric", 0.1, cb_em_float(("fields", "collision", "friction")))
     dpg.add_text("GRAVITY", color=list(MUTED) + [255])
     num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
@@ -2171,6 +2405,11 @@ def do_new():
 
 
 def _apply_loaded_effect(eff, path):
+    try:
+        eff, _warns = PS.migrate_effect(eff)
+    except ValueError as e:
+        show_msg("Error", str(e))
+        return
     APP.filepath = path
     APP.filename = os.path.splitext(os.path.basename(path))[0]
     APP.ptype = eff.get("type", "2d")
@@ -2182,8 +2421,11 @@ def _apply_loaded_effect(eff, path):
     APP.em = eff.get("emitter", PS.default_emitter("2d"))
     APP.sync_all()
     APP.sim.reset()
+    APP.sim.seed_sim((eff.get("emitter") or {}).get("seed", 0))
     APP.mark_dirty()
     APP.history_commit()
+    if _warns:
+        APP.set_status("Migrated: " + " | ".join(_warns)[:200], WARN)
 
 
 def dialog_pick(app_data):
@@ -2984,7 +3226,40 @@ def frame():
             dpg.delete_item("vp_draw", children_only=True)
             is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
                     eff.get("emitter", {}).get("propagationCone", {}))
-            if is3d:
+            n_show = cpp_n if cpp_active else len(APP.sim.parts)
+            _fr, _tag = None, ""
+            if RV is not None and RV.should_raster(APP, n_show):
+                try:
+                    if is3d:
+                        _fr = RV.frame_3d(APP, APP.sim._cpp_out, W, H, cx, cy)
+                    else:
+                        _fr = RV.frame_2d(APP, APP.sim._cpp_out, W, H)
+                except Exception:
+                    _fr = None
+                if _fr is not None:
+                    _tag = RV.ensure_texture(_fr[0], _fr[1])
+                    if not (_tag and RV.update_texture(_fr[2])):
+                        _fr = None
+            APP._raster_on = _fr is not None
+            if _fr is not None:
+                # raster particle layer (bg+grid+dots via GL), then vector
+                # guides/front on top. bg+grid draw first (cheap) so the
+                # guide painters can reuse their geometry math, then the
+                # image covers them.
+                if is3d:
+                    paint_bg_grid_3d(APP, "vp_draw", W, H, cx, cy)
+                else:
+                    _gx, _hz, _ex, _ey = paint_bg_grid_2d(
+                        APP, "vp_draw", W, H, cx, cy)
+                dpg.draw_image(_tag, [0, 0], [W, H], parent="vp_draw")
+                if is3d:
+                    paint_guides_3d(APP, "vp_draw", cx, cy, eff["emitter"])
+                    paint_front_3d(APP, "vp_draw", W, H, cx, cy)
+                else:
+                    paint_guides_2d(APP, "vp_draw", W, H, cx, cy, eff,
+                                    _gx, _hz, _ex, _ey)
+                    paint_front_2d("vp_draw", W, H, _ex, _ey)
+            elif is3d:
                 draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"],
                              tracks)
             else:
