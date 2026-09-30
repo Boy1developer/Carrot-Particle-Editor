@@ -65,10 +65,18 @@ legacy = {"type": "2d", "emitter": {},
           "states": [{"duration": 0.5, "shape": "Circle", "easing": "easeIn"},
                      {"duration": 0.5, "shape": "circle", "easing": "linear"}]}
 mig, warns = PS.migrate_effect(legacy)
-assert mig["version"] == "1.0" and mig["states"][0]["easing"] == "ease-in"
+assert mig["version"] == PS.VERSION and mig["states"][0]["easing"] == "ease-in"
 assert mig["states"][0]["shape"] == "circle" and mig["emitter"]["blendingMode"] == "Normal"
+assert mig["emitter"]["seed"] == 0
 assert warns, warns
 assert PS.validate_against_schema(mig) == []
+# explicit 1.0 upgrades to current with a warning
+mig10, warns10 = PS.migrate_effect({"version": "1.0", "type": "2d",
+                                    "emitter": {},
+                                    "states": [{"duration": 0.5, "shape": "circle", "easing": "linear"},
+                                               {"duration": 0.5, "shape": "circle", "easing": "linear"}]})
+assert mig10["version"] == PS.VERSION and warns10, (mig10["version"], warns10)
+assert PS.validate_against_schema(mig10) == []
 # legacy input untouched (deep copy)
 assert "version" not in legacy and legacy["states"][0]["easing"] == "easeIn"
 try:

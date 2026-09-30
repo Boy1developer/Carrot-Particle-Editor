@@ -1,7 +1,7 @@
 /**
  * Carrot particle effect schema — typed loader for Carrots Game Engine.
  *
- * Mirrors the v1.0 export format produced by Carrot Particle Editor
+ * Mirrors the v1.1 export format produced by Carrot Particle Editor
  * (see `sample_effect.json`) and consumed by `AdvancedParticleEmitter`
  * (`2d: needShape` / `3d: mesh swap`, hyphenated easing).
  *
@@ -10,7 +10,7 @@
  * boundary, zero `any` leaking into engine code.
  */
 
-export const CARROT_EFFECT_VERSION = "1.0" as const;
+export const CARROT_EFFECT_VERSION = "1.1" as const;
 
 export const SHAPE_ORDER = [
   "circle",
@@ -293,7 +293,7 @@ export function loadCarrotEffectFromJsonText(jsonText: string): CarrotEffect {
   return parseCarrotEffect(data);
 }
 
-/** Serialize back to the v1.0 JSON shape the editor and engine share. */
+/** Serialize back to the v1.1 JSON shape the editor and engine share. */
 export function serializeCarrotEffect(effect: CarrotEffect): string {
   return JSON.stringify(effect);
 }

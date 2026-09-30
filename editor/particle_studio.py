@@ -434,6 +434,7 @@ def default_emitter(ptype="2d"):
             "propagationCone": {"directionX": 0, "directionY": 0,
                                 "directionZ": 0, "spread": 90, "showCone": True},
             "blendingMode": "Normal",
+            "seed": 0,
         }
     return {
         "flow": 40, "flowMode": "rate", "flowInterval": 1,
@@ -446,6 +447,7 @@ def default_emitter(ptype="2d"):
                          "mode": "Surface", "showZone": True},
         "propagationCone": {"direction": 0, "spread": 90, "showCone": True},
         "blendingMode": "Normal",
+        "seed": 0,
     }
 
 
@@ -478,8 +480,8 @@ def effect_models_block(src_states, out_states):
 
 def validate_effect(eff):
     errs = []
-    if eff.get("version") != "1.0":
-        errs.append("version لازم تكون '1.0'")
+    if eff.get("version") != VERSION:
+        errs.append(f"version لازم تكون '{VERSION}'")
     if eff.get("type") not in ("2d", "3d"):
         errs.append("type لازم 2d او 3d")
     if not isinstance(eff.get("emitter"), dict):
@@ -586,9 +588,11 @@ def migrate_effect(data):
 
     Returns (migrated_dict, warnings). Raises ValueError on a dict that
     cannot be migrated (not an object, or an explicitly newer version).
-    Rules: missing version -> current (warn); easing aliases
+    Rules: missing version -> current (warn); "1.0" -> "1.1" upgrade (warn,
+    fills new optional keys with defaults); easing aliases
     (easeIn/easeOut/easeInOut) -> hyphenated (warn each); missing easing ->
-    linear (warn); shapes lowercased; missing emitter.blendingMode -> Normal.
+    linear (warn); shapes lowercased; missing emitter.blendingMode -> Normal;
+    missing emitter.seed -> 0 (unseeded legacy behavior).
     """
     if not isinstance(data, dict):
         raise ValueError("effect file must contain a JSON object")
@@ -598,6 +602,9 @@ def migrate_effect(data):
     if v is None:
         eff["version"] = VERSION
         warns.append(f"version missing -> assumed '{VERSION}'")
+    elif str(v) == "1.0" and str(VERSION) != "1.0":
+        eff["version"] = VERSION
+        warns.append(f"version '1.0' -> '{VERSION}' (new optional keys defaulted)")
     elif str(v) != str(VERSION):
         raise ValueError(f"unsupported effect version {v!r} (need '{VERSION}')")
     if eff.get("type") not in ("2d", "3d"):
@@ -609,6 +616,8 @@ def migrate_effect(data):
         warns.append("emitter missing -> {}")
     if not em.get("blendingMode"):
         em["blendingMode"] = "Normal"
+    if em.get("seed") is None:
+        em["seed"] = 0
     states = eff.get("states")
     if isinstance(states, list):
         for i, s in enumerate(states):

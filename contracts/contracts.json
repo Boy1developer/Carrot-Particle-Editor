@@ -1,6 +1,6 @@
 {
   "_comment": "Single source of truth for Carrot Particle Editor shared contracts. Edit THIS file, then run: python tools/generate_contracts.py (CI fails if generated files are stale).",
-  "export_version": "1.0",
+  "export_version": "1.1",
   "record_fields": [
     "x", "y", "vx", "vy", "age",
     "c0", "c1", "s0", "s1", "life",

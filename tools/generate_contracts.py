@@ -131,6 +131,7 @@ def schema_file(c):
                     "flow": {"type": "number"},
                     "maxParticles": {"type": "number"},
                     "blendingMode": {"enum": c["blend_modes"]},
+                    "seed": {"type": "number"},
                 },
             },
             "states": {
@@ -253,7 +254,10 @@ def main():
     if errs:
         print("CONTRACT-CHECK FAILED:")
         for e in errs:
-            print("-", e)
+            try:
+                print("-", e)
+            except UnicodeEncodeError:
+                print("-", str(e).encode("ascii", "backslashreplace").decode("ascii"))
         sys.exit(1)
     print("CONTRACT-CHECK OK")
 

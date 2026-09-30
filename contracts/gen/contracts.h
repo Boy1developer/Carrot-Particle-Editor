@@ -2,7 +2,7 @@
 #pragma once
 
 // Export format version (must match effect JSON "version").
-constexpr const char* CARROT_EXPORT_VERSION = "1.0";
+constexpr const char* CARROT_EXPORT_VERSION = "1.1";
 
 // Particle record layout: 22 fields (see RECORD_FIELDS).
 constexpr int CARROT_RECORD_FIELD_COUNT = 22;

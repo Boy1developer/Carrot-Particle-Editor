@@ -1,6 +1,6 @@
 [
   {
-    "version": "1.0",
+    "version": "1.1",
     "type": "2d",
     "emitter": {
       "flow": 40,
@@ -31,7 +31,8 @@
         "spread": 60,
         "showCone": false
       },
-      "blendingMode": "Additive"
+      "blendingMode": "Additive",
+      "seed": 0
     },
     "states": [
       {
@@ -83,7 +84,7 @@
     ]
   },
   {
-    "version": "1.0",
+    "version": "1.1",
     "type": "2d",
     "emitter": {
       "flow": 40,
@@ -114,7 +115,8 @@
         "spread": 60,
         "showCone": false
       },
-      "blendingMode": "Normal"
+      "blendingMode": "Normal",
+      "seed": 0
     },
     "states": [
       {
@@ -166,7 +168,7 @@
     ]
   },
   {
-    "version": "1.0",
+    "version": "1.1",
     "type": "2d",
     "emitter": {
       "flow": 40,
@@ -197,7 +199,8 @@
         "spread": 60,
         "showCone": false
       },
-      "blendingMode": "Screen"
+      "blendingMode": "Screen",
+      "seed": 0
     },
     "states": [
       {
