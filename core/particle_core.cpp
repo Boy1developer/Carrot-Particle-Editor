@@ -37,12 +37,18 @@ int shape_index(const std::string &s) {
     return 0;
 }
 
-double ease_fn(double t, const std::string &name) {
+double ease_fn(double t, int ease) {
     t = clamp01(t);
-    if (name == "ease-in") return t * t;
-    if (name == "ease-out") return t * (2 - t);
-    if (name == "ease-in-out") return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    if (ease == 1) return t * t;
+    if (ease == 2) return t * (2 - t);
+    if (ease == 3) return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     return t;
+}
+inline int ease_enum(const std::string &name) {
+    if (name == "ease-in") return 1;
+    if (name == "ease-out") return 2;
+    if (name == "ease-in-out") return 3;
+    return 0;  // "linear" + anything unknown
 }
 
 struct RGB { int r = 255, g = 255, b = 255; };
@@ -64,7 +70,12 @@ RGB parse_hex(const std::string &c) {
 
 struct Keyframe {
     double dur = 0.5, size = 8, sizeMax = 8, opacity = 255, minSpd = 0, maxSpd = 0;
-    std::string shape = "circle", color = "#ffffff", easing = "linear";
+    // Precomputed at configure() so the per-particle hot loops never touch
+    // strings: color parsed once, easing as enum, shape as order index.
+    // Values are identical to parsing on the fly (parity-safe).
+    int shapeIdx = 0;
+    int cr = 255, cg = 255, cb = 255;
+    int ease = 0;  // 0 linear, 1 ease-in, 2 ease-out, 3 ease-in-out
 };
 
 struct Emitter {
@@ -162,7 +173,7 @@ struct Engine {
             double d = (i < (int)kf.size() ? kf[i].dur : 0.5) * pjit;
             if (t < acc + d || i == segs - 1) {
                 raw = d <= 0 ? 0.0 : clamp01((t - acc) / d);
-                e = ease_fn(raw, i < (int)kf.size() ? kf[i].easing : "linear");
+                e = ease_fn(raw, i < (int)kf.size() ? kf[i].ease : 0);
                 k = i;
                 return;
             }
@@ -345,14 +356,16 @@ static PyObject *py_configure(PyEngine *self, PyObject *args) {
         if (!PyDict_Check(t)) continue;
         Keyframe k;
         k.dur = std::max(1e-6, dget(t, "dur", 0.5));
-        k.shape = sget(t, "shape", self->eng.is3d ? "sphere" : "circle");
+        std::string shape = sget(t, "shape", self->eng.is3d ? "sphere" : "circle");
+        k.shapeIdx = shape_index(shape);
         k.size = dget(t, "size", 8);
         k.sizeMax = dget(t, "sizeMax", k.size);
-        k.color = sget(t, "color", "#ffffff");
+        RGB pc = parse_hex(sget(t, "color", "#ffffff"));
+        k.cr = pc.r; k.cg = pc.g; k.cb = pc.b;
         k.opacity = dget(t, "opacity", 255);
         k.minSpd = dget(t, "minSpeed", dget(t, "minSpd", 0));
         k.maxSpd = dget(t, "maxSpeed", dget(t, "maxSpd", k.minSpd));
-        k.easing = sget(t, "easing", "linear");
+        k.ease = ease_enum(sget(t, "easing", "linear"));
         self->eng.kf.push_back(k);
     }
     Py_RETURN_NONE;
@@ -385,14 +398,13 @@ static PyObject *py_sample(PyEngine *self, PyObject *args) {
     const Keyframe &b = e.kf[std::min(k + 1, n - 1)];
     double smin = a.size + (b.size - a.size) * ev;
     double smax = a.sizeMax + (b.sizeMax - a.sizeMax) * ev;
-    RGB c0 = parse_hex(a.color), c1 = parse_hex(b.color);
     // NOTE: Python round() = banker's rounding == std::nearbyint (FE_TONEAREST)
-    int r = (int)std::nearbyint(c0.r + (c1.r - c0.r) * ev);
-    int g = (int)std::nearbyint(c0.g + (c1.g - c0.g) * ev);
-    int bl = (int)std::nearbyint(c0.b + (c1.b - c0.b) * ev);
+    int r = (int)std::nearbyint(a.cr + (b.cr - a.cr) * ev);
+    int g = (int)std::nearbyint(a.cg + (b.cg - a.cg) * ev);
+    int bl = (int)std::nearbyint(a.cb + (b.cb - a.cb) * ev);
     double mn = a.minSpd + (b.minSpd - a.minSpd) * ev;
     double mx = a.maxSpd + (b.maxSpd - a.maxSpd) * ev;
-    int shp = shape_index(raw >= 0.5 ? b.shape : a.shape);
+    int shp = raw >= 0.5 ? b.shapeIdx : a.shapeIdx;
     return Py_BuildValue("{s:d,s:i,s:d,s:d,s:i}",
                          "size", smin + (smax - smin) * sr,
                          "color", (r << 16) | (g << 8) | bl,
@@ -464,12 +476,11 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
         double smin = a.size + (b.size - a.size) * ev;
         double smax = a.sizeMax + (b.sizeMax - a.sizeMax) * ev;
         double size = smin + (smax - smin) * e.sizeRatio[i];
-        RGB c0 = parse_hex(a.color), c1 = parse_hex(b.color);
-        int r = (int)std::nearbyint(c0.r + (c1.r - c0.r) * ev);
-        int g = (int)std::nearbyint(c0.g + (c1.g - c0.g) * ev);
-        int bl = (int)std::nearbyint(c0.b + (c1.b - c0.b) * ev);
+        int r = (int)std::nearbyint(a.cr + (b.cr - a.cr) * ev);
+        int g = (int)std::nearbyint(a.cg + (b.cg - a.cg) * ev);
+        int bl = (int)std::nearbyint(a.cb + (b.cb - a.cb) * ev);
         double alpha = (a.opacity + (b.opacity - a.opacity) * ev) / 255.0;
-        int shp = shape_index(raw >= 0.5 ? b.shape : a.shape);
+        int shp = raw >= 0.5 ? b.shapeIdx : a.shapeIdx;
         int bseg = -1; double bt = 0.0;
         if (nk > 1 && raw > 0.25 && raw < 0.75) {
             int kk = k;
