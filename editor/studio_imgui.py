@@ -145,6 +145,8 @@ class SimEngine:
         self._trail_t = 0.0
 
     # ---- trails history (Python reference; ring-capped per source) ----
+    TRAIL_JUMP = 150.0  # teleport cut: C++ index reuse looks like a jump
+
     @staticmethod
     def _trail_cfg(em):
         t = (em.get("trails") or {}) if isinstance(em, dict) else {}
@@ -169,13 +171,41 @@ class SimEngine:
             if mt > 0.0 and (now - lt) < mt:
                 return
             dx, dy, dz = x - lx, y - ly, z - lz
-            if md > 0.0 and (dx * dx + dy * dy + dz * dz) < md * md:
+            d2 = dx * dx + dy * dy + dz * dz
+            if d2 > self.TRAIL_JUMP * self.TRAIL_JUMP:
+                hist.clear()
+            elif md > 0.0 and d2 < md * md:
                 return
         hist.append((x, y, z, now))
         while len(hist) > maxp:
             hist.pop(0)
         while len(hist) > 1 and (now - hist[0][3]) > life:
             hist.pop(0)
+
+    def update_trails(self, em, items, ex, ey, ez, dt):
+        """Shared trail update for both sim paths.
+
+        items: [(key, x, y, z)] in one consistent space (sim/screen for
+        2D, world for 3D). Python path keys by id(p), C++ path by index.
+        """
+        tcfg = self._trail_cfg(em)
+        if tcfg is None:
+            if self.trail_hist:
+                self.trail_hist = {}
+            return
+        self._trail_t += dt
+        now = self._trail_t
+        if str(tcfg.get("source", "particles")) == "emitter":
+            self._trail_push("emitter", ex, ey, ez, now, tcfg)
+            self.trail_hist = {"emitter": self.trail_hist.get("emitter", [])}
+            return
+        alive = set()
+        for key, x, y, z in items:
+            alive.add(key)
+            self._trail_push(key, x, y, z, now, tcfg)
+        for k in list(self.trail_hist.keys()):
+            if k != "emitter" and k not in alive:
+                del self.trail_hist[k]
 
     # ---- keyframe tracks (identical semantics to particle_studio) ----
     @staticmethod
@@ -448,24 +478,8 @@ class SimEngine:
                 p[19] += p[11] * -friction
         if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
             self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
-        tcfg = self._trail_cfg(em)
-        if tcfg is not None:
-            self._trail_t += dt
-            now = self._trail_t
-            if str(tcfg.get("source", "particles")) == "emitter":
-                self._trail_push("emitter", ex, ey, ez, now, tcfg)
-                self.trail_hist = {"emitter": self.trail_hist.get("emitter", [])}
-            else:
-                alive = set()
-                for p in self.parts:
-                    key = id(p)
-                    alive.add(key)
-                    self._trail_push(key, p[0], p[1], p[10], now, tcfg)
-                for k in list(self.trail_hist.keys()):
-                    if k != "emitter" and k not in alive:
-                        del self.trail_hist[k]
-        elif self.trail_hist:
-            self.trail_hist = {}
+        self.update_trails(em, [(id(p), p[0], p[1], p[10])
+                                for p in self.parts], ex, ey, ez, dt)
         return len(self.parts)
 
     def step_cpp(self, eff, em, ptype, tracks, is3d, dt, scx, scy,
@@ -484,6 +498,18 @@ class SimEngine:
                                  cam["yaw"], cam["pitch"], cam["zoom"],
                                  cam["ox"], cam["oy"], focal, cx, cy)
         self._cpp_out = out
+        try:
+            n = len(out["x"])
+            if is3d:
+                items = [((0, i), out["wx"][i], out["wy"][i], out["z"][i])
+                         for i in range(n)]
+                self.update_trails(em, items, ex, ey, ez, dt)
+            else:
+                items = [((0, i), out["x"][i], out["y"][i], 0.0)
+                         for i in range(n)]
+                self.update_trails(em, items, scx, scy, 0.0, dt)
+        except Exception:
+            pass
         return len(out["x"])
 
 # ================= application state =================
@@ -1950,6 +1976,10 @@ def set_type(t, commit=True):
         dpg.configure_item("row_depth", show=show3)
         dpg.configure_item("row_zonemode", show=show3)
         dpg.set_value("dirz_label", "Dir. Z" if show3 else "Direction")
+        tr = bool(getattr(APP, "trail", False))
+        dpg.configure_item("side_particles_top", show=not tr)
+        dpg.configure_item("side_particles_rest", show=not tr)
+        dpg.configure_item("side_trails", show=tr)
         z = APP.em.get("emissionZone", {})
         if t == "3d":
             z["shape"] = str(z.get("shape", "sphere")).lower()
@@ -2226,32 +2256,33 @@ def num_row(label, tag, default, cb, width=-1):
 
 
 def build_sidebar():
-    sec("Emitter")
-    dpg.add_text("PARTICLE OUTPUT", color=list(MUTED) + [255])
-    num_row("Flow", "em_flow", 40, cb_em_float(("flow",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Max", color=list(MUTED) + [255])
-        dpg.add_input_int(tag="em_max", default_value=300, width=-1,
-                          callback=cb_em_int(("maxParticles",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Mode", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_mode", items=PS.MODES, default_value="Infinite",
-                      width=-1, callback=cb_em_combo(("mode",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Reverse", color=list(MUTED) + [255])
-        dpg.add_checkbox(tag="em_rev", callback=cb_em_bool(("reverse",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Align dir.", color=list(MUTED) + [255])
-        dpg.add_checkbox(tag="em_align", default_value=True,
-                         callback=cb_em_bool(("alignDir",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Blend", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_blend", items=PS.BLEND_MODES, default_value="Normal",
-                      width=-1, callback=cb_em_combo(("blendingMode",)))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Seed", color=list(MUTED) + [255])
-        dpg.add_input_int(tag="em_seed", default_value=0, width=-1,
-                          callback=cb_em_seed)
+    with dpg.group(tag="side_particles_top"):
+        sec("Emitter")
+        dpg.add_text("PARTICLE OUTPUT", color=list(MUTED) + [255])
+        num_row("Flow", "em_flow", 40, cb_em_float(("flow",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Max", color=list(MUTED) + [255])
+            dpg.add_input_int(tag="em_max", default_value=300, width=-1,
+                              callback=cb_em_int(("maxParticles",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Mode", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_mode", items=PS.MODES, default_value="Infinite",
+                          width=-1, callback=cb_em_combo(("mode",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Reverse", color=list(MUTED) + [255])
+            dpg.add_checkbox(tag="em_rev", callback=cb_em_bool(("reverse",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Align dir.", color=list(MUTED) + [255])
+            dpg.add_checkbox(tag="em_align", default_value=True,
+                             callback=cb_em_bool(("alignDir",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Blend", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_blend", items=PS.BLEND_MODES, default_value="Normal",
+                          width=-1, callback=cb_em_combo(("blendingMode",)))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Seed", color=list(MUTED) + [255])
+            dpg.add_input_int(tag="em_seed", default_value=0, width=-1,
+                              callback=cb_em_seed)
     dpg.add_text("FORCE FIELDS", color=list(MUTED) + [255])
     num_row("Turb amount", "em_turb", 0, cb_em_float(("fields", "turbulence", "amount")))
     num_row("Turb scale", "em_turbsc", 0.05, cb_em_float(("fields", "turbulence", "scale")))
@@ -2267,178 +2298,188 @@ def build_sidebar():
     num_row("Plane Y", "em_planey", 300, cb_field_plane_y)
     num_row("Bounce", "em_bounce", 0.5, cb_em_float(("fields", "collision", "bounce")))
     num_row("Friction", "em_fric", 0.1, cb_em_float(("fields", "collision", "friction")))
-    dpg.add_text("TRAIL SOURCE", color=list(MUTED) + [255])
-    with dpg.group(horizontal=True):
-        dpg.add_text("Enable", color=list(MUTED) + [255])
-        dpg.add_checkbox(tag="em_trail_on", callback=cb_em_bool(("trails", "enabled")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Source", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_trail_src", items=["particles", "emitter"],
-                      default_value="particles", width=-1,
-                      callback=cb_em_combo(("trails", "source")))
-    num_row("Max points", "em_trail_max", 32, cb_em_int(("trails", "maxPoints")))
-    num_row("Lifetime", "em_trail_life", 1.0, cb_em_float(("trails", "lifetime")))
-    num_row("Min dist", "em_trail_mind", 4.0, cb_em_float(("trails", "minDist")))
-    num_row("Min time", "em_trail_mint", 0.016, cb_em_float(("trails", "minTime")))
-    num_row("Smoothing", "em_trail_smooth", 0, cb_em_int(("trails", "smoothing")))
-    dpg.add_text("RIBBON GEOMETRY", color=list(MUTED) + [255])
-    num_row("Width start", "em_trail_w0", 8.0, cb_em_float(("trails", "widthStart")))
-    num_row("Width end", "em_trail_w1", 1.0, cb_em_float(("trails", "widthEnd")))
-    num_row("Taper", "em_trail_taper", 1.0, cb_em_float(("trails", "taper")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("UV mode", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_trail_uv", items=["stretch", "tile"],
-                      default_value="stretch", width=-1,
-                      callback=cb_em_combo(("trails", "uvMode")))
-    num_row("Tile length", "em_trail_tile", 64.0, cb_em_float(("trails", "tileLength")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Ribbon", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_trail_rib", items=["billboard", "fixed", "flat"],
-                      default_value="billboard", width=-1,
-                      callback=cb_em_combo(("trails", "ribbon")))
-    dpg.add_text("TRAIL COLOR", color=list(MUTED) + [255])
-    with dpg.group(horizontal=True):
-        dpg.add_text("Head", color=list(MUTED) + [255])
-        dpg.add_input_text(tag="em_trail_chead", default_value="#ffffff",
-                           width=-1, callback=cb_em_text(("trails", "colorHead")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Tail", color=list(MUTED) + [255])
-        dpg.add_input_text(tag="em_trail_ctail", default_value="#ffffff",
-                           width=-1, callback=cb_em_text(("trails", "colorTail")))
-    num_row("Alpha head", "em_trail_ahead", 255, cb_em_int(("trails", "alphaHead")))
-    num_row("Alpha tail", "em_trail_atail", 0, cb_em_int(("trails", "alphaTail")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Blend", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_trail_blend",
-                      items=["inherit"] + list(PS.BLEND_MODES),
-                      default_value="inherit", width=-1,
-                      callback=cb_em_combo(("trails", "blend")))
-    dpg.add_text("TRAIL MOTION", color=list(MUTED) + [255])
-    num_row("Gravity", "em_trail_grav", 0.0, cb_em_float(("trails", "gravity")))
-    num_row("Drag", "em_trail_drag", 0.0, cb_em_float(("trails", "drag")))
-    num_row("Noise", "em_trail_noise", 0.0, cb_em_float(("trails", "noise")))
-    dpg.add_text("GRAVITY", color=list(MUTED) + [255])
-    num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
-    num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
-    with dpg.group(horizontal=True, tag="row_gz", show=False):
-        dpg.add_text("Gravity Z", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_gz", default_value=0, width=-1,
-                            callback=cb_em_float(("gravity", "z")))
-    dpg.add_text("EMISSION ZONE", color=list(MUTED) + [255])
-    with dpg.group(horizontal=True):
-        dpg.add_text("Shape", color=list(MUTED) + [255])
-        dpg.add_combo(tag="em_zshape", items=PS.ZONE_2D, default_value="Circle",
-                      width=-1, callback=cb_em_combo(("emissionZone", "shape")))
-    num_row("Rotation", "em_rot", 0, cb_zone_rot)
-    num_row("Radius", "em_radius", 10, cb_em_float(("emissionZone", "radius")))
-    num_row("Width", "em_width", 100, cb_em_float(("emissionZone", "width")))
-    num_row("Height", "em_height", 60, cb_em_float(("emissionZone", "height")))
-    num_row("Length", "em_length", 100, cb_em_float(("emissionZone", "length")))
-    with dpg.group(horizontal=True, tag="row_depth", show=False):
-        dpg.add_text("Depth", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_depth", default_value=60, width=-1,
-                            callback=cb_em_float(("emissionZone", "depth")))
-    with dpg.group(horizontal=True, tag="row_zonemode", show=False):
-        dpg.add_text("Mode", color=list(MUTED) + [255])
-        dpg.add_radio_button(tag="em_zonemode", items=PS.ZONE_MODE,
-                             default_value="Surface", horizontal=True,
-                             callback=cb_em_combo(("emissionZone", "mode")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Show zone", color=list(MUTED) + [255])
-        dpg.add_checkbox(tag="em_showzone", default_value=True,
-                         callback=cb_em_bool(("emissionZone", "showZone")))
-    dpg.add_text("PROPAGATION CONE", color=list(MUTED) + [255])
-    with dpg.group(horizontal=True):
-        dpg.add_text("Direction", color=list(MUTED) + [255], tag="dirz_label")
-        dpg.add_input_float(tag="em_dirz", default_value=0, width=-1,
-                            callback=cb_dirz)
-    with dpg.group(horizontal=True, tag="row_diry", show=False):
-        dpg.add_text("Dir. Y", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="em_diry", default_value=0, width=-1,
-                            callback=cb_em_float(("propagationCone",
-                                                  "directionY")))
-    num_row("Spread", "em_spread", 90,
-            cb_em_float(("propagationCone", "spread")))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Show cone", color=list(MUTED) + [255])
-        dpg.add_checkbox(tag="em_showcone", default_value=True,
-                         callback=cb_em_bool(("propagationCone", "showCone")))
-    sec("States")
-    with dpg.group(horizontal=True):
-        dpg.add_text("Preview", color=list(MUTED) + [255])
-        dpg.add_radio_button(tag="colormode_radio",
-                             items=["Selected", "Gradient"],
-                             default_value="Gradient", horizontal=True,
-                             callback=cb_colormode)
-    with dpg.group(horizontal=True):
-        dpg.add_text("Label", color=list(MUTED) + [255])
-        dpg.add_input_text(tag="st_label", default_value="birth", width=-1,
-                           callback=cb_st_text("label"))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Duration", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_dur", default_value=0.5, width=-1,
-                            callback=cb_st_text("duration", float))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Shape", color=list(MUTED) + [255])
-        dpg.add_combo(tag="st_shape", items=PS.SHAPES_2D,
-                      default_value="circle", width=-1, callback=cb_st_shape)
-    with dpg.group(horizontal=True):
-        dpg.add_text("Easing", color=list(MUTED) + [255])
-        dpg.add_combo(tag="st_ease", items=PS.EASINGS,
-                      default_value="linear", width=-1, callback=cb_st_ease)
-    with dpg.group(horizontal=True):
-        dpg.add_text("Size", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_size", default_value=8, width=-1,
-                            callback=cb_st_ap("size"))
-    with dpg.group(horizontal=True):
-        dpg.add_text("SizeMax", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_sizemax", default_value=12, width=-1,
-                            callback=cb_st_ap("sizeMax"))
-    with dpg.group(horizontal=True):
-        dpg.add_text("Color", color=list(MUTED) + [255])
-        dpg.add_color_edit(tag="st_color_edit",
-                           default_value=(255, 255, 255, 255), width=-1,
-                           callback=cb_color_edit)
-        dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
-                           width=90, callback=cb_color_hex)
-    with dpg.group(horizontal=True):
-        dpg.add_text("Opacity", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_op", default_value=255, width=-1,
-                            callback=cb_st_ap("opacity",
-                                              lambda v: int(float(v))))
-    with dpg.group(horizontal=True):
-        dpg.add_text("MinSpeed", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_mins", default_value=60, width=-1,
-                            callback=cb_st_mv("minSpeed"))
-    with dpg.group(horizontal=True):
-        dpg.add_text("MaxSpd", color=list(MUTED) + [255])
-        dpg.add_input_float(tag="st_maxs", default_value=160, width=-1,
-                            callback=cb_st_mv("maxSpeed"))
-    with dpg.group(horizontal=True):
-        dpg.add_button(label="Save", callback=lambda *a: save_state(),
-                       width=90)
-        dpg.add_button(label="Delete", callback=lambda *a: del_state(),
-                       width=90)
-    with dpg.group(horizontal=True, tag="row_custom", show=False):
-        dpg.add_button(label="Upload 3D", tag="upload_btn_label",
-                       callback=lambda *a: upload_custom_model(), width=110)
-        dpg.add_text("no file", tag="custom_file_text",
-                     color=list(MUTED) + [255])
-        dpg.add_button(label="X", callback=lambda *a: clear_custom_model(),
-                       width=30)
-    with dpg.group(horizontal=True, tag="row_custom_node", show=False):
-        dpg.add_text("Node", color=list(MUTED) + [255])
-        dpg.add_combo(tag="st_node", items=["(whole file)"],
-                      default_value="(whole file)", width=-1,
-                      callback=cb_st_node)
-    dpg.add_text("", tag="custom_hint", show=False, wrap=260)
-    sec("Templates")
-    with dpg.group(horizontal=True):
-        for name in PS.TEMPLATES:
-            dpg.add_button(label=name, width=74,
-                           callback=lambda *a, u=name: apply_template(u))
-    dpg.add_button(label="Export JSON", tag="export_btn", width=-1, height=36,
-                   callback=lambda *a: do_save_as())
+    with dpg.group(tag="side_trails", show=False):
+        dpg.add_text("TRAIL SOURCE", color=list(MUTED) + [255])
+        with dpg.group(horizontal=True):
+            dpg.add_text("Enable", color=list(MUTED) + [255])
+            dpg.add_checkbox(tag="em_trail_on", callback=cb_em_bool(("trails", "enabled")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Source", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_trail_src", items=["particles", "emitter"],
+                          default_value="particles", width=-1,
+                          callback=cb_em_combo(("trails", "source")))
+        num_row("Max points", "em_trail_max", 32, cb_em_int(("trails", "maxPoints")))
+        num_row("Lifetime", "em_trail_life", 1.0, cb_em_float(("trails", "lifetime")))
+        num_row("Min dist", "em_trail_mind", 4.0, cb_em_float(("trails", "minDist")))
+        num_row("Min time", "em_trail_mint", 0.016, cb_em_float(("trails", "minTime")))
+        num_row("Smoothing", "em_trail_smooth", 0, cb_em_int(("trails", "smoothing")))
+        dpg.add_text("RIBBON GEOMETRY", color=list(MUTED) + [255])
+        num_row("Width start", "em_trail_w0", 8.0, cb_em_float(("trails", "widthStart")))
+        num_row("Width end", "em_trail_w1", 1.0, cb_em_float(("trails", "widthEnd")))
+        num_row("Taper", "em_trail_taper", 1.0, cb_em_float(("trails", "taper")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("UV mode", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_trail_uv", items=["stretch", "tile"],
+                          default_value="stretch", width=-1,
+                          callback=cb_em_combo(("trails", "uvMode")))
+        num_row("Tile length", "em_trail_tile", 64.0, cb_em_float(("trails", "tileLength")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Ribbon", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_trail_rib", items=["billboard", "fixed", "flat"],
+                          default_value="billboard", width=-1,
+                          callback=cb_em_combo(("trails", "ribbon")))
+        dpg.add_text("TRAIL COLOR", color=list(MUTED) + [255])
+        with dpg.group(horizontal=True):
+            dpg.add_text("Head", color=list(MUTED) + [255])
+            dpg.add_input_text(tag="em_trail_chead", default_value="#ffffff",
+                               width=-1, callback=cb_em_text(("trails", "colorHead")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Tail", color=list(MUTED) + [255])
+            dpg.add_input_text(tag="em_trail_ctail", default_value="#ffffff",
+                               width=-1, callback=cb_em_text(("trails", "colorTail")))
+        num_row("Alpha head", "em_trail_ahead", 255, cb_em_int(("trails", "alphaHead")))
+        num_row("Alpha tail", "em_trail_atail", 0, cb_em_int(("trails", "alphaTail")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Blend", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_trail_blend",
+                          items=["inherit"] + list(PS.BLEND_MODES),
+                          default_value="inherit", width=-1,
+                          callback=cb_em_combo(("trails", "blend")))
+        dpg.add_text("TRAIL MOTION", color=list(MUTED) + [255])
+        num_row("Gravity", "em_trail_grav", 0.0, cb_em_float(("trails", "gravity")))
+        num_row("Drag", "em_trail_drag", 0.0, cb_em_float(("trails", "drag")))
+        num_row("Noise", "em_trail_noise", 0.0, cb_em_float(("trails", "noise")))
+        dpg.add_text("TRAIL PRESETS", color=list(MUTED) + [255])
+        with dpg.group(horizontal=True):
+            for _pn, _pf in (("Comet", "trail_comet_2d"),
+                             ("Sword", "trail_sword_slash_2d"),
+                             ("Smoke", "trail_smoke_ribbon_3d"),
+                             ("Beam", "trail_energy_beam_3d")):
+                dpg.add_button(label=_pn, width=62,
+                               callback=lambda *a, u=_pf: load_trail_preset(u))
+    with dpg.group(tag="side_particles_rest"):
+        dpg.add_text("GRAVITY", color=list(MUTED) + [255])
+        num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
+        num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
+        with dpg.group(horizontal=True, tag="row_gz", show=False):
+            dpg.add_text("Gravity Z", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="em_gz", default_value=0, width=-1,
+                                callback=cb_em_float(("gravity", "z")))
+        dpg.add_text("EMISSION ZONE", color=list(MUTED) + [255])
+        with dpg.group(horizontal=True):
+            dpg.add_text("Shape", color=list(MUTED) + [255])
+            dpg.add_combo(tag="em_zshape", items=PS.ZONE_2D, default_value="Circle",
+                          width=-1, callback=cb_em_combo(("emissionZone", "shape")))
+        num_row("Rotation", "em_rot", 0, cb_zone_rot)
+        num_row("Radius", "em_radius", 10, cb_em_float(("emissionZone", "radius")))
+        num_row("Width", "em_width", 100, cb_em_float(("emissionZone", "width")))
+        num_row("Height", "em_height", 60, cb_em_float(("emissionZone", "height")))
+        num_row("Length", "em_length", 100, cb_em_float(("emissionZone", "length")))
+        with dpg.group(horizontal=True, tag="row_depth", show=False):
+            dpg.add_text("Depth", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="em_depth", default_value=60, width=-1,
+                                callback=cb_em_float(("emissionZone", "depth")))
+        with dpg.group(horizontal=True, tag="row_zonemode", show=False):
+            dpg.add_text("Mode", color=list(MUTED) + [255])
+            dpg.add_radio_button(tag="em_zonemode", items=PS.ZONE_MODE,
+                                 default_value="Surface", horizontal=True,
+                                 callback=cb_em_combo(("emissionZone", "mode")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Show zone", color=list(MUTED) + [255])
+            dpg.add_checkbox(tag="em_showzone", default_value=True,
+                             callback=cb_em_bool(("emissionZone", "showZone")))
+        dpg.add_text("PROPAGATION CONE", color=list(MUTED) + [255])
+        with dpg.group(horizontal=True):
+            dpg.add_text("Direction", color=list(MUTED) + [255], tag="dirz_label")
+            dpg.add_input_float(tag="em_dirz", default_value=0, width=-1,
+                                callback=cb_dirz)
+        with dpg.group(horizontal=True, tag="row_diry", show=False):
+            dpg.add_text("Dir. Y", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="em_diry", default_value=0, width=-1,
+                                callback=cb_em_float(("propagationCone",
+                                                      "directionY")))
+        num_row("Spread", "em_spread", 90,
+                cb_em_float(("propagationCone", "spread")))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Show cone", color=list(MUTED) + [255])
+            dpg.add_checkbox(tag="em_showcone", default_value=True,
+                             callback=cb_em_bool(("propagationCone", "showCone")))
+        sec("States")
+        with dpg.group(horizontal=True):
+            dpg.add_text("Preview", color=list(MUTED) + [255])
+            dpg.add_radio_button(tag="colormode_radio",
+                                 items=["Selected", "Gradient"],
+                                 default_value="Gradient", horizontal=True,
+                                 callback=cb_colormode)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Label", color=list(MUTED) + [255])
+            dpg.add_input_text(tag="st_label", default_value="birth", width=-1,
+                               callback=cb_st_text("label"))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Duration", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_dur", default_value=0.5, width=-1,
+                                callback=cb_st_text("duration", float))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Shape", color=list(MUTED) + [255])
+            dpg.add_combo(tag="st_shape", items=PS.SHAPES_2D,
+                          default_value="circle", width=-1, callback=cb_st_shape)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Easing", color=list(MUTED) + [255])
+            dpg.add_combo(tag="st_ease", items=PS.EASINGS,
+                          default_value="linear", width=-1, callback=cb_st_ease)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Size", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_size", default_value=8, width=-1,
+                                callback=cb_st_ap("size"))
+        with dpg.group(horizontal=True):
+            dpg.add_text("SizeMax", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_sizemax", default_value=12, width=-1,
+                                callback=cb_st_ap("sizeMax"))
+        with dpg.group(horizontal=True):
+            dpg.add_text("Color", color=list(MUTED) + [255])
+            dpg.add_color_edit(tag="st_color_edit",
+                               default_value=(255, 255, 255, 255), width=-1,
+                               callback=cb_color_edit)
+            dpg.add_input_text(tag="st_color_hex", default_value="#ffffff",
+                               width=90, callback=cb_color_hex)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Opacity", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_op", default_value=255, width=-1,
+                                callback=cb_st_ap("opacity",
+                                                  lambda v: int(float(v))))
+        with dpg.group(horizontal=True):
+            dpg.add_text("MinSpeed", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_mins", default_value=60, width=-1,
+                                callback=cb_st_mv("minSpeed"))
+        with dpg.group(horizontal=True):
+            dpg.add_text("MaxSpd", color=list(MUTED) + [255])
+            dpg.add_input_float(tag="st_maxs", default_value=160, width=-1,
+                                callback=cb_st_mv("maxSpeed"))
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="Save", callback=lambda *a: save_state(),
+                           width=90)
+            dpg.add_button(label="Delete", callback=lambda *a: del_state(),
+                           width=90)
+        with dpg.group(horizontal=True, tag="row_custom", show=False):
+            dpg.add_button(label="Upload 3D", tag="upload_btn_label",
+                           callback=lambda *a: upload_custom_model(), width=110)
+            dpg.add_text("no file", tag="custom_file_text",
+                         color=list(MUTED) + [255])
+            dpg.add_button(label="X", callback=lambda *a: clear_custom_model(),
+                           width=30)
+        with dpg.group(horizontal=True, tag="row_custom_node", show=False):
+            dpg.add_text("Node", color=list(MUTED) + [255])
+            dpg.add_combo(tag="st_node", items=["(whole file)"],
+                          default_value="(whole file)", width=-1,
+                          callback=cb_st_node)
+        dpg.add_text("", tag="custom_hint", show=False, wrap=260)
+        sec("Templates")
+        with dpg.group(horizontal=True):
+            for name in PS.TEMPLATES:
+                dpg.add_button(label=name, width=74,
+                               callback=lambda *a, u=name: apply_template(u))
+        dpg.add_button(label="Export JSON", tag="export_btn", width=-1, height=36,
+                       callback=lambda *a: do_save_as())
 
 
 def build_topbar():
@@ -2748,6 +2789,9 @@ def _apply_loaded_effect(eff, path):
     APP.ptype = eff.get("type", "2d")
     if APP.ptype not in ("2d", "3d"):
         APP.ptype = "2d"
+    if PS.trails_active((eff.get("emitter") or {}).get("trails")):
+        APP.trail = True
+        APP.editor_mode = "trail3d" if APP.ptype == "3d" else "trail2d"
     set_type(APP.ptype, commit=False)
     APP.states = eff.get("states", APP.states)
     APP.sel_state = 0
@@ -2762,6 +2806,15 @@ def _apply_loaded_effect(eff, path):
     APP.history_commit()
     if _warns:
         APP.set_status("Migrated: " + " | ".join(_warns)[:200], WARN)
+
+
+@_safe_action
+def load_trail_preset(name):
+    """Load a bundled trail preset file (presets/ beside the app root)."""
+    p = os.path.join(PS.app_base_dir(), "presets", name + ".json")
+    with open(p, encoding="utf-8") as f:
+        eff = json.load(f)
+    _apply_loaded_effect(eff, p)
 
 
 def dialog_pick(app_data):
