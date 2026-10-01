@@ -511,7 +511,8 @@ class GradientEditor:
             with dpg.group(horizontal=True):
                 dpg.add_color_edit(tag=self.tag + "_pick",
                                    default_value=[255, 255, 255, 255],
-                                   width=80, callback=self.on_pick)
+                                   width=110, height=30, no_inputs=True,
+                                   callback=self.on_pick)
                 dpg.add_input_int(tag=self.tag + "_aval", default_value=255,
                                   width=-1, step=1, step_fast=10,
                                   callback=self.on_alpha)
