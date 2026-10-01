@@ -46,6 +46,74 @@
         "seed": {
           "type": "number"
         },
+        "trails": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "maxPoints": {
+              "type": "number"
+            },
+            "lifetime": {
+              "type": "number"
+            },
+            "minDist": {
+              "type": "number"
+            },
+            "minTime": {
+              "type": "number"
+            },
+            "smoothing": {
+              "type": "number"
+            },
+            "widthStart": {
+              "type": "number"
+            },
+            "widthEnd": {
+              "type": "number"
+            },
+            "taper": {
+              "type": "number"
+            },
+            "uvMode": {
+              "type": "string"
+            },
+            "tileLength": {
+              "type": "number"
+            },
+            "ribbon": {
+              "type": "string"
+            },
+            "colorHead": {
+              "type": "string"
+            },
+            "colorTail": {
+              "type": "string"
+            },
+            "alphaHead": {
+              "type": "number"
+            },
+            "alphaTail": {
+              "type": "number"
+            },
+            "blend": {
+              "type": "string"
+            },
+            "gravity": {
+              "type": "number"
+            },
+            "drag": {
+              "type": "number"
+            },
+            "noise": {
+              "type": "number"
+            }
+          }
+        },
         "fields": {
           "type": "object",
           "properties": {
