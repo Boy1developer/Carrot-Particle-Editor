@@ -14,6 +14,7 @@ import sysconfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "core", "particle_core.cpp")
+HDRS = [os.path.join(ROOT, "core", f) for f in os.listdir(os.path.join(ROOT, "core")) if f.endswith(".h")]
 OUT = os.path.join(ROOT, "particle_core.pyd")
 INC = sysconfig.get_paths()["include"]
 LIB = os.path.join(sys.base_prefix, "libs")

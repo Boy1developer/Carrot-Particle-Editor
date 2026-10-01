@@ -36,11 +36,13 @@ def main():
     # 0) syntax gate (ImGui app + Tk fallback share the logic layer)
     run([sys.executable, "-m", "py_compile", "editor/studio_imgui.py"])
     run([sys.executable, "-m", "py_compile", "editor/particle_studio.py"])
-    # 1) refresh C++ core when its source is newer than the built .pyd
-    src = os.path.join(ROOT, "core", "particle_core.cpp")
+    # 1) refresh C++ core when its sources are newer than the built .pyd
+    srcs = [os.path.join(ROOT, "core", f)
+            for f in os.listdir(os.path.join(ROOT, "core"))
+            if f.endswith((".cpp", ".h"))]
     pyd = os.path.join(ROOT, "particle_core.pyd")
-    if os.path.isfile(src) and (not os.path.isfile(pyd)
-                                or os.path.getmtime(src) > os.path.getmtime(pyd)):
+    if srcs and (not os.path.isfile(pyd) or max(
+            os.path.getmtime(s) for s in srcs) > os.path.getmtime(pyd)):
         print("== C++ core stale -> rebuilding ==")
         run([sys.executable, "core/build_core.py"])
     # 2) refuse to build over a running app (Windows locks the file)
