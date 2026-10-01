@@ -85,7 +85,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 - **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` (or images for 2D). Models render as themselves in the viewport, the browser preview, and in-game. Rigged/skinned GLBs are baked to their rest pose automatically.
 - **Per-state colors** — birth / mid / death each keep their own color. White means natural materials; any other color tints over the base.
 - **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping.
-- **Ready-made templates** — Explosion, Fire, Rain, Snow, and more.
+- **Ready-made templates** — Explosion, Fire, Rain, Snow.
 - **Force fields** *(v1.1)* — age-phased turbulence, Y-axis vortex, linear-falloff attractor, and a bounce/friction collision plane. All off by default (legacy motion stays bit-identical).
 - **Deterministic seed** — a nonzero `seed` replays the identical effect everywhere: editor (Python + C++), browser preview, and GDevelop runtime. `0` keeps legacy unseeded behavior.
 - **Blend modes** — Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay, selectable per emitter.
@@ -184,6 +184,8 @@ Everything that must stay identical across Python, C++, the browser preview, and
 
 CI runs the parity, behavior, and contract checks on every push (`.github/workflows/ci.yml`).
 
+> **Naming note:** the editor UI is built on Dear PyGui, which wraps Dear ImGui — that is why the UI test files are prefixed `test_imgui_`.
+
 <details>
 <summary><b>Full test matrix</b></summary>
 
@@ -223,9 +225,9 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 ## 🛣️ Roadmap
 
 **Done**
-- [x] Ready-made effect presets (fire, smoke, sparks, magic)
+- [x] Ready-made effect templates (Explosion, Fire, Rain, Snow)
 - [x] CI for parity and behavior tests
-- [x] Screenshots and a step-by-step GDevelop tutorial
+- [x] Screenshots and a step-by-step GDevelop guide
 - [x] InstancedMesh batching, lazy buckets, sampling diet *(v0.1.2)*
 - [x] Screen / Lighten / Overlay blend modes *(v0.1.2)*
 - [x] Deterministic seed + force fields *(v0.1.2)*
