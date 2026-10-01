@@ -1337,6 +1337,15 @@ def paint_front_2d(dl, W, H, ex, ey):
                     segments=20)
 
 
+def trails_on(app, em):
+    """Trail mode with an active block → ribbons only (dots hidden)."""
+    try:
+        return bool(getattr(app, "trail", False)) and PS.trails_active(
+            (em or {}).get("trails"))
+    except Exception:
+        return False
+
+
 def _smooth_pts(pts, subdiv):
     """Catmull-Rom subdivision (0 = off). Points are (x, y) or (x, y, z)."""
     if subdiv <= 0 or len(pts) < 4:
@@ -1387,7 +1396,9 @@ def paint_trails_2d(app, dl, eff):
 
 def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
-    paint_dots_2d(app, dl, tracks)
+    em = (eff.get("emitter") or {}) if eff else None
+    if not trails_on(app, em):
+        paint_dots_2d(app, dl, tracks)
     paint_trails_2d(app, dl, eff)
     paint_front_2d(dl, W, H, ex, ey)
 
@@ -1609,7 +1620,8 @@ def paint_trails_3d(app, dl, cx, cy, eff):
 
 def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
     paint_back_3d(app, dl, W, H, cx, cy, em)
-    paint_dots_3d(app, dl, cx, cy, tracks)
+    if not trails_on(app, em):
+        paint_dots_3d(app, dl, cx, cy, tracks)
     paint_trails_3d(app, dl, cx, cy, {"emitter": em} if em is not None else None)
     paint_front_3d(app, dl, W, H, cx, cy)
 
@@ -3693,7 +3705,8 @@ def frame():
                     eff.get("emitter", {}).get("propagationCone", {}))
             n_show = cpp_n if cpp_active else len(APP.sim.parts)
             _fr, _tag = None, ""
-            if RV is not None and RV.should_raster(APP, n_show):
+            _tv = trails_on(APP, (eff.get("emitter") or {}) if eff else None)
+            if RV is not None and not _tv and RV.should_raster(APP, n_show):
                 try:
                     if is3d:
                         _fr = RV.frame_3d(APP, APP.sim._cpp_out, W, H, cx, cy)
