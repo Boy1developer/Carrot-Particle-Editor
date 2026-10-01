@@ -488,6 +488,178 @@ def default_trails():
     }
 
 
+def default_trails():
+    """Trails/ribbons block (additive, off by default = legacy look).
+
+    Mirrors Unity's Trail Renderer + Trails module (see TRAIL_SCHEMA for
+    labels, ranges, tooltips, 2D/3D applicability). Curves are key lists
+    [[x, y(, mode)]], gradients are stop lists [[pos, value]].
+    source: "particles" (one trail per particle) or "emitter" (trail
+    follows the emitter point). Points are pushed only when
+    minDist/minTime is exceeded; smoothing = Catmull-Rom subdivisions
+    (0 = off). 2D ribbons are flat strips; 3D ribbons are either
+    camera-facing ("billboard") or "fixed"-axis. Colors lerp head ->
+    tail; blend "inherit" uses the emitter blendingMode. noise reuses
+    the fields turbulence scale/speed as the point-noise basis.
+    """
+    return {
+        # A. core behaviour
+        "enabled": False,
+        "source": "particles",
+        "maxPoints": 32,
+        "lifetime": 1.0,
+        "minDist": 4.0,
+        "minTime": 0.016,
+        "autodestruct": False,
+        "timeScale": 1.0,
+        "space": "world",
+        "fadeStop": 0.0,
+        # B. shape
+        "widthStart": 8.0,
+        "widthEnd": 1.0,
+        "widthMult": 1.0,
+        "widthCurve": [[0.0, 1.0], [1.0, 1.0]],
+        "smoothing": 0,
+        "cornerVerts": 0,
+        "capVerts": 0,
+        "capStyle": "flat",
+        "ribbon": "billboard",
+        "taper": 1.0,
+        "taperHead": False,
+        "taperTail": True,
+        "wNoiseAmt": 0.0,
+        "wNoiseScale": 0.05,
+        "simplifyTol": 0.0,
+        # C. color
+        "colorHead": "#ffffff",
+        "colorTail": "#ffffff",
+        "alphaHead": 255,
+        "alphaTail": 0,
+        "colorStops": [[0.0, "#ffffff"], [1.0, "#ffffff"]],
+        "alphaStops": [[0.0, 255], [1.0, 0]],
+        "lifeColorStops": [[0.0, "#ffffff"], [1.0, "#ffffff"]],
+        "lifeAlphaStops": [[0.0, 255], [1.0, 255]],
+        "intensity": 1.0,
+        "inheritColor": False,
+        "fadeTail": False,
+        "tailLen": 0.25,
+        # D. texture
+        "texture": "",
+        "blend": "inherit",
+        "uvMode": "stretch",
+        "tileLength": 64.0,
+        "tileX": 1.0,
+        "tileY": 1.0,
+        "offX": 0.0,
+        "offY": 0.0,
+        "scrollU": 0.0,
+        "scrollV": 0.0,
+        "flipCols": 0,
+        "flipRows": 0,
+        "flipFPS": 0.0,
+        # E. per-particle options
+        "trailMode": "per-particle",
+        "ratio": 1.0,
+        "sizeAffectsWidth": False,
+        "sizeAffectsLifetime": False,
+        "dieWithParticles": True,
+        "splitRibbons": False,
+        "attachRibbons": False,
+        # F. lighting & sorting
+        "genLighting": False,
+        "castShadow": False,
+        "receiveShadow": False,
+        "sortLayer": "",
+        "sortOrder": 0,
+        "softFade": 0.0,
+        # legacy motion extras (kept)
+        "gravity": 0.0,
+        "drag": 0.0,
+        "noise": 0.0,
+    }
+
+
+# One settings schema: key, label, type, min, max, step, tooltip,
+# section (A..G), modes ("2d3d" or "3d"). The inspector is generated
+# from this list, so adding a field = adding one entry here plus its
+# default above (a test asserts both stay in sync).
+TRAIL_SCHEMA = [
+    # A. core behaviour
+    {"key": "enabled", "label": "Emitting", "type": "bool", "hint": "Start/stop adding new points to the trail.", "sec": "A", "modes": "2d3d"},
+    {"key": "lifetime", "label": "Time", "type": "float", "min": 0.05, "max": 30.0, "step": 0.05, "hint": "Seconds a point lives before it fades out of the trail.", "sec": "A", "modes": "2d3d"},
+    {"key": "minDist", "label": "Min Vertex Dist", "type": "float", "min": 0.0, "max": 200.0, "step": 0.5, "hint": "New point only after the source moved this far.", "sec": "A", "modes": "2d3d"},
+    {"key": "minTime", "label": "Min Time", "type": "float", "min": 0.0, "max": 1.0, "step": 0.004, "hint": "Minimum seconds between points.", "sec": "A", "modes": "2d3d"},
+    {"key": "autodestruct", "label": "Autodestruct", "type": "bool", "hint": "Remove the trail object when it has no points left.", "sec": "A", "modes": "2d3d"},
+    {"key": "timeScale", "label": "Time Scale", "type": "float", "min": 0.0, "max": 5.0, "step": 0.05, "hint": "Slow-mo / speed-up trail aging independent of the emitter.", "sec": "A", "modes": "2d3d"},
+    {"key": "space", "label": "Space", "type": "combo", "items": ["world", "local"], "hint": "World: trail stays where drawn. Local: trail follows its parent.", "sec": "A", "modes": "2d3d"},
+    {"key": "fadeStop", "label": "Fade Out On Stop", "type": "float", "min": 0.0, "max": 10.0, "step": 0.1, "hint": "Smooth shrink (seconds) when Emitting is turned off. 0 = off.", "sec": "A", "modes": "2d3d"},
+    {"key": "maxPoints", "label": "Max Points", "type": "int", "min": 2, "max": 512, "step": 1, "hint": "Hard cap = preallocation size per trail.", "sec": "A", "modes": "2d3d"},
+    {"key": "source", "label": "Source", "type": "combo", "items": ["particles", "emitter"], "hint": "Follow each spawned particle, or the emitter point itself.", "sec": "A", "modes": "2d3d"},
+    # B. shape
+    {"key": "widthStart", "label": "Width Head", "type": "float", "min": 0.0, "max": 400.0, "step": 0.5, "hint": "Ribbon width at the head (newest point).", "sec": "B", "modes": "2d3d"},
+    {"key": "widthEnd", "label": "Width Tail", "type": "float", "min": 0.0, "max": 400.0, "step": 0.5, "hint": "Ribbon width at the tail (oldest point).", "sec": "B", "modes": "2d3d"},
+    {"key": "widthMult", "label": "Width Multiplier", "type": "float", "min": 0.0, "max": 10.0, "step": 0.05, "hint": "Scales the whole width curve.", "sec": "B", "modes": "2d3d"},
+    {"key": "widthCurve", "label": "Width Curve", "type": "curve", "hint": "Width over trail length: 0 = head, 1 = tail.", "sec": "B", "modes": "2d3d"},
+    {"key": "smoothing", "label": "Smoothing", "type": "int", "min": 0, "max": 8, "step": 1, "hint": "Catmull-Rom subdivisions between points. 0 = off.", "sec": "B", "modes": "2d3d"},
+    {"key": "cornerVerts", "label": "Corner Vertices", "type": "int", "min": 0, "max": 90, "step": 1, "hint": "Extra vertices smoothing sharp bends. 0 = off.", "sec": "B", "modes": "2d3d"},
+    {"key": "capVerts", "label": "End Cap Vertices", "type": "int", "min": 0, "max": 90, "step": 1, "hint": "Round cap resolution at head/tail. 0 = off.", "sec": "B", "modes": "2d3d"},
+    {"key": "capStyle", "label": "Cap Style", "type": "combo", "items": ["flat", "round", "arrow"], "hint": "Head/tail cap shape.", "sec": "B", "modes": "2d3d"},
+    {"key": "ribbon", "label": "Alignment", "type": "combo", "items": ["billboard", "fixed", "flat"], "hint": "Billboard = camera-facing (View). Fixed = Transform Z axis. Flat = 2D strip.", "sec": "B", "modes": "2d3d"},
+    {"key": "taperHead", "label": "Taper Head", "type": "bool", "hint": "Pinch the ribbon to a point at the head.", "sec": "B", "modes": "2d3d"},
+    {"key": "taperTail", "label": "Taper Tail", "type": "bool", "hint": "Pinch the ribbon to a point at the tail.", "sec": "B", "modes": "2d3d"},
+    {"key": "taper", "label": "Taper Power", "type": "float", "min": 0.1, "max": 4.0, "step": 0.05, "hint": "Exponent shaping head→tail width falloff.", "sec": "B", "modes": "2d3d"},
+    {"key": "wNoiseAmt", "label": "Width Noise", "type": "float", "min": 0.0, "max": 50.0, "step": 0.5, "hint": "Organic width wobble amount. 0 = off.", "sec": "B", "modes": "2d3d"},
+    {"key": "wNoiseScale", "label": "Width Noise Scale", "type": "float", "min": 0.001, "max": 2.0, "step": 0.005, "hint": "Spatial frequency of the width wobble.", "sec": "B", "modes": "2d3d"},
+    {"key": "simplifyTol", "label": "Simplify Tol.", "type": "float", "min": 0.0, "max": 20.0, "step": 0.1, "hint": "Douglas-Peucker tolerance: drops points on straight runs. 0 = off.", "sec": "B", "modes": "2d3d"},
+    # C. color
+    {"key": "colorStops", "label": "Color Stops", "type": "gradient-color", "hint": "Color along trail length: 0 = head, 1 = tail.", "sec": "C", "modes": "2d3d"},
+    {"key": "alphaStops", "label": "Alpha Stops", "type": "gradient-alpha", "hint": "Opacity along trail length: 0 = head, 1 = tail.", "sec": "C", "modes": "2d3d"},
+    {"key": "lifeColorStops", "label": "Color Over Life", "type": "gradient-color", "hint": "Tint by trail/particle age.", "sec": "C", "modes": "2d3d"},
+    {"key": "lifeAlphaStops", "label": "Alpha Over Life", "type": "gradient-alpha", "hint": "Fade by trail/particle age.", "sec": "C", "modes": "2d3d"},
+    {"key": "intensity", "label": "Intensity", "type": "float", "min": 0.0, "max": 8.0, "step": 0.05, "hint": "HDR multiplier for additive glow.", "sec": "C", "modes": "2d3d"},
+    {"key": "inheritColor", "label": "Inherit Particle Color", "type": "bool", "hint": "Tint each trail by its particle color (per-particle sources).", "sec": "C", "modes": "2d3d"},
+    {"key": "fadeTail", "label": "Fade Tail", "type": "bool", "hint": "Quick soft fade without editing the gradient.", "sec": "C", "modes": "2d3d"},
+    {"key": "tailLen", "label": "Fade Length %", "type": "float", "min": 0.05, "max": 1.0, "step": 0.05, "hint": "Fraction of the trail the quick fade covers.", "sec": "C", "modes": "2d3d"},
+    {"key": "colorHead", "label": "Head Color (legacy)", "type": "color", "hint": "Kept for old files; the gradient above wins when edited.", "sec": "C", "modes": "2d3d"},
+    {"key": "colorTail", "label": "Tail Color (legacy)", "type": "color", "hint": "Kept for old files; the gradient above wins when edited.", "sec": "C", "modes": "2d3d"},
+    {"key": "alphaHead", "label": "Head Alpha (legacy)", "type": "int", "min": 0, "max": 255, "step": 1, "hint": "Kept for old files.", "sec": "C", "modes": "2d3d"},
+    {"key": "alphaTail", "label": "Tail Alpha (legacy)", "type": "int", "min": 0, "max": 255, "step": 1, "hint": "Kept for old files.", "sec": "C", "modes": "2d3d"},
+    # D. texture
+    {"key": "texture", "label": "Texture", "type": "file", "hint": "Sprite strip reused from the model/image loader. Empty = untextured.", "sec": "D", "modes": "2d3d"},
+    {"key": "blend", "label": "Blend Mode", "type": "combo", "items": ["inherit", "Normal", "Additive", "Subtractive", "Multiply", "Screen", "Lighten", "Overlay"], "hint": "Inherit uses the emitter blending mode.", "sec": "D", "modes": "2d3d"},
+    {"key": "uvMode", "label": "Texture Mode", "type": "combo", "items": ["stretch", "tile", "distribute", "repeat"], "hint": "Stretch / Tile / Distribute Per Segment / Repeat Per Segment.", "sec": "D", "modes": "2d3d"},
+    {"key": "tileLength", "label": "Tile Length", "type": "float", "min": 1.0, "max": 2048.0, "step": 1.0, "hint": "World units per texture repeat.", "sec": "D", "modes": "2d3d"},
+    {"key": "tileX", "label": "Tiling X", "type": "float", "min": 0.01, "max": 64.0, "step": 0.05, "hint": "U repeats.", "sec": "D", "modes": "2d3d"},
+    {"key": "tileY", "label": "Tiling Y", "type": "float", "min": 0.01, "max": 64.0, "step": 0.05, "hint": "V repeats.", "sec": "D", "modes": "2d3d"},
+    {"key": "offX", "label": "Offset X", "type": "float", "min": -8.0, "max": 8.0, "step": 0.01, "hint": "U offset.", "sec": "D", "modes": "2d3d"},
+    {"key": "offY", "label": "Offset Y", "type": "float", "min": -8.0, "max": 8.0, "step": 0.01, "hint": "V offset.", "sec": "D", "modes": "2d3d"},
+    {"key": "scrollU", "label": "Scroll U", "type": "float", "min": -8.0, "max": 8.0, "step": 0.05, "hint": "Animated U flow (energy beams, water).", "sec": "D", "modes": "2d3d"},
+    {"key": "scrollV", "label": "Scroll V", "type": "float", "min": -8.0, "max": 8.0, "step": 0.05, "hint": "Animated V flow.", "sec": "D", "modes": "2d3d"},
+    {"key": "flipCols", "label": "Flipbook Cols", "type": "int", "min": 0, "max": 16, "step": 1, "hint": "Animated sheet columns. 0 = off.", "sec": "D", "modes": "2d3d"},
+    {"key": "flipRows", "label": "Flipbook Rows", "type": "int", "min": 0, "max": 16, "step": 1, "hint": "Animated sheet rows. 0 = off.", "sec": "D", "modes": "2d3d"},
+    {"key": "flipFPS", "label": "Flipbook FPS", "type": "float", "min": 0.0, "max": 120.0, "step": 1.0, "hint": "Sheet playback rate.", "sec": "D", "modes": "2d3d"},
+    # E. per-particle options
+    {"key": "trailMode", "label": "Mode", "type": "combo", "items": ["per-particle", "ribbon"], "hint": "One trail per particle, or one connected ribbon across all particles.", "sec": "E", "modes": "2d3d"},
+    {"key": "ratio", "label": "Ratio", "type": "float", "min": 0.0, "max": 1.0, "step": 0.05, "hint": "Fraction of particles that get a trail.", "sec": "E", "modes": "2d3d"},
+    {"key": "sizeAffectsWidth", "label": "Size Affects Width", "type": "bool", "hint": "Scale ribbon width by particle size.", "sec": "E", "modes": "2d3d"},
+    {"key": "sizeAffectsLifetime", "label": "Size Affects Lifetime", "type": "bool", "hint": "Scale point lifetime by particle size.", "sec": "E", "modes": "2d3d"},
+    {"key": "dieWithParticles", "label": "Die With Particles", "type": "bool", "hint": "Kill the trail when its particle dies.", "sec": "E", "modes": "2d3d"},
+    {"key": "splitRibbons", "label": "Split Sub-Emitter Ribbons", "type": "bool", "hint": "Future: separate ribbons per sub-emitter.", "sec": "E", "modes": "2d3d"},
+    {"key": "attachRibbons", "label": "Attach Ribbons To Transform", "type": "bool", "hint": "Future: ribbons follow a scene transform.", "sec": "E", "modes": "2d3d"},
+    # F. lighting & sorting
+    {"key": "genLighting", "label": "Generate Lighting Data", "type": "bool", "hint": "Emit normals/tangents. 3D only.", "sec": "F", "modes": "3d"},
+    {"key": "castShadow", "label": "Cast Shadows", "type": "bool", "hint": "3D only.", "sec": "F", "modes": "3d"},
+    {"key": "receiveShadow", "label": "Receive Shadows", "type": "bool", "hint": "3D only.", "sec": "F", "modes": "3d"},
+    {"key": "sortLayer", "label": "Sorting Layer", "type": "text", "hint": "2D z-order group name.", "sec": "F", "modes": "2d3d"},
+    {"key": "sortOrder", "label": "Order In Layer", "type": "int", "min": -100, "max": 100, "step": 1, "hint": "Render order inside the layer.", "sec": "F", "modes": "2d3d"},
+    {"key": "softFade", "label": "Soft Depth Fade", "type": "float", "min": 0.0, "max": 10.0, "step": 0.1, "hint": "Soften hard intersections with geometry. 3D only, 0 = off.", "sec": "F", "modes": "3d"},
+    # legacy motion extras (kept, section G-adjacent motion group)
+    {"key": "gravity", "label": "Point Gravity", "type": "float", "min": -2000.0, "max": 2000.0, "step": 1.0, "hint": "Extra gravity applied to trail points.", "sec": "G", "modes": "2d3d"},
+    {"key": "drag", "label": "Point Drag", "type": "float", "min": 0.0, "max": 10.0, "step": 0.05, "hint": "Velocity damping on trail points.", "sec": "G", "modes": "2d3d"},
+    {"key": "noise", "label": "Point Noise", "type": "float", "min": 0.0, "max": 200.0, "step": 1.0, "hint": "Turbulence on trail points (reuses field scale/speed).", "sec": "G", "modes": "2d3d"},
+]
+
+
 def trails_active(t):
     """Single cheap gate: no enabled flag -> skip all trail math."""
     if not isinstance(t, dict):
@@ -496,6 +668,125 @@ def trails_active(t):
         return bool(t.get("enabled", False)) and int(t.get("maxPoints", 0) or 0) > 1
     except (ValueError, TypeError):
         return False
+
+
+def _clamp_num(v, lo, hi):
+    try:
+        f = float(v)
+    except (ValueError, TypeError):
+        return None
+    if lo is not None:
+        f = max(lo, f)
+    if hi is not None:
+        f = min(hi, f)
+    return f
+
+
+def sanitize_trails(t):
+    """Clamp + fill a trails block per TRAIL_SCHEMA (pure, shared by UIs)."""
+    d = default_trails()
+    if isinstance(t, dict):
+        for k, v in t.items():
+            if k in d:
+                d[k] = v
+    for f in TRAIL_SCHEMA:
+        k = f["key"]
+        ty = f["type"]
+        v = d.get(k)
+        if ty == "bool":
+            d[k] = bool(v)
+        elif ty == "int":
+            c = _clamp_num(v, f.get("min"), f.get("max"))
+            d[k] = int(c) if c is not None else default_trails()[k]
+        elif ty == "float":
+            c = _clamp_num(v, f.get("min"), f.get("max"))
+            d[k] = float(c) if c is not None else default_trails()[k]
+        elif ty == "combo":
+            s = str(v or "")
+            d[k] = s if s in f["items"] else default_trails()[k]
+        elif ty in ("color", "text", "file"):
+            d[k] = str(v or "")
+    return d
+
+
+def _parse_hex6(s):
+    h = str(s or "#ffffff").lstrip("#")
+    if len(h) == 3:
+        h = h[0] * 2 + h[1] * 2 + h[2] * 2
+    try:
+        n = int(h[:6], 16)
+        return ((n >> 16) & 255, (n >> 8) & 255, n & 255)
+    except ValueError:
+        return (255, 255, 255)
+
+
+def _eval_keys(keys, t, default=1.0):
+    """Piecewise keys [[x, y(, mode)]] at t in [0,1] (pure, shared spec).
+
+    mode per segment (from the LEFT key): linear | smooth | constant.
+    """
+    try:
+        pts = sorted([[float(k[0]), float(k[1]),
+                       str(k[2]).lower() if len(k) > 2 else "smooth"]
+                      for k in (keys or []) if len(k) >= 2])
+    except (ValueError, TypeError, IndexError):
+        return default
+    if not pts:
+        return default
+    if t <= pts[0][0]:
+        return pts[0][1]
+    if t >= pts[-1][0]:
+        return pts[-1][1]
+    for (x0, y0, m), (x1, y1, _m1) in zip(pts, pts[1:]):
+        if x0 <= t <= x1:
+            u = 0.0 if x1 <= x0 else (t - x0) / (x1 - x0)
+            if m == "constant":
+                return y0
+            if m == "linear":
+                return y0 + (y1 - y0) * u
+            s = u * u * (3.0 - 2.0 * u)
+            return y0 + (y1 - y0) * s
+    return pts[-1][1]
+
+
+def bake_curve(keys, n=64):
+    """Bake a width curve to an n-sample LUT (recomputed only on change)."""
+    n = max(2, int(n))
+    return [_eval_keys(keys, i / (n - 1)) for i in range(n)]
+
+
+def bake_gradient(color_stops, alpha_stops, n=256):
+    """Bake gradients to per-index (r, g, b, a) ints (recomputed on change)."""
+    n = max(2, int(n))
+    out = []
+    try:
+        cs = sorted([[float(k[0]), str(k[1])] for k in (color_stops or [])
+                     if len(k) >= 2])
+        aa = sorted([[float(k[0]), float(k[1])] for k in (alpha_stops or [])
+                     if len(k) >= 2])
+    except (ValueError, TypeError, IndexError):
+        cs, aa = [], []
+    for i in range(n):
+        t = i / (n - 1)
+        r = g = b = 255
+        if cs:
+            c0, c1, u = cs[0][1], cs[-1][1], 0.0
+            for j in range(len(cs) - 1):
+                if cs[j][0] <= t <= cs[j + 1][0]:
+                    c0, c1 = cs[j][1], cs[j + 1][1]
+                    span = cs[j + 1][0] - cs[j][0]
+                    u = 0.0 if span <= 0 else (t - cs[j][0]) / span
+                    break
+            r0, g0, b0 = _parse_hex6(c0)
+            r1, g1, b1 = _parse_hex6(c1)
+            r = round(r0 + (r1 - r0) * u)
+            g = round(g0 + (g1 - g0) * u)
+            b = round(b0 + (b1 - b0) * u)
+        a = 255
+        if aa:
+            a = _eval_keys([[x, v] for x, v in aa], t, 255.0)
+        out.append((int(r), int(g), int(b), int(max(0, min(255, round(a))))))
+    return out
 
 
 def field_accel(x, y, z, age, f, ex, ey, ez, flat):

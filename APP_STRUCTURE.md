@@ -70,14 +70,18 @@ Carrot-Particle-Editor/
 
 | المسار | الدور |
 |---|---|
-| `editor/studio_imgui.py` | الإديتور الرئيسي: Dear PyGui/ImGui + drawlist viewport + C++/Python sim + سيرفر المعاينة + تصدير JSON + undo/redo |
-| `editor/particle_studio.py` | نسخة Tk الاحتياطية + طبقة اللوجيك المشتركة (defaults/templates/validation/sim) + `app_base_dir()` لجذر الريبو |
+| `editor/studio_imgui.py` | الإديتور الرئيسي: Dear PyGui/ImGui + drawlist viewport + C++/Python sim + سيرفر المعاينة + تصدير JSON + undo/redo + Trails inspector المولّد من `TRAIL_SCHEMA` |
+| `editor/trail_widgets.py` | ودجت المنحنيات/التدرجات القابلة لإعادة الاستخدام (drawlist + mouse handlers، حدث واحد عند الإفلات، LUT bake عند التغيير فقط) |
+| `editor/particle_studio.py` | نسخة Tk الاحتياطية + طبقة اللوجيك المشتركة (defaults/templates/validation/sim) + `TRAIL_SCHEMA` و `default_trails()` و `bake_curve/bake_gradient` + `app_base_dir()` لجذر الريبو |
 | `tests/test_imgui_*.py` | اختبارات headless: nav/splitter/type-switch + logic/parity + build + color |
+| `tests/test_trails_*.py` | اختبارات الـ trails: schema sync + roundtrip/heal + parity Python↔C++ (LUTs) + perf (300×32) |
 | `tools/rebuild_app.py` | `python tools/rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` |
 | `tools/make_icon.py` | توليد الأيقونات الشفافة من `assets/download.png` |
 | `packaging/CarrotParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` |
 | `AdvancedParticleEmitter.json` | إكستنشن GDevelop كما هو — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) |
 | `sample_effect.json` | مثال export متوافق v1.0 |
+| `sample_trail_effect.json` | مثال trails (width curve + color gradient + texture scroll، 3D additive) |
+| `presets/trail_*.json` | بريسيتات الـ trails (Comet/Sword/Smoke/Beam/Neon/Rocket/Wand — ملفات effect عادية تُشحن مع الـ exe) |
 | `assets/download.png` | الأرت الأصلي — مصدر `assets/app_icon.*` |
 | `package.json` | `three@0.186 + pixi.js@8.21 + typescript@7 + esbuild@0.28` |
 | `particle_core.pyd` | نواة C++ المبنية فعليًا (غير ملتزمة) |
@@ -88,7 +92,7 @@ Carrot-Particle-Editor/
 
 | الملف | الدور | سطور |
 |---|---|---:|
-| `particle_core.cpp` | `step()` يخرج `x,y,z,r,color,shape,depth + alpha,wx,wy` — نفس `SHAPE_ORDER` (12 شكل) ونفس semantics الـ morph | 516 |
+| `particle_core.cpp` | `step()` يخرج `x,y,z,r,color,shape,depth + alpha,wx,wy` — نفس `SHAPE_ORDER` (12 شكل) ونفس semantics الـ morph + `TrailCfg` (parse إعدادات الـ trails و LUTs مطابقة Python حرفيًا) | 516 |
 | `build_core.py` | ترتيب الكومبايلر: `cl > g++ > clang++ > Zig` (تثبيت تلقائي) — الخرج `particle_core.pyd` في جذر الريبو | 83 |
 | `test_parity.py` | تطابق عددي Python↔C++ (99/99 ناجح) | 56 |
 | `test_behavior.py` | سلوك + أداء (~4ms عند 2000 جسيم) | 96 |

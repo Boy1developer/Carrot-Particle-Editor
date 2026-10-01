@@ -75,7 +75,97 @@
       "blend": "inherit",
       "gravity": 0.0,
       "drag": 0.0,
-      "noise": 0.0
+      "noise": 0.0,
+      "autodestruct": false,
+      "timeScale": 1.0,
+      "space": "world",
+      "fadeStop": 0.0,
+      "widthMult": 1.0,
+      "widthCurve": [
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "cornerVerts": 0,
+      "capVerts": 0,
+      "capStyle": "flat",
+      "taperHead": false,
+      "taperTail": true,
+      "wNoiseAmt": 0.0,
+      "wNoiseScale": 0.05,
+      "simplifyTol": 0.0,
+      "colorStops": [
+        [
+          0.0,
+          "#ffffff"
+        ],
+        [
+          1.0,
+          "#ffffff"
+        ]
+      ],
+      "alphaStops": [
+        [
+          0.0,
+          255
+        ],
+        [
+          1.0,
+          0
+        ]
+      ],
+      "lifeColorStops": [
+        [
+          0.0,
+          "#ffffff"
+        ],
+        [
+          1.0,
+          "#ffffff"
+        ]
+      ],
+      "lifeAlphaStops": [
+        [
+          0.0,
+          255
+        ],
+        [
+          1.0,
+          255
+        ]
+      ],
+      "intensity": 1.0,
+      "inheritColor": false,
+      "fadeTail": false,
+      "tailLen": 0.25,
+      "texture": "",
+      "tileX": 1.0,
+      "tileY": 1.0,
+      "offX": 0.0,
+      "offY": 0.0,
+      "scrollU": 0.0,
+      "scrollV": 0.0,
+      "flipCols": 0,
+      "flipRows": 0,
+      "flipFPS": 0.0,
+      "trailMode": "per-particle",
+      "ratio": 1.0,
+      "sizeAffectsWidth": false,
+      "sizeAffectsLifetime": false,
+      "dieWithParticles": true,
+      "splitRibbons": false,
+      "attachRibbons": false,
+      "genLighting": false,
+      "castShadow": false,
+      "receiveShadow": false,
+      "sortLayer": "",
+      "sortOrder": 0,
+      "softFade": 0.0
     }
   },
   "states": [

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <random>
 #include <string>
 #include <vector>
@@ -95,6 +96,31 @@ struct Emitter {
     bool hasFields = false;  // any accel field or plane active: skip math if false
 };
 
+// Trail/ribbon settings (format 1.1 emitter.trails, additive: absent = off).
+// Curves/gradients arrive baked as LUTs would be evaluated: the Python side
+// bakes 64-sample width + 256-entry gradient tables on change; the core
+// stores the same tables parsed from raw keys so both sides agree exactly.
+// (Ring-buffer trail simulation itself lands next; settings parse first.)
+struct TrailCfg {
+    bool enabled = false;
+    int maxPoints = 32;
+    double lifetime = 1.0, minDist = 4.0, minTime = 0.016;
+    bool autodestruct = false;
+    double timeScale = 1.0, fadeStop = 0.0;
+    double widthStart = 8.0, widthEnd = 1.0, widthMult = 1.0;
+    double intensity = 1.0;
+    double wlut[64];
+    int cr[256], cg[256], cb[256], ca[256];
+    int lcr[256], lcg[256], lcb[256], lca[256];
+    TrailCfg() {
+        for (int i = 0; i < 64; i++) wlut[i] = 1.0;
+        for (int i = 0; i < 256; i++) {
+            cr[i] = cg[i] = cb[i] = 255; ca[i] = 255;
+            lcr[i] = lcg[i] = lcb[i] = 255; lca[i] = 255;
+        }
+    }
+};
+
 // ---- Python dict helpers (borrowed refs, defaults on missing) ----
 double dget(PyObject *d, const char *k, double fb) {
     if (!d || !PyDict_Check(d)) return fb;
@@ -131,6 +157,7 @@ std::string sget(PyObject *d, const char *k, const std::string &fb) {
 
 struct Engine {
     Emitter em;
+    TrailCfg trails;
     std::vector<Keyframe> kf;
     bool is3d = false;
     std::mt19937 rng{std::random_device{}()};
@@ -424,12 +451,153 @@ static bool parse_emitter(PyObject *em, bool is3d, Emitter &out) {
     return true;
 }
 
+// Key-segment eval mirroring particle_studio._eval_keys (linear/smooth/constant).
+static double trail_eval_key(const std::vector<double> &xs,
+                             const std::vector<double> &ys,
+                             const std::vector<int> &ms, double t) {
+    size_t n = xs.size();
+    if (n == 0) return 1.0;
+    if (t <= xs[0]) return ys[0];
+    if (t >= xs[n - 1]) return ys[n - 1];
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (xs[i] <= t && t <= xs[i + 1]) {
+            double span = xs[i + 1] - xs[i];
+            double u = span <= 0 ? 0.0 : (t - xs[i]) / span;
+            if (ms[i] == 2) return ys[i];  // constant
+            if (ms[i] == 0) return ys[i] + (ys[i + 1] - ys[i]) * u;  // linear
+            double s = u * u * (3.0 - 2.0 * u);  // smooth
+            return ys[i] + (ys[i + 1] - ys[i]) * s;
+        }
+    }
+    return ys[n - 1];
+}
+
+// Parse [[x, y(, mode)]] key lists from a Python list of lists.
+static bool trail_keys(PyObject *v, std::vector<double> &xs,
+                       std::vector<double> &ys, std::vector<int> &ms) {
+    xs.clear(); ys.clear(); ms.clear();
+    if (!v || !PyList_Check(v)) return false;
+    Py_ssize_t n = PyList_Size(v);
+    struct Raw { double x, y; int m; };
+    std::vector<Raw> tmp;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *k = PyList_GetItem(v, i);  // borrowed
+        if (!k || !PyList_Check(k) || PyList_Size(k) < 2) continue;
+        PyObject *ox = PyList_GetItem(k, 0), *oy = PyList_GetItem(k, 1);
+        double x = PyFloat_AsDouble(ox), y = PyFloat_AsDouble(oy);
+        if (PyErr_Occurred()) { PyErr_Clear(); continue; }
+        int m = 1;
+        if (PyList_Size(k) > 2) {
+            PyObject *om = PyList_GetItem(k, 2);
+            if (om && PyUnicode_Check(om)) {
+                const char *s = PyUnicode_AsUTF8(om);
+                if (s && !strcmp(s, "linear")) m = 0;
+                else if (s && !strcmp(s, "constant")) m = 2;
+            }
+        }
+        tmp.push_back({x, y, m});
+    }
+    std::sort(tmp.begin(), tmp.end(),
+              [](const Raw &a, const Raw &b) { return a.x < b.x; });
+    for (auto &r : tmp) { xs.push_back(r.x); ys.push_back(r.y); ms.push_back(r.m); }
+    return !xs.empty();
+}
+
+static void parse_trails(PyObject *em, TrailCfg &out) {
+    out = TrailCfg();
+    PyObject *t = em ? PyDict_GetItemString(em, "trails") : nullptr;
+    if (!t || !PyDict_Check(t)) return;
+    out.enabled = bget(t, "enabled", false);
+    out.maxPoints = std::max(2, (int)lget(t, "maxPoints", 32));
+    out.lifetime = std::max(0.05, dget(t, "lifetime", 1.0));
+    out.minDist = std::max(0.0, dget(t, "minDist", 4.0));
+    out.minTime = std::max(0.0, dget(t, "minTime", 0.016));
+    out.autodestruct = bget(t, "autodestruct", false);
+    { double v = dget(t, "timeScale", 1.0); out.timeScale = std::min(5.0, std::max(0.0, v)); }
+    out.fadeStop = std::max(0.0, dget(t, "fadeStop", 0.0));
+    out.widthStart = std::max(0.0, dget(t, "widthStart", 8.0));
+    out.widthEnd = std::max(0.0, dget(t, "widthEnd", 1.0));
+    out.widthMult = std::max(0.0, dget(t, "widthMult", 1.0));
+    { double v = dget(t, "intensity", 1.0); out.intensity = std::min(8.0, std::max(0.0, v)); }
+    std::vector<double> xs, ys; std::vector<int> ms;
+    if (trail_keys(PyDict_GetItemString(t, "widthCurve"), xs, ys, ms))
+        for (int i = 0; i < 64; i++) out.wlut[i] = trail_eval_key(xs, ys, ms, i / 63.0);
+    // gradient stops [[pos, "#rrggbb"]] / [[pos, a]]
+    auto grad = [&](const char *ck, const char *ak, int *R, int *G, int *B, int *A) {
+        std::vector<double> gx, gv; std::vector<int> gm;
+        std::vector<double> ax, av; std::vector<int> am;
+        bool hasC = trail_keys(PyDict_GetItemString(t, ck), gx, gv, gm);
+        bool hasA = trail_keys(PyDict_GetItemString(t, ak), ax, av, am);
+        // color keys carry hex strings, not numbers: re-read as strings
+        std::vector<std::string> hexv;
+        if (hasC) {
+            PyObject *v = PyDict_GetItemString(t, ck);
+            hexv.clear();
+            for (Py_ssize_t i = 0; i < PyList_Size(v); i++) {
+                PyObject *k = PyList_GetItem(v, i);
+                std::string h = "#ffffff";
+                if (k && PyList_Check(k) && PyList_Size(k) >= 2) {
+                    PyObject *oc = PyList_GetItem(k, 1);
+                    if (oc && PyUnicode_Check(oc)) {
+                        const char *s = PyUnicode_AsUTF8(oc);
+                        if (s) h = s;
+                    }
+                }
+                hexv.push_back(h);
+            }
+        }
+        for (int i = 0; i < 256; i++) {
+            double u = i / 255.0;
+            if (hasC) {
+                size_t n = gx.size();
+                std::string c0 = hexv.front(), c1 = hexv.back();
+                double uu = 0.0;
+                for (size_t j = 0; j + 1 < n; j++) {
+                    if (gx[j] <= u && u <= gx[j + 1]) {
+                        c0 = hexv[j]; c1 = hexv[j + 1];
+                        double span = gx[j + 1] - gx[j];
+                        uu = span <= 0 ? 0.0 : (u - gx[j]) / span;
+                        break;
+                    }
+                }
+                RGB p0 = parse_hex(c0), p1 = parse_hex(c1);
+                R[i] = (int)(p0.r + (p1.r - p0.r) * uu + 0.5);
+                G[i] = (int)(p0.g + (p1.g - p0.g) * uu + 0.5);
+                B[i] = (int)(p0.b + (p1.b - p0.b) * uu + 0.5);
+            }
+            if (hasA) {
+                double a = trail_eval_key(ax, av, am, u);
+                A[i] = std::min(255, std::max(0, (int)(a + 0.5)));
+            }
+        }
+    };
+    if (PyDict_GetItemString(t, "colorStops") || PyDict_GetItemString(t, "alphaStops"))
+        grad("colorStops", "alphaStops", out.cr, out.cg, out.cb, out.ca);
+    else {
+        // legacy head/tail pair behaves as a 2-stop gradient
+        RGB h0 = parse_hex(sget(t, "colorHead", "#ffffff"));
+        RGB h1 = parse_hex(sget(t, "colorTail", "#ffffff"));
+        int a0 = std::min(255, std::max(0, (int)lget(t, "alphaHead", 255)));
+        int a1 = std::min(255, std::max(0, (int)lget(t, "alphaTail", 0)));
+        for (int i = 0; i < 256; i++) {
+            double u = i / 255.0;
+            out.cr[i] = (int)(h0.r + (h1.r - h0.r) * u + 0.5);
+            out.cg[i] = (int)(h0.g + (h1.g - h0.g) * u + 0.5);
+            out.cb[i] = (int)(h0.b + (h1.b - h0.b) * u + 0.5);
+            out.ca[i] = (int)(a0 + (a1 - a0) * u + 0.5);
+        }
+    }
+    if (PyDict_GetItemString(t, "lifeColorStops") || PyDict_GetItemString(t, "lifeAlphaStops"))
+        grad("lifeColorStops", "lifeAlphaStops", out.lcr, out.lcg, out.lcb, out.lca);
+}
+
 static PyObject *py_configure(PyEngine *self, PyObject *args) {
     PyObject *em, *tracks;
     int is3d;
     if (!PyArg_ParseTuple(args, "OO!p", &em, &PyList_Type, &tracks, &is3d)) return nullptr;
     self->eng.is3d = (bool)is3d;
     parse_emitter(em, self->eng.is3d, self->eng.em);
+    parse_trails(em, self->eng.trails);
     self->eng.kf.clear();
     Py_ssize_t n = PyList_Size(tracks);
     for (Py_ssize_t i = 0; i < n; i++) {
@@ -627,8 +795,30 @@ static PyObject *py_step(PyEngine *self, PyObject *args) {
     return d;
 }
 
+static PyObject *py_trails_luts(PyEngine *self, PyObject *) {
+    // Test hook: baked trail tables + scalars parsed at configure().
+    const TrailCfg &t = self->eng.trails;
+    PyObject *w = PyList_New(64), *cr = PyList_New(256),
+               *cg = PyList_New(256), *cb = PyList_New(256),
+               *ca = PyList_New(256);
+    if (!w || !cr || !cg || !cb || !ca) return nullptr;
+    for (int i = 0; i < 64; i++) PyList_SET_ITEM(w, i, PyFloat_FromDouble(t.wlut[i]));
+    for (int i = 0; i < 256; i++) {
+        PyList_SET_ITEM(cr, i, PyLong_FromLong(t.cr[i]));
+        PyList_SET_ITEM(cg, i, PyLong_FromLong(t.cg[i]));
+        PyList_SET_ITEM(cb, i, PyLong_FromLong(t.cb[i]));
+        PyList_SET_ITEM(ca, i, PyLong_FromLong(t.ca[i]));
+    }
+    return Py_BuildValue("{s:O,s:O,s:O,s:O,s:O,s:i,s:i,s:d,s:d,s:d,s:d}",
+                         "w", w, "r", cr, "g", cg, "b", cb, "a", ca,
+                         "enabled", (int)t.enabled, "maxPoints", t.maxPoints,
+                         "lifetime", t.lifetime, "minDist", t.minDist,
+                         "timeScale", t.timeScale, "intensity", t.intensity);
+}
+
 static PyMethodDef engine_methods[] = {
     {"configure", (PyCFunction)py_configure, METH_VARARGS, "configure(emitter, tracks, is3d)"},
+    {"trails_luts", (PyCFunction)py_trails_luts, METH_NOARGS, "baked trail tables"},
     {"set_seed", (PyCFunction)py_set_seed, METH_VARARGS, "set_seed(seed)"},
     {"reset", (PyCFunction)py_reset, METH_NOARGS, "clear particles/state"},
     {"count", (PyCFunction)py_count, METH_NOARGS, "active particles"},

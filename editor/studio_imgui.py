@@ -553,6 +553,13 @@ class App:
         self._dblclick = False
         self._custom_nodes = []
         self._editor_open = False
+        self.trail_collapsed = {}
+        self.trail_lut = None
+        self.trail_dbg = {"points": False, "bounds": False}
+        self._trail_stats_t = 0.0
+        self._sim_ms = 0.0
+        self._render_ms = 0.0
+        self._trail_draws = 0
 
     # ---------- projection / camera (same math as Tk edition) ----------
     def proj(self, x, y, z, cx, cy):
@@ -605,38 +612,7 @@ class App:
 
     def _read_trails(self, t):
         """Sanitized trails block (off by default = legacy look)."""
-        d = PS.default_trails()
-        if isinstance(t, dict):
-            for k, v in t.items():
-                if k in d:
-                    d[k] = v
-        F = self._fnum
-        src = str(d.get("source", "particles")).lower()
-        uv = str(d.get("uvMode", d.get("uvMode", "stretch"))).lower()
-        rib = str(d.get("ribbon", "billboard")).lower()
-        return {
-            "enabled": bool(d.get("enabled", False)),
-            "source": src if src in ("particles", "emitter") else "particles",
-            "maxPoints": max(2, int(F(d.get("maxPoints", 32), 32))),
-            "lifetime": max(0.05, F(d.get("lifetime", 1.0), 1.0)),
-            "minDist": max(0.0, F(d.get("minDist", 4.0), 4.0)),
-            "minTime": max(0.0, F(d.get("minTime", 0.016), 0.016)),
-            "smoothing": max(0, int(F(d.get("smoothing", 0), 0))),
-            "widthStart": max(0.0, F(d.get("widthStart", 8.0), 8.0)),
-            "widthEnd": max(0.0, F(d.get("widthEnd", 1.0), 1.0)),
-            "taper": F(d.get("taper", 1.0), 1.0),
-            "uvMode": uv if uv in ("stretch", "tile") else "stretch",
-            "tileLength": max(1.0, F(d.get("tileLength", 64.0), 64.0)),
-            "ribbon": rib if rib in ("billboard", "fixed", "flat") else "billboard",
-            "colorHead": str(d.get("colorHead", "#ffffff") or "#ffffff"),
-            "colorTail": str(d.get("colorTail", "#ffffff") or "#ffffff"),
-            "alphaHead": max(0, min(255, int(F(d.get("alphaHead", 255), 255)))),
-            "alphaTail": max(0, min(255, int(F(d.get("alphaTail", 0), 0)))),
-            "blend": str(d.get("blend", "inherit") or "inherit"),
-            "gravity": F(d.get("gravity", 0.0), 0.0),
-            "drag": max(0.0, F(d.get("drag", 0.0), 0.0)),
-            "noise": max(0.0, F(d.get("noise", 0.0), 0.0)),
-        }
+        return PS.sanitize_trails(t)
 
     def read_emitter(self):
         """Rebuild a type-correct emitter dict every read (like the Tk
@@ -1384,12 +1360,41 @@ def paint_trails_2d(app, dl, eff):
         col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
         a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
         w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+        dbg = getattr(app, "trail_dbg", {}) or {}
         for hist in (getattr(app.sim, "trail_hist", {}) or {}).values():
             if len(hist) < 2:
                 continue
             pts = _smooth_pts([(x, y) for (x, y, _z, _t) in hist], sub)
             dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
                               thickness=w, parent=dl)
+            app._trail_draws += 1
+            if dbg.get("points"):
+                for (px, py) in pts:
+                    dpg.draw_circle([px, py], 2, color=[255, 201, 60, 255],
+                                    parent=dl)
+            if dbg.get("bounds"):
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                dpg.draw_rectangle([min(xs), min(ys)], [max(xs), max(ys)],
+                                   color=[77, 159, 255, 255], parent=dl)
+    except Exception:
+        pass
+
+
+def _update_trail_stats():
+    """Live readout at <=4 Hz (never per frame)."""
+    try:
+        now = time.time()
+        if now - APP._trail_stats_t < 0.25:
+            return
+        APP._trail_stats_t = now
+        hist = getattr(APP.sim, "trail_hist", {}) or {}
+        nv = sum(len(h) for h in hist.values())
+        dpg.set_value("trail_stats",
+                      "trails: %d  verts: %d  draws: %d  sim: %.2fms  "
+                      "render: %.2fms" % (
+                          len(hist), nv, APP._trail_draws, APP._sim_ms,
+                          APP._render_ms))
     except Exception:
         pass
 
@@ -1614,6 +1619,16 @@ def paint_trails_3d(app, dl, cx, cy, eff):
                 pts.append((sx, sy))
             dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
                               thickness=w, parent=dl)
+            app._trail_draws += 1
+            if (getattr(app, "trail_dbg", {}) or {}).get("points"):
+                for (px, py) in pts:
+                    dpg.draw_circle([px, py], 2, color=[255, 201, 60, 255],
+                                    parent=dl)
+            if (getattr(app, "trail_dbg", {}) or {}).get("bounds"):
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                dpg.draw_rectangle([min(xs), min(ys)], [max(xs), max(ys)],
+                                   color=[77, 159, 255, 255], parent=dl)
     except Exception:
         pass
 
@@ -1992,6 +2007,7 @@ def set_type(t, commit=True):
         dpg.configure_item("side_particles_top", show=not tr)
         dpg.configure_item("side_particles_rest", show=not tr)
         dpg.configure_item("side_trails", show=tr)
+        sync_trails_visibility()
         z = APP.em.get("emissionZone", {})
         if t == "3d":
             z["shape"] = str(z.get("shape", "sphere")).lower()
@@ -2122,36 +2138,6 @@ def _sync_fields_form(f):
     _set("em_fric", float(c.get("friction", 0.1) or 0))
 
 
-def _sync_trails_form(t):
-    """Push the trails block into the sidebar widgets (defaults when absent)."""
-    d = PS.default_trails()
-    if isinstance(t, dict):
-        for k, v in t.items():
-            if k in d:
-                d[k] = v
-    _set("em_trail_on", bool(d.get("enabled", False)))
-    _set("em_trail_src", str(d.get("source", "particles") or "particles"))
-    _set("em_trail_max", int(d.get("maxPoints", 32) or 32))
-    _set("em_trail_life", float(d.get("lifetime", 1.0) or 0))
-    _set("em_trail_mind", float(d.get("minDist", 4.0) or 0))
-    _set("em_trail_mint", float(d.get("minTime", 0.016) or 0))
-    _set("em_trail_smooth", int(d.get("smoothing", 0) or 0))
-    _set("em_trail_w0", float(d.get("widthStart", 8.0) or 0))
-    _set("em_trail_w1", float(d.get("widthEnd", 1.0) or 0))
-    _set("em_trail_taper", float(d.get("taper", 1.0) or 0))
-    _set("em_trail_uv", str(d.get("uvMode", "stretch") or "stretch"))
-    _set("em_trail_tile", float(d.get("tileLength", 64.0) or 0))
-    _set("em_trail_rib", str(d.get("ribbon", "billboard") or "billboard"))
-    _set("em_trail_chead", str(d.get("colorHead", "#ffffff") or "#ffffff"))
-    _set("em_trail_ctail", str(d.get("colorTail", "#ffffff") or "#ffffff"))
-    _set("em_trail_ahead", int(d.get("alphaHead", 255) or 0))
-    _set("em_trail_atail", int(d.get("alphaTail", 0) or 0))
-    _set("em_trail_blend", str(d.get("blend", "inherit") or "inherit"))
-    _set("em_trail_grav", float(d.get("gravity", 0.0) or 0))
-    _set("em_trail_drag", float(d.get("drag", 0.0) or 0))
-    _set("em_trail_noise", float(d.get("noise", 0.0) or 0))
-
-
 def sync_emitter_form(self):
     e = self.em
     g = e.get("gravity", {})
@@ -2165,7 +2151,7 @@ def sync_emitter_form(self):
     _set("em_blend", str(e.get("blendingMode", "Normal")))
     _set("em_seed", int(e.get("seed", 0) or 0))
     _sync_fields_form(e.get("fields"))
-    _sync_trails_form(e.get("trails"))
+    sync_trails_form()
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -2267,6 +2253,492 @@ def num_row(label, tag, default, cb, width=-1):
                             callback=cb)
 
 
+try:
+    import trail_widgets as TW
+    HAS_TRAIL_WIDGETS = True
+except Exception:
+    TW = None
+    HAS_TRAIL_WIDGETS = False
+
+
+TRAIL_EDITORS = {}  # dl_tag -> CurveEditor/GradientEditor
+TRAIL_DRAG_LABELS = {}  # label_tag -> (key, step)
+TRAIL_SECTIONS = [
+    ("A", "Trail"),
+    ("B", "Shape"),
+    ("C", "Color"),
+    ("D", "Texture"),
+    ("E", "Per-Particle"),
+    ("F", "Lighting & Sorting"),
+    ("G", "Tools & Motion"),
+]
+TRAIL_SEC_TITLES = dict(TRAIL_SECTIONS)
+TRAIL_UI_STATE_FILE = "trail_ui.json"
+
+
+def _trail_spec(key):
+    for f in PS.TRAIL_SCHEMA:
+        if f["key"] == key:
+            return f
+    return None
+
+
+def trail_tag(key):
+    return "trx_" + key
+
+
+def rebake_trails_lut():
+    """Bake width/gradient LUTs from the live block (only on change)."""
+    try:
+        t = APP.em.get("trails") or {}
+        APP.trail_lut = {
+            "w": PS.bake_curve(t.get("widthCurve"), 64),
+            "c": PS.bake_gradient(t.get("colorStops"), t.get("alphaStops")),
+            "lc": PS.bake_gradient(t.get("lifeColorStops"),
+                                   t.get("lifeAlphaStops")),
+        }
+    except Exception:
+        pass
+
+
+def trail_ui_state(load=True):
+    """Persist foldout collapse state (session file, never the effect)."""
+    try:
+        if load:
+            p = os.path.join(PS.app_base_dir(), TRAIL_UI_STATE_FILE)
+            if os.path.isfile(p):
+                with open(p, encoding="utf-8") as f:
+                    APP.trail_collapsed.update(json.load(f))
+        else:
+            p = os.path.join(PS.app_base_dir(), TRAIL_UI_STATE_FILE)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(getattr(APP, "trail_collapsed", {}), f)
+    except Exception:
+        pass
+
+
+def cb_trail_num(key):
+    spec = _trail_spec(key) or {}
+    conv = int if spec.get("type") == "int" else float
+    lo, hi = spec.get("min"), spec.get("max")
+
+    def _cb(sender=None, app_data=None, *r):
+        try:
+            v = conv(app_data)
+            if lo is not None:
+                v = max(lo, v)
+            if hi is not None:
+                v = min(hi, v)
+            em_set(("trails", key), v)
+            try:
+                dpg.set_value(trail_tag(key), v)
+            except Exception:
+                pass
+            if key in ("widthCurve", "colorStops", "alphaStops",
+                       "lifeColorStops", "lifeAlphaStops"):
+                rebake_trails_lut()
+            if key == "source":
+                sync_trails_visibility()
+        except (ValueError, TypeError):
+            pass
+    return _cb
+
+
+def cb_trail_bool(key):
+    def _cb(sender=None, app_data=None, *r):
+        em_set(("trails", key), bool(app_data))
+        if key == "source":
+            sync_trails_visibility()
+    return _cb
+
+
+def cb_trail_combo(key):
+    def _cb(sender=None, app_data=None, *r):
+        em_set(("trails", key), str(app_data))
+        if key == "source":
+            sync_trails_visibility()
+    return _cb
+
+
+def cb_trail_text(key):
+    def _cb(sender=None, app_data=None, *r):
+        em_set(("trails", key), str(app_data or ""))
+    return _cb
+
+
+def trail_reset_section(sec):
+    try:
+        d = PS.default_trails()
+        t = APP.em.setdefault("trails", {})
+        for f in PS.TRAIL_SCHEMA:
+            if f["sec"] == sec and f["key"] in d:
+                t[f["key"]] = d[f["key"]]
+        APP.mark_dirty()
+        rebake_trails_lut()
+        sync_trails_form()
+    except Exception:
+        pass
+
+
+def trail_section_clipboard(sec, mode):
+    """Copy/paste one section (or the whole block) via the OS clipboard."""
+    try:
+        keys = [f["key"] for f in PS.TRAIL_SCHEMA
+                if sec == "*" or f["sec"] == sec]
+        if mode == "copy":
+            t = APP.em.get("trails") or {}
+            dpg.set_clipboard_text(json.dumps(
+                {k: t.get(k) for k in keys}, ensure_ascii=False))
+        else:
+            raw = dpg.get_clipboard_text()
+            data = json.loads(raw)
+            t = APP.em.setdefault("trails", {})
+            for k in keys:
+                if k in data:
+                    t[k] = data[k]
+            APP.em["trails"] = PS.sanitize_trails(t)
+            APP.mark_dirty()
+            rebake_trails_lut()
+            sync_trails_form()
+    except Exception:
+        pass
+
+
+def trail_step_row(key):
+    """Unity-style row: drag-label + input + -/+ steppers + tooltip."""
+    spec = _trail_spec(key)
+    if spec is None:
+        return
+    tag = trail_tag(key)
+    ty = spec["type"]
+    step = spec.get("step", 1 if ty == "int" else 0.1)
+    with dpg.group(horizontal=True):
+        lab = dpg.add_text(spec["label"], color=list(MUTED) + [255],
+                            tag=tag + "_lab")
+        if spec.get("hint"):
+            with dpg.tooltip(lab):
+                dpg.add_text(spec["hint"], wrap=240)
+        if ty == "bool":
+            dpg.add_checkbox(tag=tag, callback=cb_trail_bool(key))
+        elif ty == "combo":
+            dpg.add_combo(tag=tag, items=list(spec["items"]),
+                          width=-1, callback=cb_trail_combo(key))
+        elif ty in ("color", "text", "file"):
+            dpg.add_input_text(tag=tag, width=-1,
+                               callback=cb_trail_text(key))
+        else:
+            dpg.add_input_float(tag=tag, width=118,
+                                callback=cb_trail_num(key))
+            dpg.add_button(label="-", width=26,
+                           callback=lambda *a, k=key, s=step: _trail_step(
+                               k, -s))
+            dpg.add_button(label="+", width=26,
+                           callback=lambda *a, k=key, s=step: _trail_step(
+                               k, s))
+            TRAIL_DRAG_LABELS[lab] = (key, step)
+
+
+def _trail_step(key, delta):
+    try:
+        t = APP.em.get("trails") or {}
+        spec = _trail_spec(key) or {}
+        conv = int if spec.get("type") == "int" else float
+        v = conv(t.get(key, 0)) + delta
+        if spec.get("min") is not None:
+            v = max(spec["min"], v)
+        if spec.get("max") is not None:
+            v = min(spec["max"], v)
+        em_set(("trails", key), v)
+        try:
+            dpg.set_value(trail_tag(key), v)
+        except Exception:
+            pass
+    except (ValueError, TypeError):
+        pass
+
+
+def trail_drag_tick():
+    """Global left-drag router: dragging a row label scrubs its value."""
+    try:
+        for lab, (key, step) in TRAIL_DRAG_LABELS.items():
+            try:
+                if not dpg.is_item_hovered(lab):
+                    continue
+            except Exception:
+                continue
+            try:
+                dx = float(dpg.get_mouse_drag_delta()[0])
+            except Exception:
+                dx = 0.0
+            if dx:
+                try:
+                    dpg.reset_mouse_drag_tracker()
+                except Exception:
+                    pass
+                _trail_step(key, dx * step * 0.1)
+                break
+    except Exception:
+        pass
+
+
+def _trail_sec_open(sec, sender=None, app_data=None):
+    """Header clicked: persist the new collapse state (matches DPG toggle)."""
+    try:
+        APP.trail_collapsed[sec] = not APP.trail_collapsed.get(
+            sec, sec in ("E", "F"))
+        trail_ui_state(load=False)
+    except Exception:
+        pass
+
+
+def build_trail_section(sec, title, row_keys):
+    """One foldout: rows live inside the header (closed = zero cost)."""
+    collapsed = APP.trail_collapsed.get(sec, sec in ("E", "F"))
+    with dpg.group(tag="trail_sec_" + sec):
+        with dpg.group(horizontal=True):
+            dpg.add_collapsing_header(
+                label=title, tag="trail_hd_" + sec,
+                default_open=not collapsed)
+            dpg.push_container_stack("trail_hd_" + sec)
+            for key in row_keys:
+                if key == "widthCurve":
+                    _build_curve_row()
+                elif key == "colorStops":
+                    _build_grad_row("trail_grad", "Color Stops",
+                                    "colorStops", "alphaStops")
+                elif key == "lifeColorStops":
+                    _build_grad_row("trail_lifegrad", "Life Gradient",
+                                    "lifeColorStops", "lifeAlphaStops")
+                elif key in ("alphaStops", "lifeAlphaStops"):
+                    continue
+                else:
+                    trail_step_row(key)
+            dpg.pop_container_stack()
+            dpg.add_button(label="R", width=24,
+                           callback=lambda *a, s=sec: trail_reset_section(s))
+    try:
+        with dpg.popup("trail_hd_" + sec,
+                       mousebutton=dpg.mvMouseButton_Right):
+            dpg.add_button(label="Reset section", width=140,
+                           callback=lambda *a, s=sec: trail_reset_section(s))
+            dpg.add_button(label="Copy section", width=140,
+                           callback=lambda *a, s=sec: trail_section_clipboard(
+                               s, "copy"))
+            dpg.add_button(label="Paste section", width=140,
+                           callback=lambda *a, s=sec: trail_section_clipboard(
+                               s, "paste"))
+    except Exception:
+        pass
+    try:
+        with dpg.item_handler_registry(
+                tag="trail_hd_" + sec + "_hr") as hr:
+            dpg.add_item_clicked_handler(
+                callback=lambda *a, s=sec: _trail_sec_open(s))
+        dpg.bind_item_handler_registry("trail_hd_" + sec,
+                                       "trail_hd_" + sec + "_hr")
+    except Exception:
+        pass
+
+
+def _trail_curve_changed(keys):
+    em_set(("trails", "widthCurve"), keys)
+    rebake_trails_lut()
+
+
+def _trail_grad_changed(colors, alphas):
+    em_set(("trails", "colorStops"), colors)
+    em_set(("trails", "alphaStops"), alphas)
+    rebake_trails_lut()
+
+
+def _trail_lifegrad_changed(colors, alphas):
+    em_set(("trails", "lifeColorStops"), colors)
+    em_set(("trails", "lifeAlphaStops"), alphas)
+    rebake_trails_lut()
+
+
+def sync_trails_visibility():
+    """E visible only for per-particle sources; F-3D rows greyed in 2D."""
+    try:
+        t = APP.em.get("trails") or {}
+        show_e = str(t.get("source", "particles")) == "particles"
+        dpg.configure_item("trail_sec_E", show=show_e)
+        is3d = APP.ptype == "3d"
+        for tag in ("trx_genLighting", "trx_castShadow",
+                    "trx_receiveShadow", "trx_softFade"):
+            try:
+                dpg.configure_item(tag, enabled=is3d)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def build_trail_inspector():
+    by_sec = {}
+    for f in PS.TRAIL_SCHEMA:
+        by_sec.setdefault(f["sec"], []).append(f["key"])
+    for sec, title in TRAIL_SECTIONS:
+        build_trail_section(sec, title, by_sec.get(sec, []))
+    _build_trail_tools()
+
+
+def _build_curve_row():
+    dpg.add_text("Width Curve (0=head, 1=tail)",
+                 color=list(MUTED) + [255])
+    if not HAS_TRAIL_WIDGETS:
+        return
+    t = APP.em.get("trails") or {}
+    ed = TW.CurveEditor("trail_wcurve", t.get("widthCurve"),
+                        _trail_curve_changed)
+    ed.build()
+    TRAIL_EDITORS["trail_wcurve_dl"] = ed
+
+
+def _build_grad_row(tag, label, ckey, akey):
+    dpg.add_text(label, color=list(MUTED) + [255])
+    if not HAS_TRAIL_WIDGETS:
+        return
+    t = APP.em.get("trails") or {}
+    cb = _trail_grad_changed if tag == "trail_grad" else \
+        _trail_lifegrad_changed
+    ed = TW.GradientEditor(tag, t.get(ckey), t.get(akey), cb)
+    ed.build()
+    TRAIL_EDITORS[tag + "_dl"] = ed
+
+
+def _build_trail_tools():
+    dpg.add_text("Stats", color=list(MUTED) + [255])
+    dpg.add_text("trails: 0  verts: 0  draws: 0",
+                 tag="trail_stats", color=list(MUTED) + [255])
+    with dpg.group(horizontal=True):
+        dpg.add_text("Preset", color=list(MUTED) + [255])
+        dpg.add_combo(tag="trail_preset_combo", items=_trail_preset_names(),
+                      width=-1, callback=_on_trail_preset)
+    with dpg.group(horizontal=True):
+        dpg.add_input_text(tag="trail_preset_name", default_value="",
+                           width=118)
+        dpg.add_button(label="Save", width=52,
+                       callback=lambda *a: _trail_preset_save())
+        dpg.add_button(label="Del", width=44,
+                       callback=lambda *a: _trail_preset_delete())
+    with dpg.group(horizontal=True):
+        dpg.add_text("Show", color=list(MUTED) + [255])
+        dpg.add_checkbox(label="Points", tag="trail_dbg_points",
+                         callback=lambda s, a, *r: _trail_dbg_set(
+                             "points", bool(a)))
+        dpg.add_checkbox(label="Bounds", tag="trail_dbg_bounds",
+                         callback=lambda s, a, *r: _trail_dbg_set(
+                             "bounds", bool(a)))
+    with dpg.group(horizontal=True):
+        dpg.add_button(label="Copy trails", width=110,
+                       callback=lambda *a: trail_section_clipboard("*",
+                                                                  "copy"))
+        dpg.add_button(label="Paste trails", width=110,
+                       callback=lambda *a: trail_section_clipboard("*",
+                                                                   "paste"))
+
+
+def _trail_dbg_set(name, val):
+    try:
+        APP.trail_dbg[name] = val
+    except Exception:
+        pass
+
+
+def _trail_preset_names():
+    try:
+        names = []
+        for f in sorted(os.listdir(os.path.join(PS.app_base_dir(),
+                                                "presets"))):
+            if f.startswith("trail_") and f.endswith(".json"):
+                names.append(os.path.splitext(f)[0])
+        return names
+    except Exception:
+        return []
+
+
+def _on_trail_preset(sender=None, app_data=None, *r):
+    if app_data:
+        load_trail_preset(str(app_data))
+
+
+def _trail_preset_save():
+    try:
+        name = "".join(
+            c if (c.isalnum() or c in ("_", "-")) else "_"
+            for c in dpg.get_value("trail_preset_name"))[:48]
+        if not name:
+            return
+        if not name.startswith("trail_"):
+            name = "trail_" + name
+        eff = APP.current_effect()
+        p = os.path.join(PS.app_base_dir(), "presets", name + ".json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(eff, f, ensure_ascii=False, indent=2)
+        dpg.configure_item("trail_preset_combo",
+                           items=_trail_preset_names())
+        dpg.set_value("trail_preset_combo", name)
+        APP.set_status("Preset saved: " + name, OK)
+    except Exception as e:
+        show_msg("Error", str(e))
+
+
+def _trail_preset_delete():
+    try:
+        name = dpg.get_value("trail_preset_combo")
+        if not name:
+            return
+        p = os.path.join(PS.app_base_dir(), "presets", name + ".json")
+        if os.path.isfile(p):
+            os.remove(p)
+        dpg.configure_item("trail_preset_combo",
+                           items=_trail_preset_names())
+        APP.set_status("Preset deleted: " + name, WARN)
+    except Exception as e:
+        show_msg("Error", str(e))
+
+
+def sync_trails_form():
+    """Push the trails block into schema widgets + editors."""
+    t = PS.sanitize_trails((APP.em.get("trails") or {}))
+    for f in PS.TRAIL_SCHEMA:
+        k, ty = f["key"], f["type"]
+        if ty in ("curve", "gradient-color", "gradient-alpha"):
+            continue
+        try:
+            v = t.get(k, PS.default_trails()[k])
+            if ty == "int":
+                v = int(v)
+            elif ty == "float":
+                v = float(v)
+            elif ty in ("bool",):
+                v = bool(v)
+            else:
+                v = str(v)
+            _set(trail_tag(k), v)
+        except Exception:
+            pass
+    try:
+        ed = TRAIL_EDITORS.get("trail_wcurve_dl")
+        if ed is not None:
+            ed.set_keys(t.get("widthCurve"))
+        ed = TRAIL_EDITORS.get("trail_grad_dl")
+        if ed is not None:
+            ed.set_stops(t.get("colorStops"), t.get("alphaStops"))
+        ed = TRAIL_EDITORS.get("trail_lifegrad_dl")
+        if ed is not None:
+            ed.set_stops(t.get("lifeColorStops"), t.get("lifeAlphaStops"))
+        try:
+            dpg.set_value("trail_preset_combo", "")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    sync_trails_visibility()
+    rebake_trails_lut()
+
+
 def build_sidebar():
     with dpg.group(tag="side_particles_top"):
         sec("Emitter")
@@ -2311,64 +2783,7 @@ def build_sidebar():
     num_row("Bounce", "em_bounce", 0.5, cb_em_float(("fields", "collision", "bounce")))
     num_row("Friction", "em_fric", 0.1, cb_em_float(("fields", "collision", "friction")))
     with dpg.group(tag="side_trails", show=False):
-        dpg.add_text("TRAIL SOURCE", color=list(MUTED) + [255])
-        with dpg.group(horizontal=True):
-            dpg.add_text("Enable", color=list(MUTED) + [255])
-            dpg.add_checkbox(tag="em_trail_on", callback=cb_em_bool(("trails", "enabled")))
-        with dpg.group(horizontal=True):
-            dpg.add_text("Source", color=list(MUTED) + [255])
-            dpg.add_combo(tag="em_trail_src", items=["particles", "emitter"],
-                          default_value="particles", width=-1,
-                          callback=cb_em_combo(("trails", "source")))
-        num_row("Max points", "em_trail_max", 32, cb_em_int(("trails", "maxPoints")))
-        num_row("Lifetime", "em_trail_life", 1.0, cb_em_float(("trails", "lifetime")))
-        num_row("Min dist", "em_trail_mind", 4.0, cb_em_float(("trails", "minDist")))
-        num_row("Min time", "em_trail_mint", 0.016, cb_em_float(("trails", "minTime")))
-        num_row("Smoothing", "em_trail_smooth", 0, cb_em_int(("trails", "smoothing")))
-        dpg.add_text("RIBBON GEOMETRY", color=list(MUTED) + [255])
-        num_row("Width start", "em_trail_w0", 8.0, cb_em_float(("trails", "widthStart")))
-        num_row("Width end", "em_trail_w1", 1.0, cb_em_float(("trails", "widthEnd")))
-        num_row("Taper", "em_trail_taper", 1.0, cb_em_float(("trails", "taper")))
-        with dpg.group(horizontal=True):
-            dpg.add_text("UV mode", color=list(MUTED) + [255])
-            dpg.add_combo(tag="em_trail_uv", items=["stretch", "tile"],
-                          default_value="stretch", width=-1,
-                          callback=cb_em_combo(("trails", "uvMode")))
-        num_row("Tile length", "em_trail_tile", 64.0, cb_em_float(("trails", "tileLength")))
-        with dpg.group(horizontal=True):
-            dpg.add_text("Ribbon", color=list(MUTED) + [255])
-            dpg.add_combo(tag="em_trail_rib", items=["billboard", "fixed", "flat"],
-                          default_value="billboard", width=-1,
-                          callback=cb_em_combo(("trails", "ribbon")))
-        dpg.add_text("TRAIL COLOR", color=list(MUTED) + [255])
-        with dpg.group(horizontal=True):
-            dpg.add_text("Head", color=list(MUTED) + [255])
-            dpg.add_input_text(tag="em_trail_chead", default_value="#ffffff",
-                               width=-1, callback=cb_em_text(("trails", "colorHead")))
-        with dpg.group(horizontal=True):
-            dpg.add_text("Tail", color=list(MUTED) + [255])
-            dpg.add_input_text(tag="em_trail_ctail", default_value="#ffffff",
-                               width=-1, callback=cb_em_text(("trails", "colorTail")))
-        num_row("Alpha head", "em_trail_ahead", 255, cb_em_int(("trails", "alphaHead")))
-        num_row("Alpha tail", "em_trail_atail", 0, cb_em_int(("trails", "alphaTail")))
-        with dpg.group(horizontal=True):
-            dpg.add_text("Blend", color=list(MUTED) + [255])
-            dpg.add_combo(tag="em_trail_blend",
-                          items=["inherit"] + list(PS.BLEND_MODES),
-                          default_value="inherit", width=-1,
-                          callback=cb_em_combo(("trails", "blend")))
-        dpg.add_text("TRAIL MOTION", color=list(MUTED) + [255])
-        num_row("Gravity", "em_trail_grav", 0.0, cb_em_float(("trails", "gravity")))
-        num_row("Drag", "em_trail_drag", 0.0, cb_em_float(("trails", "drag")))
-        num_row("Noise", "em_trail_noise", 0.0, cb_em_float(("trails", "noise")))
-        dpg.add_text("TRAIL PRESETS", color=list(MUTED) + [255])
-        with dpg.group(horizontal=True):
-            for _pn, _pf in (("Comet", "trail_comet_2d"),
-                             ("Sword", "trail_sword_slash_2d"),
-                             ("Smoke", "trail_smoke_ribbon_3d"),
-                             ("Beam", "trail_energy_beam_3d")):
-                dpg.add_button(label=_pn, width=62,
-                               callback=lambda *a, u=_pf: load_trail_preset(u))
+        build_trail_inspector()
     with dpg.group(tag="side_particles_rest"):
         dpg.add_text("GRAVITY", color=list(MUTED) + [255])
         num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
@@ -2639,6 +3054,50 @@ def build_dialogs():
                                                            show=False))
 
 
+def _trail_wheel_route(sender=None, app_data=None, *r):
+    """Wheel over the curve plot zooms Y; elsewhere it orbits/zooms."""
+    try:
+        if HAS_TRAIL_WIDGETS and dpg.is_item_hovered("trail_wcurve_dl"):
+            ed = TRAIL_EDITORS.get("trail_wcurve_dl")
+            if ed is not None:
+                ed.on_wheel(sender, app_data)
+                return
+    except Exception:
+        pass
+    try:
+        APP._wheel += float(app_data)
+    except Exception:
+        pass
+
+
+def _trail_editors_drag():
+    try:
+        for ed in TRAIL_EDITORS.values():
+            if getattr(ed, "_drag", False):
+                ed.on_drag()
+    except Exception:
+        pass
+
+
+def _trail_editors_release_poll():
+    """DPG has no release handler: poll the button once per frame."""
+    try:
+        if not any(getattr(ed, "_drag", False)
+                   for ed in TRAIL_EDITORS.values()):
+            return
+        down = True
+        try:
+            down = bool(dpg.is_mouse_button_down(dpg.mvMouseButton_Left))
+        except Exception:
+            pass
+        if not down:
+            for ed in TRAIL_EDITORS.values():
+                if getattr(ed, "_drag", False):
+                    ed.on_release()
+    except Exception:
+        pass
+
+
 def build_ui():
     with dpg.window(tag="primary"):
         build_topbar()
@@ -2653,11 +3112,14 @@ def build_ui():
     build_dialogs()
     with dpg.handler_registry():
         dpg.add_mouse_wheel_handler(
-            callback=lambda s, a, *r: setattr(APP, "_wheel",
-                                          APP._wheel + float(a)))
+            callback=_trail_wheel_route)
         dpg.add_mouse_double_click_handler(
             button=dpg.mvMouseButton_Left,
             callback=lambda *a: setattr(APP, "_dblclick", True))
+        dpg.add_mouse_drag_handler(
+            button=dpg.mvMouseButton_Left,
+            callback=lambda *a: (trail_drag_tick(),
+                                 _trail_editors_drag()))
         for key, name in ((dpg.mvKey_Z, "z"), (dpg.mvKey_Y, "y"),
                           (dpg.mvKey_S, "s"), (dpg.mvKey_2, "2"),
                           (dpg.mvKey_3, "3"), (dpg.mvKey_4, "4"),
@@ -3574,6 +4036,7 @@ def frame():
             scx, scy = cx, cy
         cpp_n, cpp_active = 0, False
         tracks = None
+        _sim_t0 = time.time()
         if eff is not None:
             em = eff["emitter"]
             # NOTE: correct axis mapping (Tk edition had gx/gy swapped).
@@ -3608,7 +4071,9 @@ def frame():
                                         tracks, dt, maxp)
         else:
             APP.sim._cpp_out = None
+        APP._sim_ms = APP._sim_ms * 0.9 + (time.time() - _sim_t0) * 1000.0 * 0.1
         handle_keys()
+        _trail_editors_release_poll()
         try:
             hov = bool(dpg.is_item_hovered("vp_draw"))
         except Exception:
@@ -3701,6 +4166,8 @@ def frame():
                          traceback.format_exc().replace("\n", " | ")[:500])
         try:
             dpg.delete_item("vp_draw", children_only=True)
+            APP._trail_draws = 0
+            _rd_t0 = time.time()
             is3d = (eff is not None and APP.ptype == "3d" and "directionZ" in
                     eff.get("emitter", {}).get("propagationCone", {}))
             n_show = cpp_n if cpp_active else len(APP.sim.parts)
@@ -3744,6 +4211,9 @@ def frame():
                              tracks)
             else:
                 draw_view_2d(APP, "vp_draw", W, H, cx, cy, eff, tracks)
+            APP._render_ms = APP._render_ms * 0.9 + (
+                time.time() - _rd_t0) * 1000.0 * 0.1
+            _update_trail_stats()
             if APP._split is not None or APP._split_hover:
                 dpg.draw_line([2, 0], [2, H], color=[123, 97, 255, 255],
                               thickness=3, parent="vp_draw")
@@ -3829,6 +4299,7 @@ def main():
         pass
     apply_theme()
     load_fonts()
+    trail_ui_state(load=True)
     build_ui()
     APP.sync_all()
     APP.sim.reset()

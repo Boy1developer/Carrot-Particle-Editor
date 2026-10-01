@@ -67,7 +67,16 @@
             "minTime": {
               "type": "number"
             },
-            "smoothing": {
+            "autodestruct": {
+              "type": "boolean"
+            },
+            "timeScale": {
+              "type": "number"
+            },
+            "space": {
+              "type": "string"
+            },
+            "fadeStop": {
               "type": "number"
             },
             "widthStart": {
@@ -76,17 +85,44 @@
             "widthEnd": {
               "type": "number"
             },
-            "taper": {
+            "widthMult": {
               "type": "number"
             },
-            "uvMode": {
+            "widthCurve": {
+              "type": "array"
+            },
+            "smoothing": {
+              "type": "number"
+            },
+            "cornerVerts": {
+              "type": "number"
+            },
+            "capVerts": {
+              "type": "number"
+            },
+            "capStyle": {
               "type": "string"
-            },
-            "tileLength": {
-              "type": "number"
             },
             "ribbon": {
               "type": "string"
+            },
+            "taper": {
+              "type": "number"
+            },
+            "taperHead": {
+              "type": "boolean"
+            },
+            "taperTail": {
+              "type": "boolean"
+            },
+            "wNoiseAmt": {
+              "type": "number"
+            },
+            "wNoiseScale": {
+              "type": "number"
+            },
+            "simplifyTol": {
+              "type": "number"
             },
             "colorHead": {
               "type": "string"
@@ -100,8 +136,107 @@
             "alphaTail": {
               "type": "number"
             },
+            "colorStops": {
+              "type": "array"
+            },
+            "alphaStops": {
+              "type": "array"
+            },
+            "lifeColorStops": {
+              "type": "array"
+            },
+            "lifeAlphaStops": {
+              "type": "array"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "inheritColor": {
+              "type": "boolean"
+            },
+            "fadeTail": {
+              "type": "boolean"
+            },
+            "tailLen": {
+              "type": "number"
+            },
+            "texture": {
+              "type": "string"
+            },
             "blend": {
               "type": "string"
+            },
+            "uvMode": {
+              "type": "string"
+            },
+            "tileLength": {
+              "type": "number"
+            },
+            "tileX": {
+              "type": "number"
+            },
+            "tileY": {
+              "type": "number"
+            },
+            "offX": {
+              "type": "number"
+            },
+            "offY": {
+              "type": "number"
+            },
+            "scrollU": {
+              "type": "number"
+            },
+            "scrollV": {
+              "type": "number"
+            },
+            "flipCols": {
+              "type": "number"
+            },
+            "flipRows": {
+              "type": "number"
+            },
+            "flipFPS": {
+              "type": "number"
+            },
+            "trailMode": {
+              "type": "string"
+            },
+            "ratio": {
+              "type": "number"
+            },
+            "sizeAffectsWidth": {
+              "type": "boolean"
+            },
+            "sizeAffectsLifetime": {
+              "type": "boolean"
+            },
+            "dieWithParticles": {
+              "type": "boolean"
+            },
+            "splitRibbons": {
+              "type": "boolean"
+            },
+            "attachRibbons": {
+              "type": "boolean"
+            },
+            "genLighting": {
+              "type": "boolean"
+            },
+            "castShadow": {
+              "type": "boolean"
+            },
+            "receiveShadow": {
+              "type": "boolean"
+            },
+            "sortLayer": {
+              "type": "string"
+            },
+            "sortOrder": {
+              "type": "number"
+            },
+            "softFade": {
+              "type": "number"
             },
             "gravity": {
               "type": "number"

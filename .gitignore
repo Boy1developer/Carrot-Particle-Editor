@@ -21,6 +21,7 @@ __pycache__/
 # Local-only runtime files
 *.log
 preview/last_effect.json
+trail_ui.json
 
 # Incoming dropbox for the agent (never pushed to GitHub)
 incoming/

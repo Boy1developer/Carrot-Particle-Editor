@@ -1,6 +1,6 @@
 {
   "version": "1.1",
-  "type": "2d",
+  "type": "3d",
   "emitter": {
     "flow": 40,
     "flowMode": "rate",
@@ -10,24 +10,31 @@
     "mode": "Infinite",
     "reverse": false,
     "alignDir": false,
+    "billboard": true,
     "rotationMode": "speed",
     "gravity": {
       "x": 0,
-      "y": 0
+      "y": 0,
+      "z": 0
     },
     "emissionZone": {
-      "shape": "Circle",
-      "rotation": 0,
+      "shape": "sphere",
       "radius": 10,
       "width": 100,
       "height": 60,
+      "depth": 60,
       "length": 100,
+      "rotationX": 0,
+      "rotationY": 0,
+      "rotationZ": 0,
       "mode": "Surface",
       "showZone": true
     },
     "propagationCone": {
-      "direction": 0,
-      "spread": 12,
+      "directionX": 0,
+      "directionY": 0,
+      "directionZ": 0,
+      "spread": 90,
       "showCone": true
     },
     "blendingMode": "Additive",
@@ -57,16 +64,16 @@
     "trails": {
       "enabled": true,
       "source": "particles",
-      "maxPoints": 32,
-      "lifetime": 0.9,
-      "minDist": 3.0,
+      "maxPoints": 48,
+      "lifetime": 1.4,
+      "minDist": 2.5,
       "minTime": 0.016,
       "autodestruct": false,
       "timeScale": 1.0,
       "space": "world",
       "fadeStop": 0.0,
-      "widthStart": 10.0,
-      "widthEnd": 1.0,
+      "widthStart": 12.0,
+      "widthEnd": 3.0,
       "widthMult": 1.0,
       "widthCurve": [
         [
@@ -74,14 +81,20 @@
           1.0
         ],
         [
+          0.6,
+          0.75,
+          "smooth"
+        ],
+        [
           1.0,
-          1.0
+          0.2,
+          "smooth"
         ]
       ],
-      "smoothing": 0,
-      "cornerVerts": 0,
-      "capVerts": 0,
-      "capStyle": "flat",
+      "smoothing": 1,
+      "cornerVerts": 4,
+      "capVerts": 6,
+      "capStyle": "round",
       "ribbon": "billboard",
       "taper": 1.0,
       "taperHead": false,
@@ -89,24 +102,32 @@
       "wNoiseAmt": 0.0,
       "wNoiseScale": 0.05,
       "simplifyTol": 0.0,
-      "colorHead": "#ffee88",
-      "colorTail": "#ff6600",
+      "colorHead": "#ffffff",
+      "colorTail": "#ffffff",
       "alphaHead": 255,
       "alphaTail": 0,
       "colorStops": [
         [
           0.0,
-          "#ffffff"
+          "#aefcff"
+        ],
+        [
+          0.5,
+          "#2f9bff"
         ],
         [
           1.0,
-          "#ffffff"
+          "#0a1e66"
         ]
       ],
       "alphaStops": [
         [
           0.0,
           255
+        ],
+        [
+          0.8,
+          120
         ],
         [
           1.0,
@@ -133,19 +154,19 @@
           255
         ]
       ],
-      "intensity": 1.0,
+      "intensity": 1.4,
       "inheritColor": false,
       "fadeTail": false,
       "tailLen": 0.25,
       "texture": "",
       "blend": "inherit",
-      "uvMode": "stretch",
+      "uvMode": "tile",
       "tileLength": 64.0,
-      "tileX": 1.0,
+      "tileX": 2.0,
       "tileY": 1.0,
       "offX": 0.0,
       "offY": 0.0,
-      "scrollU": 0.0,
+      "scrollU": 2.0,
       "scrollV": 0.0,
       "flipCols": 0,
       "flipRows": 0,
