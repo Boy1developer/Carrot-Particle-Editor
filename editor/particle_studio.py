@@ -452,6 +452,52 @@ def fields_active(f):
         return False
 
 
+def default_trails():
+    """Trails/ribbons block (additive, off by default = legacy look).
+
+    source: "particles" (one trail per particle) or "emitter" (trail
+    follows the emitter point). Points are pushed only when
+    minDist/minTime is exceeded; smoothing = Catmull-Rom subdivisions
+    (0 = off). 2D ribbons are flat strips; 3D ribbons are either
+    camera-facing ("billboard") or "fixed"-axis. Colors lerp head ->
+    tail; blend "inherit" uses the emitter blendingMode. noise reuses
+    the fields turbulence scale/speed as the point-noise basis.
+    """
+    return {
+        "enabled": False,
+        "source": "particles",
+        "maxPoints": 32,
+        "lifetime": 1.0,
+        "minDist": 4.0,
+        "minTime": 0.016,
+        "smoothing": 0,
+        "widthStart": 8.0,
+        "widthEnd": 1.0,
+        "taper": 1.0,
+        "uvMode": "stretch",
+        "tileLength": 64.0,
+        "ribbon": "billboard",
+        "colorHead": "#ffffff",
+        "colorTail": "#ffffff",
+        "alphaHead": 255,
+        "alphaTail": 0,
+        "blend": "inherit",
+        "gravity": 0.0,
+        "drag": 0.0,
+        "noise": 0.0,
+    }
+
+
+def trails_active(t):
+    """Single cheap gate: no enabled flag -> skip all trail math."""
+    if not isinstance(t, dict):
+        return False
+    try:
+        return bool(t.get("enabled", False)) and int(t.get("maxPoints", 0) or 0) > 1
+    except (ValueError, TypeError):
+        return False
+
+
 def field_accel(x, y, z, age, f, ex, ey, ez, flat):
     """Pure acceleration from force fields (shared spec ×4 renderers).
 
@@ -520,6 +566,7 @@ def default_emitter(ptype="2d"):
             "blendingMode": "Normal",
             "seed": 0,
             "fields": default_fields(),
+            "trails": default_trails(),
         }
     return {
         "flow": 40, "flowMode": "rate", "flowInterval": 1,
@@ -534,6 +581,7 @@ def default_emitter(ptype="2d"):
         "blendingMode": "Normal",
         "seed": 0,
         "fields": default_fields(),
+        "trails": default_trails(),
     }
 
 
@@ -704,6 +752,13 @@ def migrate_effect(data):
         em["blendingMode"] = "Normal"
     if em.get("seed") is None:
         em["seed"] = 0
+    if not isinstance(em.get("trails"), dict):
+        em["trails"] = default_trails()
+    else:
+        _dt = default_trails()
+        for _k, _v in _dt.items():
+            if em["trails"].get(_k) is None:
+                em["trails"][_k] = _v
     states = eff.get("states")
     if isinstance(states, list):
         for i, s in enumerate(states):
@@ -1803,13 +1858,15 @@ class StudioApp(tk.Tk):
         return (dx / n2, dy / n2, dz / n2)
 
     def _load_emitter_to_ui(self, em):
-        # Tk has no blend/seed widgets (see DPG sidebar): stash the loaded
-        # values so save round-trips preserve them instead of resetting.
+        # Tk has no blend/seed/trails widgets (see DPG sidebar): stash the
+        # loaded values so save round-trips preserve them instead of resetting.
         bm = em.get("blendingMode")
         self._em_blending = bm if bm in BLEND_MODES else "Normal"
         self._em_seed = int(em.get("seed", 0) or 0)
         fld = em.get("fields")
         self._em_fields = dict(fld) if isinstance(fld, dict) else default_fields()
+        trl = em.get("trails")
+        self._em_trails = dict(trl) if isinstance(trl, dict) else default_trails()
         self.v_flow.set(str(em.get("flow", 40)))
         self.v_max.set(str(em.get("maxParticles", 300)))
         self.v_mode.set(em.get("mode", "Infinite"))
@@ -1858,6 +1915,7 @@ class StudioApp(tk.Tk):
                     "blendingMode": getattr(self, "_em_blending", "Normal"),
                     "seed": getattr(self, "_em_seed", 0),
                     "fields": getattr(self, "_em_fields", None) or default_fields(),
+                    "trails": getattr(self, "_em_trails", None) or default_trails(),
                 }
             zshape2 = zraw if zraw in ZONE_2D else "Circle"
             return {
@@ -1877,6 +1935,7 @@ class StudioApp(tk.Tk):
                 "blendingMode": getattr(self, "_em_blending", "Normal"),
                 "seed": getattr(self, "_em_seed", 0),
                 "fields": getattr(self, "_em_fields", None) or default_fields(),
+                "trails": getattr(self, "_em_trails", None) or default_trails(),
             }
         except ValueError:
             if not silent:

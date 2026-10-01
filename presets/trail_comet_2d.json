@@ -1,0 +1,129 @@
+{
+  "version": "1.1",
+  "type": "2d",
+  "emitter": {
+    "flow": 40,
+    "flowMode": "rate",
+    "flowInterval": 1,
+    "maxParticles": 300,
+    "reservoir": 50,
+    "mode": "Infinite",
+    "reverse": false,
+    "alignDir": false,
+    "rotationMode": "speed",
+    "gravity": {
+      "x": 0,
+      "y": 0
+    },
+    "emissionZone": {
+      "shape": "Circle",
+      "rotation": 0,
+      "radius": 10,
+      "width": 100,
+      "height": 60,
+      "length": 100,
+      "mode": "Surface",
+      "showZone": true
+    },
+    "propagationCone": {
+      "direction": 0,
+      "spread": 12,
+      "showCone": true
+    },
+    "blendingMode": "Additive",
+    "seed": 0,
+    "fields": {
+      "turbulence": {
+        "amount": 0.0,
+        "scale": 0.05,
+        "speed": 1.0
+      },
+      "vortex": {
+        "strength": 0.0
+      },
+      "attractor": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "strength": 0.0,
+        "radius": 200.0
+      },
+      "collision": {
+        "planeY": null,
+        "bounce": 0.5,
+        "friction": 0.1
+      }
+    },
+    "trails": {
+      "enabled": true,
+      "source": "particles",
+      "maxPoints": 32,
+      "lifetime": 0.9,
+      "minDist": 3.0,
+      "minTime": 0.016,
+      "smoothing": 0,
+      "widthStart": 10.0,
+      "widthEnd": 1.0,
+      "taper": 1.0,
+      "uvMode": "stretch",
+      "tileLength": 64.0,
+      "ribbon": "billboard",
+      "colorHead": "#ffee88",
+      "colorTail": "#ff6600",
+      "alphaHead": 255,
+      "alphaTail": 0,
+      "blend": "inherit",
+      "gravity": 0.0,
+      "drag": 0.0,
+      "noise": 0.0
+    }
+  },
+  "states": [
+    {
+      "id": "state_0",
+      "role": "birth",
+      "label": "birth",
+      "duration": 0.5,
+      "shape": "circle",
+      "easing": "linear",
+      "starPoints": 5,
+      "starInnerRatio": 0.4,
+      "appearance": {
+        "size": 8,
+        "sizeMax": 12,
+        "color": "#ffaa00",
+        "opacity": 255
+      },
+      "movement": {
+        "minSpeed": 60,
+        "maxSpeed": 160,
+        "minRot": -90,
+        "maxRot": 90
+      },
+      "customShapeRefs": []
+    },
+    {
+      "id": "state_1",
+      "role": "death",
+      "label": "death",
+      "duration": 0.5,
+      "shape": "circle",
+      "easing": "ease-out",
+      "starPoints": 5,
+      "starInnerRatio": 0.4,
+      "appearance": {
+        "size": 2,
+        "sizeMax": 4,
+        "color": "#ff3300",
+        "opacity": 0
+      },
+      "movement": {
+        "minSpeed": 20,
+        "maxSpeed": 60,
+        "minRot": -90,
+        "maxRot": 90
+      },
+      "customShapeRefs": []
+    }
+  ]
+}

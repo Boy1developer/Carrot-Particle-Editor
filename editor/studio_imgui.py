@@ -111,6 +111,9 @@ class SimEngine:
         self._last_sim_mode = None
         self._rand = random.Random()
         self._seed = 0
+        self.trail_hist = {}
+        self.emitter_trail = []
+        self._trail_t = 0.0
 
     def seed_sim(self, seed):
         """Deterministic seed (0 = legacy unseeded behavior).
@@ -137,6 +140,42 @@ class SimEngine:
         self._cpp_key = None
         self._cpp_out = None
         self._last_sim_mode = None
+        self.trail_hist = {}
+        self.emitter_trail = []
+        self._trail_t = 0.0
+
+    # ---- trails history (Python reference; ring-capped per source) ----
+    @staticmethod
+    def _trail_cfg(em):
+        t = (em.get("trails") or {}) if isinstance(em, dict) else {}
+        if not PS.trails_active(t):
+            return None
+        return t
+
+    def _trail_push(self, key, x, y, z, now, cfg):
+        """Push a point when minDist/minTime is exceeded (else skip)."""
+        try:
+            maxp = max(2, int(cfg.get("maxPoints", 32) or 32))
+            life = max(0.05, float(cfg.get("lifetime", 1.0) or 0))
+            md = max(0.0, float(cfg.get("minDist", 4.0) or 0))
+            mt = max(0.0, float(cfg.get("minTime", 0.016) or 0))
+        except (ValueError, TypeError):
+            return
+        hist = self.trail_hist.get(key)
+        if hist is None:
+            hist = self.trail_hist[key] = []
+        if hist:
+            lx, ly, lz, lt = hist[-1]
+            if mt > 0.0 and (now - lt) < mt:
+                return
+            dx, dy, dz = x - lx, y - ly, z - lz
+            if md > 0.0 and (dx * dx + dy * dy + dz * dz) < md * md:
+                return
+        hist.append((x, y, z, now))
+        while len(hist) > maxp:
+            hist.pop(0)
+        while len(hist) > 1 and (now - hist[0][3]) > life:
+            hist.pop(0)
 
     # ---- keyframe tracks (identical semantics to particle_studio) ----
     @staticmethod
@@ -409,6 +448,24 @@ class SimEngine:
                 p[19] += p[11] * -friction
         if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
             self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
+        tcfg = self._trail_cfg(em)
+        if tcfg is not None:
+            self._trail_t += dt
+            now = self._trail_t
+            if str(tcfg.get("source", "particles")) == "emitter":
+                self._trail_push("emitter", ex, ey, ez, now, tcfg)
+                self.trail_hist = {"emitter": self.trail_hist.get("emitter", [])}
+            else:
+                alive = set()
+                for p in self.parts:
+                    key = id(p)
+                    alive.add(key)
+                    self._trail_push(key, p[0], p[1], p[10], now, tcfg)
+                for k in list(self.trail_hist.keys()):
+                    if k != "emitter" and k not in alive:
+                        del self.trail_hist[k]
+        elif self.trail_hist:
+            self.trail_hist = {}
         return len(self.parts)
 
     def step_cpp(self, eff, em, ptype, tracks, is3d, dt, scx, scy,
@@ -433,6 +490,8 @@ class SimEngine:
 class App:
     def __init__(self):
         self.ptype = "2d"
+        self.trail = False
+        self.editor_mode = "2d"
         self.filename = "Default"
         self.filepath = None
         self.states = [PS.default_state("birth", 0), PS.default_state("death", 1)]
@@ -518,6 +577,41 @@ class App:
                           "friction": F(c.get("friction", 0.1), 0.1)},
         }
 
+    def _read_trails(self, t):
+        """Sanitized trails block (off by default = legacy look)."""
+        d = PS.default_trails()
+        if isinstance(t, dict):
+            for k, v in t.items():
+                if k in d:
+                    d[k] = v
+        F = self._fnum
+        src = str(d.get("source", "particles")).lower()
+        uv = str(d.get("uvMode", d.get("uvMode", "stretch"))).lower()
+        rib = str(d.get("ribbon", "billboard")).lower()
+        return {
+            "enabled": bool(d.get("enabled", False)),
+            "source": src if src in ("particles", "emitter") else "particles",
+            "maxPoints": max(2, int(F(d.get("maxPoints", 32), 32))),
+            "lifetime": max(0.05, F(d.get("lifetime", 1.0), 1.0)),
+            "minDist": max(0.0, F(d.get("minDist", 4.0), 4.0)),
+            "minTime": max(0.0, F(d.get("minTime", 0.016), 0.016)),
+            "smoothing": max(0, int(F(d.get("smoothing", 0), 0))),
+            "widthStart": max(0.0, F(d.get("widthStart", 8.0), 8.0)),
+            "widthEnd": max(0.0, F(d.get("widthEnd", 1.0), 1.0)),
+            "taper": F(d.get("taper", 1.0), 1.0),
+            "uvMode": uv if uv in ("stretch", "tile") else "stretch",
+            "tileLength": max(1.0, F(d.get("tileLength", 64.0), 64.0)),
+            "ribbon": rib if rib in ("billboard", "fixed", "flat") else "billboard",
+            "colorHead": str(d.get("colorHead", "#ffffff") or "#ffffff"),
+            "colorTail": str(d.get("colorTail", "#ffffff") or "#ffffff"),
+            "alphaHead": max(0, min(255, int(F(d.get("alphaHead", 255), 255)))),
+            "alphaTail": max(0, min(255, int(F(d.get("alphaTail", 0), 0)))),
+            "blend": str(d.get("blend", "inherit") or "inherit"),
+            "gravity": F(d.get("gravity", 0.0), 0.0),
+            "drag": max(0.0, F(d.get("drag", 0.0), 0.0)),
+            "noise": max(0.0, F(d.get("noise", 0.0), 0.0)),
+        }
+
     def read_emitter(self):
         """Rebuild a type-correct emitter dict every read (like the Tk
         edition): switching 2D<->3D never leaks the other mode's keys,
@@ -534,6 +628,7 @@ class App:
         rev = bool(src.get("reverse", False))
         ali = bool(src.get("alignDir", False))
         fields = self._read_fields(src.get("fields"))
+        trails = self._read_trails(src.get("trails"))
         if self.ptype == "3d":
             zs = str(z.get("shape", "sphere") or "sphere").lower()
             if zs not in PS.ZONE_3D:
@@ -567,6 +662,7 @@ class App:
                 "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
                 "seed": int(src.get("seed", 0) or 0),
                 "fields": fields,
+                "trails": trails,
             }
         zs = str(z.get("shape", "Circle") or "Circle")
         if zs not in PS.ZONE_2D:
@@ -593,6 +689,7 @@ class App:
             "blendingMode": (src.get("blendingMode") if src.get("blendingMode") in PS.BLEND_MODES else "Normal"),
             "seed": int(src.get("seed", 0) or 0),
             "fields": fields,
+            "trails": trails,
         }
 
     def current_effect(self):
@@ -639,7 +736,9 @@ class App:
 
     # ---------- undo / redo ----------
     def snapshot(self):
-        return {"ptype": self.ptype, "filename": self.filename,
+        return {"ptype": self.ptype, "trail": bool(getattr(self, "trail", False)),
+                "editor_mode": getattr(self, "editor_mode", self.ptype),
+                "filename": self.filename,
                 "emitter": copy.deepcopy(self.em),
                 "states": copy.deepcopy(self.states),
                 "sel": self.sel_state,
@@ -665,6 +764,11 @@ class App:
         self._restoring = True
         try:
             self.ptype = snap["ptype"]
+            self.trail = bool(snap.get("trail", False))
+            self.editor_mode = snap.get("editor_mode",
+                                        "trail2d" if self.trail and self.ptype == "2d"
+                                        else "trail3d" if self.trail
+                                        else self.ptype)
             self.filename = snap.get("filename", "Default")
             self.em = copy.deepcopy(snap["emitter"])
             self.states = copy.deepcopy(snap["states"])
@@ -1207,9 +1311,58 @@ def paint_front_2d(dl, W, H, ex, ey):
                     segments=20)
 
 
+def _smooth_pts(pts, subdiv):
+    """Catmull-Rom subdivision (0 = off). Points are (x, y) or (x, y, z)."""
+    if subdiv <= 0 or len(pts) < 4:
+        return pts
+    dim = len(pts[0])
+    out = []
+    for i in range(len(pts) - 1):
+        p0 = pts[max(0, i - 1)]
+        p1 = pts[i]
+        p2 = pts[i + 1]
+        p3 = pts[min(len(pts) - 1, i + 2)]
+        out.append(p1)
+        for s in range(1, subdiv + 1):
+            t = s / (subdiv + 1)
+            t2, t3 = t * t, t * t * t
+            q = []
+            for c in range(dim):
+                q.append(0.5 * ((2 * p1[c]) + (-p0[c] + p2[c]) * t
+                                + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2
+                                + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3))
+            out.append(tuple(q))
+    out.append(pts[-1])
+    return out
+
+
+def paint_trails_2d(app, dl, eff):
+    """One polyline per trail (vector overlay; ribbon strip lands in Part 4)."""
+    try:
+        tcfg = (eff.get("emitter") or {}).get("trails") if eff else None
+    except Exception:
+        return
+    if not PS.trails_active(tcfg):
+        return
+    try:
+        sub = max(0, int(tcfg.get("smoothing", 0) or 0))
+        col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
+        a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
+        w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+        for hist in (getattr(app.sim, "trail_hist", {}) or {}).values():
+            if len(hist) < 2:
+                continue
+            pts = _smooth_pts([(x, y) for (x, y, _z, _t) in hist], sub)
+            dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
+                              thickness=w, parent=dl)
+    except Exception:
+        pass
+
+
 def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
     paint_dots_2d(app, dl, tracks)
+    paint_trails_2d(app, dl, eff)
     paint_front_2d(dl, W, H, ex, ey)
 
 
@@ -1400,9 +1553,38 @@ def paint_front_3d(app, dl, W, H, cx, cy):
                     parent=dl, segments=16)
 
 
+def paint_trails_3d(app, dl, cx, cy, eff):
+    """One projected polyline per trail (vector overlay)."""
+    try:
+        tcfg = (eff.get("emitter") or {}).get("trails") if eff else None
+    except Exception:
+        return
+    if not PS.trails_active(tcfg):
+        return
+    try:
+        sub = max(0, int(tcfg.get("smoothing", 0) or 0))
+        col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
+        a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
+        w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+        P = lambda x, y, z: app.proj(x, y, z, cx, cy)
+        for hist in (getattr(app.sim, "trail_hist", {}) or {}).values():
+            if len(hist) < 2:
+                continue
+            pts3 = _smooth_pts([(x, y, z) for (x, y, z, _t) in hist], sub)
+            pts = []
+            for (x, y, z) in pts3:
+                sx, sy, _sc, _z = P(x, y, z)
+                pts.append((sx, sy))
+            dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
+                              thickness=w, parent=dl)
+    except Exception:
+        pass
+
+
 def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
     paint_back_3d(app, dl, W, H, cx, cy, em)
     paint_dots_3d(app, dl, cx, cy, tracks)
+    paint_trails_3d(app, dl, cx, cy, {"emitter": em} if em is not None else None)
     paint_front_3d(app, dl, W, H, cx, cy)
 
 
@@ -1557,6 +1739,12 @@ def cb_em_combo(path, lower=False):
 def cb_em_bool(path):
     def _cb(sender=None, app_data=None, *r):
         em_set(path, bool(app_data))
+    return _cb
+
+
+def cb_em_text(path):
+    def _cb(sender=None, app_data=None, *r):
+        em_set(path, str(app_data or ""))
     return _cb
 
 
@@ -1748,6 +1936,8 @@ def select_state(i):
 
 def set_type(t, commit=True):
     APP.ptype = t
+    APP.editor_mode = ("trail3d" if t == "3d" else "trail2d") \
+        if getattr(APP, "trail", False) else t
     try:
         dpg.set_value("type_radio", "3D" if t == "3d" else "2D")
         zshapes = PS.ZONE_3D if t == "3d" else PS.ZONE_2D
@@ -1890,6 +2080,36 @@ def _sync_fields_form(f):
     _set("em_fric", float(c.get("friction", 0.1) or 0))
 
 
+def _sync_trails_form(t):
+    """Push the trails block into the sidebar widgets (defaults when absent)."""
+    d = PS.default_trails()
+    if isinstance(t, dict):
+        for k, v in t.items():
+            if k in d:
+                d[k] = v
+    _set("em_trail_on", bool(d.get("enabled", False)))
+    _set("em_trail_src", str(d.get("source", "particles") or "particles"))
+    _set("em_trail_max", int(d.get("maxPoints", 32) or 32))
+    _set("em_trail_life", float(d.get("lifetime", 1.0) or 0))
+    _set("em_trail_mind", float(d.get("minDist", 4.0) or 0))
+    _set("em_trail_mint", float(d.get("minTime", 0.016) or 0))
+    _set("em_trail_smooth", int(d.get("smoothing", 0) or 0))
+    _set("em_trail_w0", float(d.get("widthStart", 8.0) or 0))
+    _set("em_trail_w1", float(d.get("widthEnd", 1.0) or 0))
+    _set("em_trail_taper", float(d.get("taper", 1.0) or 0))
+    _set("em_trail_uv", str(d.get("uvMode", "stretch") or "stretch"))
+    _set("em_trail_tile", float(d.get("tileLength", 64.0) or 0))
+    _set("em_trail_rib", str(d.get("ribbon", "billboard") or "billboard"))
+    _set("em_trail_chead", str(d.get("colorHead", "#ffffff") or "#ffffff"))
+    _set("em_trail_ctail", str(d.get("colorTail", "#ffffff") or "#ffffff"))
+    _set("em_trail_ahead", int(d.get("alphaHead", 255) or 0))
+    _set("em_trail_atail", int(d.get("alphaTail", 0) or 0))
+    _set("em_trail_blend", str(d.get("blend", "inherit") or "inherit"))
+    _set("em_trail_grav", float(d.get("gravity", 0.0) or 0))
+    _set("em_trail_drag", float(d.get("drag", 0.0) or 0))
+    _set("em_trail_noise", float(d.get("noise", 0.0) or 0))
+
+
 def sync_emitter_form(self):
     e = self.em
     g = e.get("gravity", {})
@@ -1903,6 +2123,7 @@ def sync_emitter_form(self):
     _set("em_blend", str(e.get("blendingMode", "Normal")))
     _set("em_seed", int(e.get("seed", 0) or 0))
     _sync_fields_form(e.get("fields"))
+    _sync_trails_form(e.get("trails"))
     _set("em_gx", float(g.get("x", 0)))
     _set("em_gy", float(g.get("y", 0)))
     _set("em_gz", float(g.get("z", 0)))
@@ -2046,6 +2267,56 @@ def build_sidebar():
     num_row("Plane Y", "em_planey", 300, cb_field_plane_y)
     num_row("Bounce", "em_bounce", 0.5, cb_em_float(("fields", "collision", "bounce")))
     num_row("Friction", "em_fric", 0.1, cb_em_float(("fields", "collision", "friction")))
+    dpg.add_text("TRAIL SOURCE", color=list(MUTED) + [255])
+    with dpg.group(horizontal=True):
+        dpg.add_text("Enable", color=list(MUTED) + [255])
+        dpg.add_checkbox(tag="em_trail_on", callback=cb_em_bool(("trails", "enabled")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Source", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_trail_src", items=["particles", "emitter"],
+                      default_value="particles", width=-1,
+                      callback=cb_em_combo(("trails", "source")))
+    num_row("Max points", "em_trail_max", 32, cb_em_int(("trails", "maxPoints")))
+    num_row("Lifetime", "em_trail_life", 1.0, cb_em_float(("trails", "lifetime")))
+    num_row("Min dist", "em_trail_mind", 4.0, cb_em_float(("trails", "minDist")))
+    num_row("Min time", "em_trail_mint", 0.016, cb_em_float(("trails", "minTime")))
+    num_row("Smoothing", "em_trail_smooth", 0, cb_em_int(("trails", "smoothing")))
+    dpg.add_text("RIBBON GEOMETRY", color=list(MUTED) + [255])
+    num_row("Width start", "em_trail_w0", 8.0, cb_em_float(("trails", "widthStart")))
+    num_row("Width end", "em_trail_w1", 1.0, cb_em_float(("trails", "widthEnd")))
+    num_row("Taper", "em_trail_taper", 1.0, cb_em_float(("trails", "taper")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("UV mode", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_trail_uv", items=["stretch", "tile"],
+                      default_value="stretch", width=-1,
+                      callback=cb_em_combo(("trails", "uvMode")))
+    num_row("Tile length", "em_trail_tile", 64.0, cb_em_float(("trails", "tileLength")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Ribbon", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_trail_rib", items=["billboard", "fixed", "flat"],
+                      default_value="billboard", width=-1,
+                      callback=cb_em_combo(("trails", "ribbon")))
+    dpg.add_text("TRAIL COLOR", color=list(MUTED) + [255])
+    with dpg.group(horizontal=True):
+        dpg.add_text("Head", color=list(MUTED) + [255])
+        dpg.add_input_text(tag="em_trail_chead", default_value="#ffffff",
+                           width=-1, callback=cb_em_text(("trails", "colorHead")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Tail", color=list(MUTED) + [255])
+        dpg.add_input_text(tag="em_trail_ctail", default_value="#ffffff",
+                           width=-1, callback=cb_em_text(("trails", "colorTail")))
+    num_row("Alpha head", "em_trail_ahead", 255, cb_em_int(("trails", "alphaHead")))
+    num_row("Alpha tail", "em_trail_atail", 0, cb_em_int(("trails", "alphaTail")))
+    with dpg.group(horizontal=True):
+        dpg.add_text("Blend", color=list(MUTED) + [255])
+        dpg.add_combo(tag="em_trail_blend",
+                      items=["inherit"] + list(PS.BLEND_MODES),
+                      default_value="inherit", width=-1,
+                      callback=cb_em_combo(("trails", "blend")))
+    dpg.add_text("TRAIL MOTION", color=list(MUTED) + [255])
+    num_row("Gravity", "em_trail_grav", 0.0, cb_em_float(("trails", "gravity")))
+    num_row("Drag", "em_trail_drag", 0.0, cb_em_float(("trails", "drag")))
+    num_row("Noise", "em_trail_noise", 0.0, cb_em_float(("trails", "noise")))
     dpg.add_text("GRAVITY", color=list(MUTED) + [255])
     num_row("Gravity X", "em_gx", 0, cb_em_float(("gravity", "x")))
     num_row("Gravity Y", "em_gy", 0, cb_em_float(("gravity", "y")))
@@ -2234,6 +2505,24 @@ def load_fonts():
         PS.debug_log("font-fallback", repr(e)[:200])
 
 
+# ================= chooser modes (data-driven) =================
+# id: editor mode; ptype: sim dimensionality ("2d"/"3d");
+# trail: Trails/Ribbons overlay flag; key: keyboard shortcut.
+MODES = [
+    {"id": "2d", "label": "2D  |  Sprites & SVG", "key": "2",
+     "ptype": "2d", "trail": False},
+    {"id": "3d", "label": "3D  |  Meshes & Billboards", "key": "3",
+     "ptype": "3d", "trail": False},
+    {"id": "trail2d", "label": "2D  |  Trails & Ribbons", "key": "4",
+     "ptype": "2d", "trail": True},
+    {"id": "trail3d", "label": "3D  |  Trails & Ribbons", "key": "5",
+     "ptype": "3d", "trail": True},
+]
+MODE_BY_ID = {m["id"]: m for m in MODES}
+MODE_BY_KEY = {m["key"]: m for m in MODES}
+CHOOSER_BTN_W, CHOOSER_BTN_H = 220, 84
+
+
 def build_chooser():
     with dpg.window(tag="chooser_win", label="Carrot Particle Editor",
                     modal=True, show=True, no_resize=True, no_move=True,
@@ -2255,12 +2544,17 @@ def build_chooser():
         dpg.add_separator()
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
-            dpg.add_button(label="2D  |  Sprites & SVG", width=220,
-                           height=84, callback=lambda *a: choose("2d"))
-            dpg.add_button(label="3D  |  Meshes & Billboards", width=220,
-                           height=84, callback=lambda *a: choose("3d"))
+            for m in MODES[:2]:
+                dpg.add_button(label=m["label"], width=CHOOSER_BTN_W,
+                               height=CHOOSER_BTN_H,
+                               callback=lambda *a, _id=m["id"]: choose(_id))
+        with dpg.group(horizontal=True):
+            for m in MODES[2:4]:
+                dpg.add_button(label=m["label"], width=CHOOSER_BTN_W,
+                               height=CHOOSER_BTN_H,
+                               callback=lambda *a, _id=m["id"]: choose(_id))
         dpg.add_spacer(height=6)
-        dpg.add_text("press 2 / 3", color=list(MUTED) + [255])
+        dpg.add_text("press 2 / 3 / 4 / 5", color=list(MUTED) + [255])
 
 
 def _dialog_cancelled(sender=None, app_data=None, *r):
@@ -2313,10 +2607,18 @@ def build_ui():
             callback=lambda *a: setattr(APP, "_dblclick", True))
         for key, name in ((dpg.mvKey_Z, "z"), (dpg.mvKey_Y, "y"),
                           (dpg.mvKey_S, "s"), (dpg.mvKey_2, "2"),
-                          (dpg.mvKey_3, "3")):
+                          (dpg.mvKey_3, "3"), (dpg.mvKey_4, "4"),
+                          (dpg.mvKey_5, "5")):
             dpg.add_key_press_handler(
                 key=key,
                 callback=lambda *a, u=name: APP._keys.append(u))
+        for _nk, _nm in (("Numpad2", "2"), ("Numpad3", "3"),
+                         ("Numpad4", "4"), ("Numpad5", "5")):
+            _kc = getattr(dpg, "mvKey_" + _nk, None)
+            if _kc is not None:
+                dpg.add_key_press_handler(
+                    key=_kc,
+                    callback=lambda *a, u=_nm: APP._keys.append(u))
     APP._keys = []
     bind_accent_buttons()
 
@@ -2326,14 +2628,21 @@ def build_ui():
 
 
 @_safe_action
-def choose(ptype):
-    PS.debug_log("CHOOSE", ptype)
+def choose(mode_id):
+    m = MODE_BY_ID.get(mode_id, MODE_BY_ID["2d"])
+    ptype, trail = m["ptype"], m["trail"]
+    PS.debug_log("CHOOSE", m["id"])
     dpg.configure_item("chooser_win", show=False)
     APP._editor_open = True
+    APP.trail = trail
+    APP.editor_mode = m["id"]
     set_type(ptype, commit=False)
     APP.sim.reset()
     APP.mark_dirty()
     APP.history_commit()
+    if trail:
+        APP.set_status("Trails & Ribbons mode (" + ptype.upper() + ")",
+                       MUTED)
 
 
 @_safe_action
@@ -3146,8 +3455,8 @@ def handle_keys():
             APP.redo()
         elif k == "s" and ctrl:
             do_save()
-        elif k in ("2", "3") and dpg.is_item_shown("chooser_win"):
-            choose("2d" if k == "2" else "3d")
+        elif k in ("2", "3", "4", "5") and dpg.is_item_shown("chooser_win"):
+            choose(MODE_BY_KEY[k]["id"])
 
 
 def frame():
@@ -3330,10 +3639,12 @@ def frame():
                 dpg.draw_image(_tag, [0, 0], [W, H], parent="vp_draw")
                 if is3d:
                     paint_guides_3d(APP, "vp_draw", cx, cy, eff["emitter"])
+                    paint_trails_3d(APP, "vp_draw", cx, cy, eff)
                     paint_front_3d(APP, "vp_draw", W, H, cx, cy)
                 else:
                     paint_guides_2d(APP, "vp_draw", W, H, cx, cy, eff,
                                     _gx, _hz, _ex, _ey)
+                    paint_trails_2d(APP, "vp_draw", eff)
                     paint_front_2d("vp_draw", W, H, _ex, _ey)
             elif is3d:
                 draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"],
@@ -3398,7 +3709,7 @@ def frame():
             except Exception:
                 pass
         auto = os.environ.get("CARROT_AUTO")
-        if auto in ("2d", "3d") and dpg.is_item_shown("chooser_win"):
+        if auto in MODE_BY_ID and dpg.is_item_shown("chooser_win"):
             choose(auto)
     except Exception:
         PS.debug_log("IMG-FRAME-EXC",
