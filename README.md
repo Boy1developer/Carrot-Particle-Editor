@@ -31,7 +31,7 @@ Carrot Particle Editor is a two-part toolkit:
 
 | Part | What it is |
 | --- | --- |
-| **Carrot Particle Editor** | A Dear PyGui desktop app (`CarrotParticleEditor.exe`) for designing effects with a live viewport, then exporting them as JSON. |
+| **Carrot Particle Editor** | A Dear PyGui desktop app (`CarrotParticleEditor.exe`, entry `editor/studio_imgui.py`) for designing effects with a live viewport, then exporting them as JSON. `editor/particle_studio.py` is the Tk fallback and the shared logic layer (defaults, sim math, validation, migration). |
 | **Advanced Particle Emitter** | A GDevelop extension (`AdvancedParticleEmitter.json`) that renders those effects in-game: **2D** via [PixiJS](https://pixijs.com) and **3D** via [Three.js](https://threejs.org). |
 
 Both parts share a single source of truth for particle behavior, shapes, and the export format (see [Shared contracts](#-shared-contracts)), so an effect looks the same in the editor, the browser preview, and your game.
@@ -84,22 +84,24 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 - **12 particle shapes** — circle, square, triangle, star, diamond, line, custom, sphere, cube, pyramid, torus, billboard — shared by the 2D and 3D renderers.
 - **Custom 3D models & images** — upload `.glb` / `.gltf` / `.obj` (or images for 2D). Models render as themselves in the viewport, the browser preview, and in-game. Rigged/skinned GLBs are baked to their rest pose automatically.
 - **Per-state colors** — birth / mid / death each keep their own color. White means natural materials; any other color tints over the base.
-- **Gradual shape morph** — birth-to-death shapes cross-fade around the mid-segment flip instead of snapping.
-- **Ready-made templates** — Explosion, Fire, Rain, Snow.
-- **Force fields** *(v1.1)* — age-phased turbulence, Y-axis vortex, linear-falloff attractor, and a bounce/friction collision plane. All off by default (legacy motion stays bit-identical).
-- **Deterministic seed** — a nonzero `seed` replays the identical effect everywhere: editor (Python + C++), browser preview, and GDevelop runtime. `0` keeps legacy unseeded behavior.
-- **Blend modes** — Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay, selectable per emitter.
+- **Gradual shape morph** — birth-to-death shapes cross-fade inside the `(0.25, 0.75)` window instead of snapping (desktop viewport + browser preview; game runtime keeps the classic swap for meshes).
+- **Ready-made templates** — Explosion, Fire, Rain, Snow (2D + 3D variants), with 100-step undo/redo.
+- **Force fields** *(v1.1)* — age-phased turbulence, Y-axis vortex, linear-falloff attractor, and a bounce/friction collision plane. All off by default (legacy motion stays bit-identical). Editable in the Dear PyGui sidebar; Tk preserves the block on round-trip.
+- **Deterministic seed** — a nonzero `seed` replays the identical effect everywhere: editor (Python + C++), browser preview, and GDevelop runtime. `0` keeps legacy unseeded behavior. Editable in the Dear PyGui sidebar; Tk preserves it.
+- **Blend modes** — Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay, selectable per emitter in the Dear PyGui sidebar (Tk preserves the loaded value).
 
 ### ⚡ Performance
-- **InstancedMesh batching** — ~580 draw calls collapse into ~12 buckets, verified **pixel-identical** per particle (matrix, color, alpha), including morph flips and all blend modes.
-- **Lazy buckets** — created only for shapes in use; empty buckets cost zero draw calls.
-- **Pooled runtime** — shape-aware mesh/material pooling, shared geometries, and no per-frame allocations in steady state. Automatic fallback to the classic path if instancing is unavailable.
+- **InstancedMesh batching (3D primitives)** — ~580 draw calls collapse into ~12 buckets (`INST_CAP 2048`), verified **pixel-identical** per particle (matrix, color, alpha), including morph flips and all blend modes. Models/images keep the pooled-mesh path.
+- **Lazy buckets** — `getBucket` creates a bucket on first write per shape; empty buckets stay `visible=false` and cost zero draw calls.
+- **Sampling diet** — constant tracks take the static fast path and colors use pre-parsed ints (`F._dietOff` forces the legacy path for A/B) — zero visual change.
+- **Pooled runtime** — shape-aware mesh/material pooling, shared geometries, hoisted per-frame temporaries, and no per-frame allocations in steady state. Automatic fallback to the classic path if instancing is unavailable (`F._forceClassic`).
 - **Dual simulation core** — a Python reference plus an optional compiled **C++ core** for faster live preview, checked for numerical parity (99/99 cases) against Python.
-- **Adaptive viewport** — crisp vector drawlist below ~900 particles; above that, the particle layer renders offscreen on the GPU and uploads as a texture.
+- **Adaptive viewport** — crisp vector drawlist below ~900 particles (`MIN_N = 900`); above that, the particle layer renders offscreen (320 px wide) and uploads as a texture while guides/gizmo stay vector. Custom meshes always use the vector path.
 
 ### 🔍 Previews
 - **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built on raw `ctypes` (no PyOpenGL or numpy needed).
-- **Browser fast preview** — a self-contained `live_effect.html` (zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync.
+- **Browser fast preview** — a self-contained `live_effect.html` (≈1.1 MB, zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync.
+- **OS-native file dialogs** — Save / Export / Open use the OS picker (Dear PyGui dialogs deliver empty payloads on this setup).
 
 ---
 
@@ -107,7 +109,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 ### 1. Get the editor
 
-Download `CarrotParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page and run it. No Python installation required.
+Download `CarrotParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.1.2`; it pairs with extension `v0.1.2` and export format `v1.1` (v1.0 files migrate automatically).
 
 **Requirements:** Windows 10/11 (64-bit) · GPU with OpenGL 3.3 support
 
@@ -116,6 +118,12 @@ Download `CarrotParticleEditor.exe` from the **[Releases](https://github.com/Boy
 
 ```bash
 pip install dearpygui
+python editor/studio_imgui.py
+```
+
+Tk fallback (shared logic layer, no blend/seed/field widgets — values are preserved):
+
+```bash
 python editor/particle_studio.py
 ```
 
