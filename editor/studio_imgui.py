@@ -2636,6 +2636,8 @@ def choose(mode_id):
     APP._editor_open = True
     APP.trail = trail
     APP.editor_mode = m["id"]
+    if trail:
+        ensure_trails_for_mode()
     set_type(ptype, commit=False)
     APP.sim.reset()
     APP.mark_dirty()
@@ -2643,6 +2645,28 @@ def choose(mode_id):
     if trail:
         APP.set_status("Trails & Ribbons mode (" + ptype.upper() + ")",
                        MUTED)
+
+
+def ensure_trails_for_mode():
+    """Entering a Trails mode with trails disabled shows plain particles.
+
+    Flip the block on (keeping every user value) so ribbons appear
+    immediately; the sidebar checkbox stays the single source of truth.
+    """
+    try:
+        em = APP.em if isinstance(APP.em, dict) else {}
+        t = em.get("trails")
+        if not isinstance(t, dict):
+            t = PS.default_trails()
+            em["trails"] = t
+            APP.em = em
+        if not PS.trails_active(t):
+            t["enabled"] = True
+            if int(t.get("maxPoints", 0) or 0) < 2:
+                t["maxPoints"] = 32
+        APP.sync_emitter_form()
+    except Exception:
+        pass
 
 
 @_safe_action
@@ -2728,6 +2752,9 @@ def _apply_loaded_effect(eff, path):
     APP.states = eff.get("states", APP.states)
     APP.sel_state = 0
     APP.em = eff.get("emitter", PS.default_emitter("2d"))
+    if getattr(APP, "trail", False) and not PS.trails_active(
+            (APP.em or {}).get("trails")):
+        ensure_trails_for_mode()
     APP.sync_all()
     APP.sim.reset()
     APP.sim.seed_sim((eff.get("emitter") or {}).get("seed", 0))
