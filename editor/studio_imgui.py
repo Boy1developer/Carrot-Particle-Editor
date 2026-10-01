@@ -2427,14 +2427,9 @@ def trail_step_row(key):
             dpg.add_input_text(tag=tag, width=-1,
                                callback=cb_trail_text(key))
         else:
-            dpg.add_input_float(tag=tag, width=118,
+            dpg.add_input_float(tag=tag, width=-1, step=step,
+                                step_fast=step * 10.0,
                                 callback=cb_trail_num(key))
-            dpg.add_button(label="-", width=26,
-                           callback=lambda *a, k=key, s=step: _trail_step(
-                               k, -s))
-            dpg.add_button(label="+", width=26,
-                           callback=lambda *a, k=key, s=step: _trail_step(
-                               k, s))
             TRAIL_DRAG_LABELS[lab] = (key, step)
 
 

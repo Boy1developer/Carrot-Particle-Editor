@@ -60,7 +60,7 @@ def _norm_curve_keys(keys):
 class CurveEditor:
     """Drawlist curve widget. value() -> [[x, y, mode]]."""
 
-    W, H = 220, 110
+    W, H = 200, 110
 
     def __init__(self, tag, initial, onchange):
         self.tag = tag
@@ -241,9 +241,13 @@ class CurveEditor:
             dpg.add_drawlist(tag=self.dl, width=self.W, height=self.H,
                              **kw)
             with dpg.group(horizontal=True):
-                for name in ("Constant", "Linear Down", "Ease Out",
-                             "Bell", "Spike", "Taper"):
-                    dpg.add_button(label=name, width=62, small=True,
+                for name in ("Constant", "Linear Down", "Ease Out"):
+                    dpg.add_button(label=name, small=True,
+                                   callback=lambda s, a, u=name: self.on_preset(
+                                       s, u))
+            with dpg.group(horizontal=True):
+                for name in ("Bell", "Spike", "Taper"):
+                    dpg.add_button(label=name, small=True,
                                    callback=lambda s, a, u=name: self.on_preset(
                                        s, u))
             with dpg.group(horizontal=True):
@@ -266,7 +270,7 @@ class CurveEditor:
 class GradientEditor:
     """Color stops (below bar) + alpha stops (above bar)."""
 
-    W, BAR = 220, 26
+    W, BAR = 200, 26
 
     def __init__(self, tag, colors, alphas, onchange):
         self.tag = tag
@@ -507,15 +511,20 @@ class GradientEditor:
             with dpg.group(horizontal=True):
                 dpg.add_color_edit(tag=self.tag + "_pick",
                                    default_value=[255, 255, 255, 255],
-                                   width=60, callback=self.on_pick)
+                                   width=80, callback=self.on_pick)
                 dpg.add_input_int(tag=self.tag + "_aval", default_value=255,
-                                  width=60, callback=self.on_alpha)
+                                  width=-1, step=1, step_fast=10,
+                                  callback=self.on_alpha)
             with dpg.group(horizontal=True):
-                for name in ("White Fade", "Fire", "Ice", "Neon"):
-                    dpg.add_button(label=name, width=52, small=True,
+                for name in ("White Fade", "Fire", "Ice"):
+                    dpg.add_button(label=name, small=True,
                                    callback=lambda s, a, u=name: self.on_preset(
                                        s, u))
-                dpg.add_button(label="Reverse", width=60, small=True,
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Neon", small=True,
+                               callback=lambda s, a: self.on_preset(
+                                   s, "Neon"))
+                dpg.add_button(label="Reverse", small=True,
                                callback=self.on_reverse)
         with dpg.item_handler_registry(tag=self.dl + "_hr") as hr:
             dpg.add_item_clicked_handler(button=0, callback=self.on_click)
