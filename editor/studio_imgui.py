@@ -161,8 +161,14 @@ class SimEngine:
             life = max(0.05, float(cfg.get("lifetime", 1.0) or 0))
             md = max(0.0, float(cfg.get("minDist", 4.0) or 0))
             mt = max(0.0, float(cfg.get("minTime", 0.016) or 0))
+            jit = max(0.0, min(1.0, float(cfg.get("lifetimeJitter",
+                                                 0.0) or 0.0)))
         except (ValueError, TypeError):
             return
+        if jit > 0.0 and key != "emitter":
+            # deterministic per-trail scatter in [1-jit, 1] (0 = off)
+            frac = (sum(map(ord, str(key))) % 1000) / 1000.0
+            life = max(0.05, life * (1.0 - jit * frac))
         hist = self.trail_hist.get(key)
         if hist is None:
             hist = self.trail_hist[key] = []
@@ -1323,6 +1329,117 @@ def trails_on(app, em):
         return False
 
 
+def _hide_trail_particles(em):
+    """Dots hidden only when the block says so (default True = old look)."""
+    try:
+        return bool((em.get("trails") or {}).get("hideParticle", True))
+    except Exception:
+        return True
+
+
+#: above this many live trails the strip renderer falls back to one
+#: flat polyline per trail so the viewport never hitches
+TRAIL_STRIP_FALLBACK_N = 48
+
+
+def _trail_lut_for(tcfg):
+    """Baked tables for the live block (cached APP.trail_lut when fresh)."""
+    try:
+        lut = getattr(APP, "trail_lut", None) or {}
+        if lut.get("w") and lut.get("c"):
+            return lut["w"], lut["c"]
+    except Exception:
+        pass
+    return PS.bake_curve((tcfg or {}).get("widthCurve"), 64), \
+        PS.bake_gradient((tcfg or {}).get("colorStops"),
+                         (tcfg or {}).get("alphaStops"))
+
+
+def _paint_ribbon_trail(app, dl, raw, key, style, wlut, grad, now, sub,
+                        max_segs=8, core_on=True):
+    """Glow pass + outer/edge strip + inner core strip. Returns draws.
+
+    raw is pre-strided to MAX_INPUT_PTS, then smoothed, then strided
+    again to max_segs stations, so per-trail CPU stays flat.
+    """
+    if TR is None:
+        return 0
+    pts = [tuple(p[:2]) for p in TR.pre_stride(raw)]
+    if len(pts) < 2:
+        return 0
+    pts = _smooth_pts(pts, sub)
+    # glow polyline on a light stride of the smoothed points
+    gpts = pts if len(pts) <= 32 else \
+        [pts[i] for i in TR.stride_indices(len(pts), 31)]
+    n = len(pts)
+    draws = 0
+    ts = [i / (n - 1) for i in range(n)]
+    idx = TR.stride_indices(n, max_segs)
+    spts = [pts[i] for i in idx]
+    sts = [ts[i] for i in idx]
+    widths = [TR.floored_width(t, style, wlut) for t in sts]
+    phase = (sum(map(ord, str(key))) % 1000) / 1000.0
+    fl = TR.flicker_factor(now, style["flickerHz"], style["flickerAmt"],
+                           phase)
+    # glow under-pass: one wide translucent polyline
+    if style["glowWidth"] > 0.0 and style["glowAlpha"] > 0.0:
+        _gr, _gg, _gb, ga0 = TR.lut_color(grad, 0.0)
+        er, eg, eb = style["edgeColor"]
+        ga = max(0, min(255, int(round(ga0 * style["glowAlpha"] * fl))))
+        if ga > 0:
+            dpg.draw_polyline(gpts, color=[int(er), int(eg), int(eb), ga],
+                              thickness=max(1, int(round(max(widths)
+                                                          * style["glowWidth"]))),
+                              parent=dl)
+            draws += 1
+    # outer (edge-mixed) strip, full width
+    left, right = TR.build_ribbon(spts, widths)
+    for k in range(len(idx) - 1):
+        tm = (sts[k] + sts[k + 1]) * 0.5
+        r, g, b, a = TR.lut_color(grad, tm)
+        rr, gg, bb = TR.outer_color((float(r), float(g), float(b)), style)
+        aa = max(0, min(255, int(round(TR.outer_alpha(float(a), style)
+                                                 * fl))))
+        if aa <= 0:
+            continue
+        dpg.draw_polygon(TR.seg_quad(left, right, k),
+                         color=[0, 0, 0, 0],
+                         fill=[int(rr), int(gg), int(bb), aa], parent=dl)
+        draws += 1
+    # inner core strip (narrower, brighter)
+    cw_frac = style["coreWidth"] if core_on else 0.0
+    if cw_frac > 0.01:
+        cleft, cright = TR.build_ribbon(
+            spts, [w * cw_frac for w in widths])
+        for k in range(len(idx) - 1):
+            tm = (sts[k] + sts[k + 1]) * 0.5
+            r, g, b, a = TR.lut_color(grad, tm)
+            rr, gg, bb = TR.core_color((float(r), float(g), float(b)),
+                                      style)
+            aa = max(0, min(255, int(round(float(a) * fl))))
+            if aa <= 0:
+                continue
+            dpg.draw_polygon(TR.seg_quad(cleft, cright, k),
+                             color=[0, 0, 0, 0],
+                             fill=[int(rr), int(gg), int(bb), aa], parent=dl)
+            draws += 1
+    return draws
+
+
+def _paint_legacy_trail(app, dl, pts):
+    """Flat fallback polyline (perf guard only, not a look)."""
+    try:
+        tcfg = (app._legacy_tcfg or {})
+    except Exception:
+        tcfg = {}
+    col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
+    a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
+    w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+    dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
+                      thickness=w, parent=dl)
+    app._trail_draws += 1
+
+
 def _smooth_pts(pts, subdiv):
     """Catmull-Rom subdivision (0 = off). Points are (x, y) or (x, y, z)."""
     if subdiv <= 0 or len(pts) < 4:
@@ -1349,26 +1466,38 @@ def _smooth_pts(pts, subdiv):
 
 
 def paint_trails_2d(app, dl, eff):
-    """One polyline per trail (vector overlay; ribbon strip lands in Part 4)."""
+    """LUT-driven ribbon strips (glow + edge strip + core); see
+    editor/trail_render.py for the silhouette math."""
     try:
         tcfg = (eff.get("emitter") or {}).get("trails") if eff else None
     except Exception:
         return
     if not PS.trails_active(tcfg):
         return
+    if TR is None:
+        return
     try:
+        style = TR.resolve_style(tcfg)
+        wlut, grad = _trail_lut_for(tcfg)
         sub = max(0, int(tcfg.get("smoothing", 0) or 0))
-        col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
-        a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
-        w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+        now = time.time()
+        hists = list((getattr(app.sim, "trail_hist", {}) or {}).items())
+        flat = len(hists) > TRAIL_STRIP_FALLBACK_N
+        segs, core_on = TR.detail_for_count(len(hists))
+        app._legacy_tcfg = tcfg
         dbg = getattr(app, "trail_dbg", {}) or {}
-        for hist in (getattr(app.sim, "trail_hist", {}) or {}).values():
+        for key, hist in hists:
             if len(hist) < 2:
                 continue
-            pts = _smooth_pts([(x, y) for (x, y, _z, _t) in hist], sub)
-            dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
-                              thickness=w, parent=dl)
-            app._trail_draws += 1
+            raw = [(x, y) for (x, y, _z, _t) in hist]
+            if flat:
+                _paint_legacy_trail(app, dl, _smooth_pts(raw, sub))
+                continue
+            app._trail_draws += _paint_ribbon_trail(
+                app, dl, raw, key, style, wlut, grad, now, sub,
+                segs, core_on)
+            if dbg.get("points") or dbg.get("bounds"):
+                pts = _smooth_pts(raw, sub)
             if dbg.get("points"):
                 for (px, py) in pts:
                     dpg.draw_circle([px, py], 2, color=[255, 201, 60, 255],
@@ -1418,7 +1547,7 @@ def _update_trail_stats():
 def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
     em = (eff.get("emitter") or {}) if eff else None
-    if not trails_on(app, em):
+    if (not trails_on(app, em)) or (not _hide_trail_particles(em)):
         paint_dots_2d(app, dl, tracks)
     paint_trails_2d(app, dl, eff)
     paint_front_2d(dl, W, H, ex, ey)
@@ -1612,35 +1741,46 @@ def paint_front_3d(app, dl, W, H, cx, cy):
 
 
 def paint_trails_3d(app, dl, cx, cy, eff):
-    """One projected polyline per trail (vector overlay)."""
+    """Projected LUT-driven ribbon strips (same look as 2D)."""
     try:
         tcfg = (eff.get("emitter") or {}).get("trails") if eff else None
     except Exception:
         return
     if not PS.trails_active(tcfg):
         return
+    if TR is None:
+        return
     try:
+        style = TR.resolve_style(tcfg)
+        wlut, grad = _trail_lut_for(tcfg)
         sub = max(0, int(tcfg.get("smoothing", 0) or 0))
-        col = _c(str(tcfg.get("colorHead", "#ffffff") or "#ffffff"))
-        a = max(0, min(255, int(tcfg.get("alphaHead", 255) or 0)))
-        w = max(1, int(round(float(tcfg.get("widthStart", 8.0) or 0) * 0.5)))
+        now = time.time()
         P = lambda x, y, z: app.proj(x, y, z, cx, cy)
-        for hist in (getattr(app.sim, "trail_hist", {}) or {}).values():
+        hists = list((getattr(app.sim, "trail_hist", {}) or {}).items())
+        flat = len(hists) > TRAIL_STRIP_FALLBACK_N
+        segs, core_on = TR.detail_for_count(len(hists))
+        app._legacy_tcfg = tcfg
+        for key, hist in hists:
             if len(hist) < 2:
                 continue
-            pts3 = _smooth_pts([(x, y, z) for (x, y, z, _t) in hist], sub)
-            pts = []
-            for (x, y, z) in pts3:
+            raw = []
+            for (x, y, z, _t) in hist:
                 sx, sy, _sc, _z = P(x, y, z)
-                pts.append((sx, sy))
-            dpg.draw_polyline(pts, color=[col[0], col[1], col[2], a],
-                              thickness=w, parent=dl)
-            app._trail_draws += 1
-            if (getattr(app, "trail_dbg", {}) or {}).get("points"):
+                raw.append((sx, sy))
+            if flat:
+                _paint_legacy_trail(app, dl, _smooth_pts(raw, sub))
+                continue
+            app._trail_draws += _paint_ribbon_trail(
+                app, dl, raw, key, style, wlut, grad, now, sub,
+                segs, core_on)
+            _dbg = getattr(app, "trail_dbg", {}) or {}
+            if _dbg.get("points") or _dbg.get("bounds"):
+                pts = _smooth_pts(raw, sub)
+            if _dbg.get("points"):
                 for (px, py) in pts:
                     dpg.draw_circle([px, py], 2, color=[255, 201, 60, 255],
                                     parent=dl)
-            if (getattr(app, "trail_dbg", {}) or {}).get("bounds"):
+            if _dbg.get("bounds"):
                 xs = [p[0] for p in pts]
                 ys = [p[1] for p in pts]
                 dpg.draw_rectangle([min(xs), min(ys)], [max(xs), max(ys)],
@@ -1651,7 +1791,7 @@ def paint_trails_3d(app, dl, cx, cy, eff):
 
 def draw_view_3d(app, dl, W, H, cx, cy, em, tracks=None):
     paint_back_3d(app, dl, W, H, cx, cy, em)
-    if not trails_on(app, em):
+    if (not trails_on(app, em)) or (not _hide_trail_particles(em)):
         paint_dots_3d(app, dl, cx, cy, tracks)
     paint_trails_3d(app, dl, cx, cy, {"emitter": em} if em is not None else None)
     paint_front_3d(app, dl, W, H, cx, cy)
@@ -2275,6 +2415,13 @@ try:
 except Exception:
     TW = None
     HAS_TRAIL_WIDGETS = False
+
+try:
+    import trail_render as TR
+    HAS_TRAIL_RENDER = True
+except Exception:
+    TR = None
+    HAS_TRAIL_RENDER = False
 
 try:
     import trail_templates_ui as TTU
