@@ -1,0 +1,48 @@
+{
+  "id": "speed_lines",
+  "name": "Speed Lines",
+  "category": "movement",
+  "description": "Camera speed lines.",
+  "tags": [
+    "additive",
+    "camera"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.15,
+    "maxPoints": 24,
+    "minDist": 6.0,
+    "ratio": 0.3,
+    "widthStart": 2.0,
+    "widthEnd": 2.0,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#ffffff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        160
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

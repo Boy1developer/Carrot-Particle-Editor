@@ -30,7 +30,7 @@ a = Analysis(
     binaries=[],
     datas=[_data('preview'), _data('assets'), _data('render'), _data('presets'), _data('node_modules/three/build/three.module.js', 'node_modules/three/build'), _data('node_modules/pixi.js/dist/pixi.mjs', 'node_modules/pixi.js/dist')] + _glfw_datas,
     hiddenimports=['particle_core', 'render.gl_view', 'glfw', 'dearpygui',
-                   'particle_studio'],
+                   'particle_studio', 'trail_widgets', 'trail_templates_ui'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

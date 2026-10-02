@@ -1,0 +1,49 @@
+{
+  "id": "ice_frost",
+  "name": "Ice Frost Trail",
+  "category": "nature",
+  "description": "Frosty crystal trail.",
+  "tags": [
+    "ice"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.0,
+    "maxPoints": 44,
+    "minDist": 2.5,
+    "widthStart": 8.0,
+    "widthEnd": 2.0,
+    "flipCols": 4,
+    "flipRows": 2,
+    "flipFPS": 6.0,
+    "colorStops": [
+      [
+        0,
+        "#e8f7ff"
+      ],
+      [
+        1,
+        "#6fb7ff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        220
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": "crystal",
+  "version": 1
+}

@@ -1,0 +1,53 @@
+{
+  "id": "plasma_ribbon",
+  "name": "Plasma Ribbon",
+  "category": "magic",
+  "description": "Wavy HDR plasma.",
+  "tags": [
+    "additive",
+    "energy"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.7,
+    "maxPoints": 48,
+    "minDist": 2.0,
+    "widthStart": 9.0,
+    "widthEnd": 3.0,
+    "noise": 26.0,
+    "intensity": 2.2,
+    "colorStops": [
+      [
+        0,
+        "#aefcff"
+      ],
+      [
+        0.5,
+        "#7a2bff"
+      ],
+      [
+        1,
+        "#ff2f92"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

@@ -1,0 +1,48 @@
+{
+  "id": "fairy_dust",
+  "name": "Fairy Dust",
+  "category": "magic",
+  "description": "Soft sparkling trail.",
+  "tags": [
+    "sparkle"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.0,
+    "maxPoints": 48,
+    "minDist": 2.0,
+    "widthStart": 7.0,
+    "widthEnd": 1.0,
+    "inheritColor": true,
+    "fadeTail": true,
+    "tailLen": 0.6,
+    "colorStops": [
+      [
+        0,
+        "#fff6d8"
+      ],
+      [
+        1,
+        "#ffb3ec"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        200
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

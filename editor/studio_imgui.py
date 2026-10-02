@@ -553,6 +553,7 @@ class App:
         self._dblclick = False
         self._custom_nodes = []
         self._editor_open = False
+        self._tpl_t = 0.0
         self.trail_collapsed = {}
         self.trail_lut = None
         self.trail_dbg = {"points": False, "bounds": False}
@@ -1395,6 +1396,13 @@ def _update_trail_stats():
                       "render: %.2fms" % (
                           len(hist), nv, APP._trail_draws, APP._sim_ms,
                           APP._render_ms))
+        try:
+            if now - getattr(APP, "_tpl_t", 0.0) > 2.0:
+                cur = str(dpg.get_value("status_text") or "")
+                if cur.startswith("Applied:"):
+                    APP.set_status("Ready", OK)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -2260,6 +2268,13 @@ except Exception:
     TW = None
     HAS_TRAIL_WIDGETS = False
 
+try:
+    import trail_templates_ui as TTU
+    HAS_TPL_UI = True
+except Exception:
+    TTU = None
+    HAS_TPL_UI = False
+
 
 TRAIL_EDITORS = {}  # dl_tag -> CurveEditor/GradientEditor
 TRAIL_DRAG_LABELS = {}  # label_tag -> (key, step)
@@ -2576,6 +2591,26 @@ def build_trail_inspector():
     for sec, title in TRAIL_SECTIONS:
         build_trail_section(sec, title, by_sec.get(sec, []))
     _build_trail_tools()
+    _build_trail_templates_section()
+
+
+def _build_trail_templates_section():
+    """Sibling of the particle Templates row.
+
+    Full category names must never truncate in the 320px panel, so the
+    five buttons wrap 2 + 2 + 1 (small buttons) instead of 3 + 2.
+    """
+    sec("Templates")
+    _rows = [[("combat", "Combat & Weapons"), ("magic", "Magic & Energy")],
+             [("movement", "Movement & Vehicles"),
+              ("nature", "Nature & Elements")],
+             [("stylized", "Stylized & Tools")]]
+    for _row in _rows:
+        with dpg.group(horizontal=True):
+            for _cid, _clab in _row:
+                dpg.add_button(label=_clab, width=128, small=True,
+                               callback=lambda *a, u=_cid: TTU.open_popup(u) if HAS_TPL_UI else None)
+    dpg.add_text("", tag="tpl_applied", color=list(MUTED) + [255], wrap=250)
 
 
 def _build_curve_row():
@@ -2732,6 +2767,63 @@ def sync_trails_form():
         pass
     sync_trails_visibility()
     rebake_trails_lut()
+
+
+def sync_trails_changed(changed):
+    """Set only the widgets whose field ids really changed (template apply)."""
+    try:
+        t = APP.em.get("trails") or {}
+        for key in changed or []:
+            if key in ("widthCurve", "colorStops", "alphaStops",
+                       "lifeColorStops", "lifeAlphaStops"):
+                continue
+            try:
+                _set(trail_tag(key), t.get(key))
+            except Exception:
+                pass
+        ed = TRAIL_EDITORS.get("trail_wcurve_dl")
+        if ed is not None and "widthCurve" in (changed or []):
+            ed.set_keys(t.get("widthCurve"))
+        ed = TRAIL_EDITORS.get("trail_grad_dl")
+        if ed is not None and ("colorStops" in (changed or []) or
+                               "alphaStops" in (changed or [])):
+            ed.set_stops(t.get("colorStops"), t.get("alphaStops"))
+        ed = TRAIL_EDITORS.get("trail_lifegrad_dl")
+        if ed is not None and ("lifeColorStops" in (changed or []) or
+                               "lifeAlphaStops" in (changed or [])):
+            ed.set_stops(t.get("lifeColorStops"), t.get("lifeAlphaStops"))
+    except Exception:
+        pass
+    sync_trails_visibility()
+
+
+def trail_reset_all():
+    """Whole-block reset (popup footer)."""
+    try:
+        APP.em["trails"] = PS.default_trails()
+        APP.mark_dirty()
+        rebake_trails_lut()
+        sync_trails_form()
+    except Exception:
+        pass
+
+
+def init_tpl_ctx():
+    if not HAS_TPL_UI:
+        return
+    TTU.init_ctx(
+        get_ptype=lambda: APP.ptype,
+        get_trails=lambda: APP.em.get("trails") or {},
+        set_trails=lambda new: APP.em.__setitem__("trails", dict(new)),
+        sync_changed=lambda ch: sync_trails_changed(ch),
+        rebake=lambda: rebake_trails_lut(),
+        reset_sim=lambda: APP.sim.reset(),
+        dirty=lambda: APP.mark_dirty(),
+        commit=lambda msg: (APP.history_commit(),
+                            APP.set_status(msg, OK)),
+        status=lambda msg: (APP.set_status(msg, OK),
+                            setattr(APP, "_tpl_t", time.time())),
+        reset_trails=lambda: trail_reset_all())
 
 
 def build_sidebar():
@@ -2901,7 +2993,7 @@ def build_sidebar():
                 dpg.add_button(label=name, width=74,
                                callback=lambda *a, u=name: apply_template(u))
         dpg.add_button(label="Export JSON", tag="export_btn", width=-1, height=36,
-                       callback=lambda *a: do_save_as())
+                       callback=lambda *a: do_save_as(), parent="side_child")
 
 
 def build_topbar():
@@ -3118,7 +3210,7 @@ def build_ui():
         for key, name in ((dpg.mvKey_Z, "z"), (dpg.mvKey_Y, "y"),
                           (dpg.mvKey_S, "s"), (dpg.mvKey_2, "2"),
                           (dpg.mvKey_3, "3"), (dpg.mvKey_4, "4"),
-                          (dpg.mvKey_5, "5")):
+                          (dpg.mvKey_5, "5"), (dpg.mvKey_Escape, "esc")):
             dpg.add_key_press_handler(
                 key=key,
                 callback=lambda *a, u=name: APP._keys.append(u))
@@ -4006,6 +4098,8 @@ def handle_keys():
             do_save()
         elif k in ("2", "3", "4", "5") and dpg.is_item_shown("chooser_win"):
             choose(MODE_BY_KEY[k]["id"])
+        elif k == "esc" and HAS_TPL_UI:
+            TTU.close_popup()
 
 
 def frame():
@@ -4295,6 +4389,11 @@ def main():
     apply_theme()
     load_fonts()
     trail_ui_state(load=True)
+    init_tpl_ctx()
+    if HAS_TPL_UI:
+        _n_tpl, _ms_tpl = TTU.startup()
+        PS.debug_log("TPL-STARTUP", "templates=%d" % _n_tpl,
+                     "%.1fms" % _ms_tpl)
     build_ui()
     APP.sync_all()
     APP.sim.reset()

@@ -1,0 +1,49 @@
+{
+  "id": "dotted_trail",
+  "name": "Dotted Trail",
+  "category": "stylized",
+  "description": "Tiled dotted line.",
+  "tags": [
+    "textured",
+    "dots"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.0,
+    "maxPoints": 48,
+    "minDist": 3.0,
+    "widthStart": 8.0,
+    "widthEnd": 8.0,
+    "uvMode": "tile",
+    "tileLength": 16.0,
+    "scrollU": 0.5,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#ffffff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": "dots",
+  "version": 1
+}

@@ -1,0 +1,46 @@
+{
+  "id": "debug_path",
+  "name": "Debug Path",
+  "category": "stylized",
+  "description": "Raw movement path.",
+  "tags": [
+    "debug"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "maxPoints": 256,
+    "lifetime": 10.0,
+    "minDist": 1.0,
+    "widthStart": 1.0,
+    "widthEnd": 1.0,
+    "colorStops": [
+      [
+        0,
+        "#ff2f2f"
+      ],
+      [
+        1,
+        "#ff2f2f"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        255
+      ]
+    ],
+    "blend": "Normal"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

@@ -1,0 +1,47 @@
+{
+  "id": "jet_contrail",
+  "name": "Jet Contrail",
+  "category": "movement",
+  "description": "Long sky trail.",
+  "tags": [
+    "vehicle",
+    "sky"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 4.0,
+    "maxPoints": 80,
+    "minDist": 5.0,
+    "widthStart": 4.0,
+    "widthEnd": 18.0,
+    "softFade": 2.0,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#ffffff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        200
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

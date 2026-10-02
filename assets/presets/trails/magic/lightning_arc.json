@@ -1,0 +1,51 @@
+{
+  "id": "lightning_arc",
+  "name": "Lightning Arc",
+  "category": "magic",
+  "description": "Jagged bolt.",
+  "tags": [
+    "additive",
+    "energy"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.22,
+    "maxPoints": 32,
+    "minDist": 1.5,
+    "widthStart": 5.0,
+    "widthEnd": 1.5,
+    "wNoiseAmt": 9.0,
+    "wNoiseScale": 0.35,
+    "cornerVerts": 6,
+    "simplifyTol": 1.5,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#3f7bff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

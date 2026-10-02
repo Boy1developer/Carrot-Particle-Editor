@@ -1,0 +1,47 @@
+{
+  "id": "dash_afterimage",
+  "name": "Dash Afterimage",
+  "category": "combat",
+  "description": "Player dash trail.",
+  "tags": [
+    "player"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.35,
+    "maxPoints": 28,
+    "minDist": 2.0,
+    "widthStart": 12.0,
+    "widthEnd": 4.0,
+    "fadeTail": true,
+    "tailLen": 0.5,
+    "colorStops": [
+      [
+        0,
+        "#8fd0ff"
+      ],
+      [
+        1,
+        "#1e4fff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        200
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

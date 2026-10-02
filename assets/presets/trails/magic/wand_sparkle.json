@@ -1,0 +1,49 @@
+{
+  "id": "wand_sparkle",
+  "name": "Magic Wand Sparkle",
+  "category": "magic",
+  "description": "Sparkling purple trail.",
+  "tags": [
+    "additive",
+    "sparkle"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.9,
+    "maxPoints": 40,
+    "minDist": 2.5,
+    "widthStart": 6.0,
+    "widthEnd": 1.0,
+    "intensity": 1.8,
+    "scrollU": 1.0,
+    "colorStops": [
+      [
+        0,
+        "#e6b3ff"
+      ],
+      [
+        1,
+        "#ff4fd8"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": "glow",
+  "version": 1
+}

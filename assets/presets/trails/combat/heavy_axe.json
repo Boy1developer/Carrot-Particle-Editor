@@ -1,0 +1,47 @@
+{
+  "id": "heavy_axe",
+  "name": "Heavy Axe Swing",
+  "category": "combat",
+  "description": "Heavy thick Normal arc.",
+  "tags": [
+    "weapon"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.4,
+    "maxPoints": 28,
+    "minDist": 3.0,
+    "widthStart": 26.0,
+    "widthEnd": 6.0,
+    "widthMult": 1.6,
+    "colorStops": [
+      [
+        0,
+        "#dddddd"
+      ],
+      [
+        1,
+        "#555555"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        220
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Normal"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

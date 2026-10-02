@@ -1,0 +1,50 @@
+{
+  "id": "portal_swirl",
+  "name": "Portal Swirl",
+  "category": "magic",
+  "description": "Spinning local ribbon.",
+  "tags": [
+    "energy"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "source": "emitter",
+    "maxPoints": 64,
+    "lifetime": 2.0,
+    "minDist": 2.0,
+    "space": "local",
+    "scrollU": 1.2,
+    "uvMode": "tile",
+    "tileLength": 64.0,
+    "widthStart": 10.0,
+    "widthEnd": 10.0,
+    "colorStops": [
+      [
+        0,
+        "#37f2ff"
+      ],
+      [
+        1,
+        "#b44dff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        60
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

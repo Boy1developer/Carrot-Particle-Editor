@@ -1,0 +1,47 @@
+{
+  "id": "wind_streak",
+  "name": "Wind Streak",
+  "category": "nature",
+  "description": "Transparent air line.",
+  "tags": [
+    "air"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.5,
+    "maxPoints": 40,
+    "minDist": 4.0,
+    "widthStart": 6.0,
+    "widthEnd": 2.0,
+    "wNoiseAmt": 3.0,
+    "wNoiseScale": 0.05,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#cfe6ff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        90
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

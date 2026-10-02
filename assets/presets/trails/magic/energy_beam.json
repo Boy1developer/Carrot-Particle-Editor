@@ -1,0 +1,51 @@
+{
+  "id": "energy_beam",
+  "name": "Energy Beam",
+  "category": "magic",
+  "description": "Beam with flowing texture.",
+  "tags": [
+    "additive",
+    "textured"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.8,
+    "maxPoints": 48,
+    "minDist": 2.0,
+    "widthStart": 6.0,
+    "widthEnd": 6.0,
+    "uvMode": "tile",
+    "tileLength": 48.0,
+    "scrollU": 3.0,
+    "intensity": 1.5,
+    "colorStops": [
+      [
+        0,
+        "#aefcff"
+      ],
+      [
+        1,
+        "#0055ff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        80
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": "stripes",
+  "version": 1
+}

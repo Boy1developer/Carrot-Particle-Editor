@@ -1,0 +1,52 @@
+{
+  "id": "skid_marks",
+  "name": "Skid Marks",
+  "category": "movement",
+  "description": "Ground tire marks.",
+  "tags": [
+    "vehicle",
+    "ground"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 4.0,
+    "maxPoints": 64,
+    "minDist": 4.0,
+    "widthStart": 7.0,
+    "widthEnd": 7.0,
+    "colorStops": [
+      [
+        0,
+        "#111111"
+      ],
+      [
+        1,
+        "#111111"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        150
+      ],
+      [
+        1,
+        150
+      ]
+    ],
+    "blend": "Normal",
+    "ribbon": "flat"
+  },
+  "overrides_2d": {
+    "ribbon": "flat"
+  },
+  "overrides_3d": {
+    "ribbon": "fixed"
+  },
+  "texture": null,
+  "version": 1
+}

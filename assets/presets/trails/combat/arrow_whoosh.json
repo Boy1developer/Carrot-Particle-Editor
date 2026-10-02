@@ -1,0 +1,48 @@
+{
+  "id": "arrow_whoosh",
+  "name": "Arrow Whoosh",
+  "category": "combat",
+  "description": "Light air streak.",
+  "tags": [
+    "weapon",
+    "air"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.3,
+    "maxPoints": 24,
+    "minDist": 3.0,
+    "widthStart": 8.0,
+    "widthEnd": 2.0,
+    "wNoiseAmt": 2.0,
+    "wNoiseScale": 0.1,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#bcd6ff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        110
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

@@ -1,0 +1,66 @@
+{
+  "id": "rainbow_ribbon",
+  "name": "Rainbow Ribbon",
+  "category": "stylized",
+  "description": "7-color gradient.",
+  "tags": [
+    "rainbow"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.5,
+    "maxPoints": 56,
+    "minDist": 2.5,
+    "widthStart": 9.0,
+    "widthEnd": 2.0,
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#ff2f2f"
+      ],
+      [
+        0.17,
+        "#ff9a2a"
+      ],
+      [
+        0.33,
+        "#ffe94a"
+      ],
+      [
+        0.5,
+        "#4fe06a"
+      ],
+      [
+        0.66,
+        "#2f9bff"
+      ],
+      [
+        0.83,
+        "#7a2bff"
+      ],
+      [
+        1,
+        "#c86bff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

@@ -1,0 +1,48 @@
+{
+  "id": "smoke_ribbon",
+  "name": "Smoke Ribbon",
+  "category": "nature",
+  "description": "Spreading smoke.",
+  "tags": [
+    "smoke"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 2.0,
+    "maxPoints": 48,
+    "minDist": 4.0,
+    "widthStart": 10.0,
+    "widthEnd": 30.0,
+    "wNoiseAmt": 4.0,
+    "wNoiseScale": 0.08,
+    "colorStops": [
+      [
+        0,
+        "#bbbbbb"
+      ],
+      [
+        1,
+        "#555555"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        150
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Normal"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

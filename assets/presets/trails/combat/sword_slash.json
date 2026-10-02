@@ -1,0 +1,59 @@
+{
+  "id": "sword_slash",
+  "name": "Sword Slash",
+  "category": "combat",
+  "description": "Sharp thin Additive arc.",
+  "tags": [
+    "additive",
+    "weapon"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 0.25,
+    "maxPoints": 24,
+    "minDist": 2.0,
+    "widthStart": 14.0,
+    "widthEnd": 0.0,
+    "taperTail": true,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.02,
+        "linear"
+      ]
+    ],
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#7ab8ff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

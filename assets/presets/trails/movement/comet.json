@@ -1,0 +1,46 @@
+{
+  "id": "comet",
+  "name": "Comet",
+  "category": "movement",
+  "description": "Bright head, fading tail.",
+  "tags": [
+    "space"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.2,
+    "maxPoints": 40,
+    "minDist": 3.0,
+    "widthStart": 10.0,
+    "widthEnd": 1.0,
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#ffffff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}

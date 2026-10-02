@@ -72,9 +72,11 @@ Carrot-Particle-Editor/
 |---|---|
 | `editor/studio_imgui.py` | الإديتور الرئيسي: Dear PyGui/ImGui + drawlist viewport + C++/Python sim + سيرفر المعاينة + تصدير JSON + undo/redo + Trails inspector المولّد من `TRAIL_SCHEMA` |
 | `editor/trail_widgets.py` | ودجت المنحنيات/التدرجات القابلة لإعادة الاستخدام (drawlist + mouse handlers، حدث واحد عند الإفلات، LUT bake عند التغيير فقط) |
+| `editor/trail_templates_ui.py` | متصفح قوالب الـ trails (Dear PyGui glue فقط): بطاقات 2-column + بحث/favs/recent + Apply بخطوة undo واحدة + حفظ/حذف بريسيتات المستخدم — كل الدمج/البحث/التحقق/LUTs/thumbnails في C++ |
 | `editor/particle_studio.py` | نسخة Tk الاحتياطية + طبقة اللوجيك المشتركة (defaults/templates/validation/sim) + `TRAIL_SCHEMA` و `default_trails()` و `bake_curve/bake_gradient` + `app_base_dir()` لجذر الريبو |
 | `tests/test_imgui_*.py` | اختبارات headless: nav/splitter/type-switch + logic/parity + build + color |
-| `tests/test_trails_*.py` | اختبارات الـ trails: schema sync + roundtrip/heal + parity Python↔C++ (LUTs) + perf (300×32) |
+| `tests/test_trails_*.py` | اختبارات الـ trails: schema sync + roundtrip/heal + parity Python↔C++ (LUTs) + perf (300×32) + templates registry (27 تحميل/بحث/دمج/تحقق/thumbnails/حفظ-حذف) |
+| `assets/presets/trails/*/*.json` | 27 قالب trails جاهز (combat 5 / magic 6 / movement 5 / nature 6 / stylized 5) — تُشحن مع الـ exe عبر `assets` datas |
 | `tools/rebuild_app.py` | `python tools/rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` |
 | `tools/make_icon.py` | توليد الأيقونات الشفافة من `assets/download.png` |
 | `packaging/CarrotParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` |
@@ -92,7 +94,7 @@ Carrot-Particle-Editor/
 
 | الملف | الدور | سطور |
 |---|---|---:|
-| `particle_core.cpp` | `step()` يخرج `x,y,z,r,color,shape,depth + alpha,wx,wy` — نفس `SHAPE_ORDER` (12 شكل) ونفس semantics الـ morph + `TrailCfg` (parse إعدادات الـ trails و LUTs مطابقة Python حرفيًا) | 516 |
+| `particle_core.cpp` | `step()` يخرج `x,y,z,r,color,shape,depth + alpha,wx,wy` — نفس `SHAPE_ORDER` (12 شكل) ونفس semantics الـ morph + `TrailCfg` (parse إعدادات الـ trails و LUTs مطابقة Python حرفيًا) + registry القوالب (`trail_templates.h`: تحقق/دمج/بحث/favs/recents/thumbnails/textures/حفظ بريسيتات) | 1336 |
 | `build_core.py` | ترتيب الكومبايلر: `cl > g++ > clang++ > Zig` (تثبيت تلقائي) — الخرج `particle_core.pyd` في جذر الريبو | 83 |
 | `test_parity.py` | تطابق عددي Python↔C++ (99/99 ناجح) | 56 |
 | `test_behavior.py` | سلوك + أداء (~4ms عند 2000 جسيم) | 96 |

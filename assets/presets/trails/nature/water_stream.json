@@ -1,0 +1,50 @@
+{
+  "id": "water_stream",
+  "name": "Water Stream",
+  "category": "nature",
+  "description": "Translucent scrolled stream.",
+  "tags": [
+    "textured",
+    "water"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 1.0,
+    "maxPoints": 48,
+    "minDist": 2.5,
+    "widthStart": 9.0,
+    "widthEnd": 6.0,
+    "cornerVerts": 8,
+    "scrollU": 2.0,
+    "uvMode": "tile",
+    "tileLength": 48.0,
+    "colorStops": [
+      [
+        0,
+        "#cfeeff"
+      ],
+      [
+        1,
+        "#1e7bff"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        170
+      ],
+      [
+        1,
+        60
+      ]
+    ]
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": "stripes",
+  "version": 1
+}

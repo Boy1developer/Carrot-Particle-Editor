@@ -1,0 +1,55 @@
+{
+  "id": "neon_paint",
+  "name": "Neon Light Painting",
+  "category": "stylized",
+  "description": "Light-painting ribbon.",
+  "tags": [
+    "additive",
+    "neon"
+  ],
+  "modes": [
+    "2d",
+    "3d"
+  ],
+  "settings": {
+    "enabled": true,
+    "lifetime": 5.0,
+    "maxPoints": 128,
+    "minDist": 2.0,
+    "widthStart": 5.0,
+    "widthEnd": 5.0,
+    "intensity": 1.6,
+    "capStyle": "round",
+    "capVerts": 8,
+    "cornerVerts": 12,
+    "colorStops": [
+      [
+        0,
+        "#aefcff"
+      ],
+      [
+        0.5,
+        "#7a5cff"
+      ],
+      [
+        1,
+        "#ff2fd6"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        255
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Additive"
+  },
+  "overrides_2d": {},
+  "overrides_3d": {},
+  "texture": null,
+  "version": 1
+}
