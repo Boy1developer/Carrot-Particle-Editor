@@ -1401,6 +1401,14 @@ def _update_trail_stats():
                 cur = str(dpg.get_value("status_text") or "")
                 if cur.startswith("Applied:"):
                     APP.set_status("Ready", OK)
+                for _tag in ("tpl_applied", "tpl_status"):
+                    try:
+                        if dpg.does_item_exist(_tag) and str(
+                                dpg.get_value(_tag) or "").startswith(
+                                ("Applied:", "Preset saved:")):
+                            dpg.set_value(_tag, "")
+                    except Exception:
+                        pass
         except Exception:
             pass
     except Exception:

@@ -248,9 +248,23 @@ def open_popup(cat="combat"):
     if not _BUILT:
         _build_popup()
         _BUILT = True
+    _center_popup()
     refresh_list()
     try:
         dpg.configure_item("trail_tpl_win", show=True)
+    except Exception:
+        pass
+
+
+def _center_popup():
+    """Center the modal on the editor viewport (fallback: fixed pos)."""
+    try:
+        vw = dpg.get_viewport_width() or 0
+        vh = dpg.get_viewport_height() or 0
+        if vw > 0 and vh > 0:
+            dpg.set_item_pos("trail_tpl_win",
+                             [max(0, (vw - 480) // 2),
+                              max(0, (vh - 560) // 2)])
     except Exception:
         pass
 
@@ -369,6 +383,39 @@ def refresh_list():
             dpg.configure_item(card, show=(tid in want))
         except Exception:
             pass
+    _mark_applied()
+
+
+def _mark_applied():
+    """Highlight the currently applied card (● prefix + accent name)."""
+    if not _HAS_DPG:
+        return
+    try:
+        from studio_imgui import MUTED, OK
+    except Exception:
+        return
+    for tid, card in list(_CARDS.items()):
+        _ct, name_tag = _card_tags(tid)
+        try:
+            if not dpg.does_item_exist(name_tag):
+                continue
+            if tid == _APPLIED:
+                dpg.set_value(name_tag, "● " + _card_name(tid))
+                dpg.configure_item(name_tag, color=list(OK) + [255])
+            else:
+                dpg.set_value(name_tag, _card_name(tid))
+                dpg.configure_item(name_tag, color=list(MUTED) + [255])
+        except Exception:
+            pass
+
+
+def _card_name(tid):
+    try:
+        if HAS_TPL:
+            return str(_CORE.templates_info(tid).get("name", tid))
+        return str(FALLBACK_REG.get(tid, {}).get("name", tid))
+    except Exception:
+        return str(tid)
 
 
 def _save_user():
@@ -392,6 +439,11 @@ def _save_user():
                                   "tags": ["user"], "modes": ["2d", "3d"],
                                   "settings": cur}
         C["status"]("Preset saved: " + name)
+        try:
+            if _HAS_DPG and dpg.does_item_exist("tpl_status"):
+                dpg.set_value("tpl_status", "Preset saved: " + name)
+        except Exception:
+            pass
         refresh_list()
     except Exception as e:
         PS.debug_log("TPL-SAVE-EXC", repr(e)[:200])
@@ -446,7 +498,15 @@ def apply_template(tid, close_after):
         _APPLIED = tid
         try:
             info = _CORE.templates_info(tid) if HAS_TPL else {"name": tid}
-            C["status"]("Applied: " + str(info.get("name", tid)))
+            label = "Applied: " + str(info.get("name", tid))
+            C["status"](label)
+            try:
+                if _HAS_DPG and dpg.does_item_exist("tpl_applied"):
+                    dpg.set_value("tpl_applied", label)
+                if _HAS_DPG and dpg.does_item_exist("tpl_status"):
+                    dpg.set_value("tpl_status", label)
+            except Exception:
+                pass
             _apply_texture(info)
         except Exception:
             pass

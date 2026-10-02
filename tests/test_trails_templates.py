@@ -95,4 +95,128 @@ with tempfile.TemporaryDirectory() as td:
     assert "my_test" not in C.templates_list("user", "", "2d",
                                              "name", False)
 
+# 8) fallback parity: pure-Python merge == C++ merge for every template
+def _py_fallback_merge(data, mode, defaults):
+    merged = PS.sanitize_trails(dict(defaults))
+    for k in list(merged):
+        if k in data.get("settings", {}):
+            merged[k] = data["settings"][k]
+        ov = data.get("overrides_3d" if mode == "3d" else "overrides_2d",
+                      {})
+        if k in ov:
+            merged[k] = ov[k]
+    return PS.sanitize_trails(merged)
+
+
+def _norm(v):
+    return json.dumps(v, sort_keys=True)
+
+
+def _canon_keylist(rows):
+    """Canonical form: [float(x), y, mode] (C++ normalizes 2-elem rows)."""
+    out = []
+    for r in rows or []:
+        x = float(r[0])
+        y = r[1]
+        if isinstance(y, (int, float)):
+            y = float(y)
+        m = r[2] if len(r) > 2 else "smooth"
+        out.append([x, y, m])
+    return sorted(out, key=lambda r: r[0])
+
+
+def _norm_trails(t):
+    t = dict(t)
+    for k in ("widthCurve", "colorStops", "alphaStops", "lifeColorStops",
+              "lifeAlphaStops"):
+        if k in t and isinstance(t[k], list):
+            t[k] = _canon_keylist(t[k])
+    return json.dumps(t, sort_keys=True)
+
+
+d0 = PS.default_trails()
+for p in files:
+    tid = os.path.splitext(os.path.basename(p))[0]
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for mode in ("2d", "3d"):
+        nd, _ch = C.templates_apply(tid, mode, d0, d0)
+        py = _py_fallback_merge(data, mode, d0)
+        assert _norm_trails(nd) == _norm_trails(py), (tid, mode)
+print("TRAILS-TEMPLATES-FALLBACK-PARITY-OK")
+
+# 9) apply-every-template + step-simulation smoke (catches crashes);
+#     template output also feeds the C++ TrailCfg LUT path bit-exactly
+TRACKS = [
+    {"dur": 0.5, "shape": "circle", "size": 8, "sizeMax": 12,
+     "color": "#ffaa00", "opacity": 255, "minSpeed": 60, "maxSpeed": 160,
+     "easing": "linear"},
+    {"dur": 0.5, "shape": "circle", "size": 2, "sizeMax": 4,
+     "color": "#ff3300", "opacity": 0, "minSpeed": 20, "maxSpeed": 60,
+     "easing": "ease-out"},
+]
+for p in files:
+    tid = os.path.splitext(os.path.basename(p))[0]
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    modes = data.get("modes", ["2d", "3d"])
+    for mode in modes:
+        nd, _ch = C.templates_apply(tid, mode, d0, d0)
+        # complete + in-range + no NaN/empty-gradients (== exporter-ready)
+        assert sorted(nd) == sorted(d0), tid
+        for f in PS.TRAIL_SCHEMA:
+            v = nd[f["key"]]
+            if f["type"] == "float":
+                assert v == v and f.get("min", -1e9) - 1e-9 <= v <= f.get(
+                    "max", 1e9) + 1e-9, (tid, f["key"], v)
+            if f["type"] in ("curve", "gradient-color", "gradient-alpha"):
+                assert isinstance(v, list) and len(v) > 0, (tid, f["key"])
+        em = dict(PS.default_emitter(), trails=nd)
+        e = C.Engine()
+        e.configure(em, TRACKS, mode == "3d")
+        for _i in range(30):
+            e.step(1.0 / 60.0, 400, 300, 0, 0, 0, 0, 0, 0, 500,
+                   0.7, 0.42, 1.0, 0, 0, 620, 400, 300)
+        t = e.trails_luts()
+        assert len(t["w"]) == 64 and len(t["r"]) == 256, tid
+print("TRAILS-TEMPLATES-SIM-SMOKE-OK")
+
+# 10) template -> LUT parity on curve/gradient/texture representatives
+for tid, mode in (("neon_paint", "2d"), ("rainbow_ribbon", "2d"),
+                  ("energy_beam", "3d")):
+    nd, _ch = C.templates_apply(tid, mode, d0, d0)
+    em = dict(PS.default_emitter(), trails=nd)
+    e = C.Engine()
+    e.configure(em, TRACKS, mode == "3d")
+    t = e.trails_luts()
+    py_w = PS.bake_curve(nd["widthCurve"])
+    assert all(abs(a - b) < 1e-9 for a, b in zip(t["w"], py_w)), tid
+    py_c = PS.bake_gradient(nd["colorStops"], nd["alphaStops"])
+    for i, px in enumerate(py_c):
+        assert tuple(px) == (t["r"][i], t["g"][i], t["b"][i],
+                             t["a"][i]), (tid, i)
+print("TRAILS-TEMPLATES-LUT-PARITY-OK")
+
+# 11) perf budgets: scan+validate < 20ms, apply < 1ms, filter < 0.5ms
+import time as _t
+t0 = _t.time()
+for p in files:
+    tid = os.path.splitext(os.path.basename(p))[0]
+    with open(p, encoding="utf-8") as f:
+        C.templates_register(tid, json.load(f), False)
+scan_ms = (_t.time() - t0) * 1000.0
+t0 = _t.time()
+for tid in C.templates_list("", "", "", "name", False):
+    C.templates_apply(tid, "2d", d0, d0)
+apply_ms = (_t.time() - t0) / 27 * 1000.0
+t0 = _t.time()
+for _i in range(50):
+    C.templates_list("", "fire", "2d", "name", False)
+filt_ms = (_t.time() - t0) / 50 * 1000.0
+print("TRAILS-TEMPLATES-PERF scan=%.2fms apply=%.3fms filter=%.3fms"
+      % (scan_ms, apply_ms, filt_ms))
+assert scan_ms < 20.0, scan_ms
+assert apply_ms < 1.0, apply_ms
+assert filt_ms < 0.5, filt_ms
+
 print("TRAILS-TEMPLATES-OK")

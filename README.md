@@ -104,6 +104,10 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 - **Browser fast preview** — a self-contained `live_effect.html` (≈1.1 MB, zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync.
 - **OS-native file dialogs** — Save / Export / Open use the OS picker (Dear PyGui dialogs deliver empty payloads on this setup).
 
+### 🎨 Trail templates (adding a new one)
+- Drop one JSON file in `assets/presets/trails/<category>/<id>.json` (`category`: `combat|magic|movement|nature|stylized`) — no UI or C++ changes needed. Format: `{ "id", "name", "category", "description", "tags": [], "modes": ["2d","3d"], "settings": {…partial trail fields…}, "overrides_2d": {…}, "overrides_3d": {…}, "texture": "glow|dots|stripes|flame|crystal|null", "version": 1 }`. Curves are `[[x, y(, mode)]]` key lists, gradients are `[[x, "#rrggbb"(, mode)]]` / `[[x, a(, mode)]]` stop lists; field names and ranges come from `TRAIL_SCHEMA` (unknown fields are ignored, bad values fall back with a warning). Missing fields fall back to schema defaults, so a template always yields a complete look.
+- C++ API surface (`particle_core`, raw C API): `templates_init(schema, user_dir)`, `templates_register(id, data, is_user)`, `templates_list(category, query, mode, sort, fav_only) -> [ids]`, `templates_info(id)`, `templates_apply(id, mode, defaults, current) -> (settings, changed_ids)`, `templates_thumbnail(id, w, h) -> (w, h, bytes)`, `templates_texture(kind, w, h)`, `templates_fav(id, on)`, `presets_save(name, settings, meta) -> path`, `presets_delete(name)`. Split: C++ owns registry/validation/search/merge/LUT-ready data/thumbnails/textures/preset files; Python (`editor/trail_templates_ui.py`) only builds Dear PyGui widgets, forwards clicks/keys to one core call, and `set_value`s the changed widgets. Measured: scan+validate 27 templates ~5ms, apply ~0.10ms, filter ~0.13ms; thumbnails/textures cached and uploaded once.
+
 ---
 
 ## 🚀 Quick Start

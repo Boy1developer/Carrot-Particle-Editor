@@ -487,8 +487,16 @@ static bool trail_keys(PyObject *v, std::vector<double> &xs,
         PyObject *k = PyList_GetItem(v, i);  // borrowed
         if (!k || !PyList_Check(k) || PyList_Size(k) < 2) continue;
         PyObject *ox = PyList_GetItem(k, 0), *oy = PyList_GetItem(k, 1);
-        double x = PyFloat_AsDouble(ox), y = PyFloat_AsDouble(oy);
+        double x = PyFloat_AsDouble(ox);
         if (PyErr_Occurred()) { PyErr_Clear(); continue; }
+        // Color-gradient stops carry hex strings, not numbers: keep the
+        // row (x + mode drive the segment; the color comes from hexv).
+        double y = PyFloat_AsDouble(oy);
+        if (PyErr_Occurred()) {
+            PyErr_Clear();
+            if (!oy || !PyUnicode_Check(oy)) continue;
+            y = 0.0;
+        }
         int m = 1;
         if (PyList_Size(k) > 2) {
             PyObject *om = PyList_GetItem(k, 2);

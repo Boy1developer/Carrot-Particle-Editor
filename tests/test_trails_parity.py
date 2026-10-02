@@ -21,9 +21,13 @@ TRACKS = [
 
 cases = ["trail_comet_2d", "trail_sword_slash_2d", "trail_smoke_ribbon_3d",
          "trail_energy_beam_3d"]
+# colorful gradient (regression: C++ once dropped hex-string stops -> white)
+cases.append("SAMPLE:sample_trail_effect")
 for name in cases:
-    with open(os.path.join(ROOT, "presets", name + ".json"),
-              encoding="utf-8") as f:
+    path = os.path.join(ROOT, "presets", name + ".json") \
+        if not name.startswith("SAMPLE:") else os.path.join(
+            ROOT, name.split(":", 1)[1] + ".json")
+    with open(path, encoding="utf-8") as f:
         eff = json.load(f)
     em = eff["emitter"]
     e = PC.Engine()
