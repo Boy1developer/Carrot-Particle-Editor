@@ -89,7 +89,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 - **Force fields** *(v1.1)* — age-phased turbulence, Y-axis vortex, linear-falloff attractor, and a bounce/friction collision plane. All off by default (legacy motion stays bit-identical). Editable in the Dear PyGui sidebar; Tk preserves the block on round-trip.
 - **Deterministic seed** — a nonzero `seed` replays the identical effect everywhere: editor (Python + C++), browser preview, and GDevelop runtime. `0` keeps legacy unseeded behavior. Editable in the Dear PyGui sidebar; Tk preserves it.
 - **Blend modes** — Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay, selectable per emitter in the Dear PyGui sidebar (Tk preserves the loaded value).
-- **Trails & Ribbons modes** — `2D | Trails & Ribbons` (key `4`) and `3D | Trails & Ribbons` (key `5`) in the startup dialog; trail mode renders ribbons only. Unity-style inspector (foldouts Trail / Shape / Color / Texture / Per-Particle / Lighting & Sorting / Tools & Motion) generated from one schema (`TRAIL_SCHEMA`, 79 keys): width/gradient curve editors, tooltips, min/max clamps, drag-labels, steppers, per-section reset + copy/paste, presets (Comet, Sword, Smoke, Beam, Neon, Rocket, Wand). Curves bake to 64-sample and gradients to 256-entry LUTs on change only; C++ core parses the same tables (parity-tested). Emission is `time` (legacy lifetime gates) or Godot-style `distance` (fixed sections × section length, speed-independent, trail dies with the particle). **Template browser** — 27 ready-made trail templates in 5 categories (Combat & Weapons, Magic & Energy, Movement & Vehicles, Nature & Elements, Stylized & Tools) under `assets/presets/trails/`; C++ registry does search/filter/merge/validation/thumbnails, Dear PyGui shows a 2-column card popup (search, favs, recent, Apply / Apply & Close, double-click, Esc closes), one undo step per apply, user presets saved to `%APPDATA%/CarrotParticleEditor/trail_presets/`.
+- **Trails & Ribbons modes** — `2D | Trails & Ribbons` (key `4`) and `3D | Trails & Ribbons` (key `5`) in the startup dialog; trail mode renders ribbons only. Unity-style inspector (foldouts Trail / Shape / Color / Texture / Per-Particle / Lighting & Sorting / Tools & Motion) generated from one schema (`TRAIL_SCHEMA`, 79 keys): width/gradient curve editors, tooltips, min/max clamps, drag-labels, steppers, per-section reset + copy/paste, presets (Comet, Sword, Smoke, Beam, Neon, Rocket, Wand). Curves bake to 64-sample and gradients to 256-entry LUTs on change only; C++ core parses the same tables (parity-tested). **Emit mode**: `time` (legacy — lifetime gates, particle lives then fades) or `distance` (Godot-style — fixed sections × sectionLength, speed-independent, trail dies with the particle; `sectionLength=0` gives every-frame FIFO tick, like Trail2D-addon). Trail mode shows ribbons only (`trails_on()` gate skips dots + raster); particle mode keeps dots + overlay.
 
 ### ⚡ Performance
 - **InstancedMesh batching (3D primitives)** — ~580 draw calls collapse into ~12 buckets (`INST_CAP 2048`), verified **pixel-identical** per particle (matrix, color, alpha), including morph flips and all blend modes. Models/images keep the pooled-mesh path.
@@ -244,10 +244,11 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 - [x] InstancedMesh batching, lazy buckets, sampling diet *(v0.1.2)*
 - [x] Screen / Lighten / Overlay blend modes *(v0.1.2)*
 - [x] Deterministic seed + force fields *(v0.1.2)*
+- [x] Trails & Ribbons renderer (79-key TRAIL_SCHEMA, 27 templates, Godot-style distance emission, C++ registry + DPG browser)
+- [x] Over-life Bézier curves and gradient editor *(part of TRAIL_SCHEMA curve/gradient tables)*
+- [x] Instanced rendering parity 99/99, behavior, trails schema/roundtrip/parity/perf/render, imgui build, contracts
 
 **Planned**
-- [ ] Trails / ribbons renderer
-- [ ] Over-life Bézier curves and gradient editor
 - [ ] Flipbook animation, UV scroll, soft particles
 - [ ] Effect node tree with parent/child emitters and sub-emitters
 - [ ] Timeline with scrubbing and a preset gallery

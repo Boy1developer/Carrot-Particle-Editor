@@ -47,6 +47,10 @@ try:
     assert app._split_hover is True
     assert S.handle_splitter(500.0, False) is False
     assert app._split_hover is False
+    # stale drawing coords from inside the panel must NOT arm the bar:
+    # only fresh rect coords directly over it (vp_draw x in [0, 6]) do
+    assert S.handle_splitter(3.0, False) is False
+    assert app._split_hover is False
     assert app.side_w == 320
     print("NAV-OK")
 finally:

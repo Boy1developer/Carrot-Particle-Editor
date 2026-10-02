@@ -4175,10 +4175,13 @@ def sidebar_hovered():
         return False
 
 
-def handle_splitter(lx, hover):
-    # While dragging, anchor in SCREEN x (valid inside and outside the
-    # viewport). Drawing-space lx freezes once the cursor leaves vp_draw,
-    # which made shrinking stall after the panel grew.
+def handle_splitter(lx_r, in_r):
+    # Gated ONLY by fresh rect-based coords: the bar lives at vp_draw
+    # x in [0, 6]. The old gate used drawing-space lx, which FREEZES the
+    # moment the cursor leaves the drawlist — so crossing from the bar
+    # into the settings panel left lx stuck at 0-6 and the bar stayed
+    # armed (highlight + click-to-drag) from anywhere inside the panel.
+    on_bar = bool(in_r) and 0 <= lx_r <= 6
     if APP._split is not None:
         if dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
             try:
@@ -4194,15 +4197,15 @@ def handle_splitter(lx, hover):
             return True
         APP._split = None
         return False
-    if hover and 0 <= lx <= 6 and \
+    if on_bar and \
             dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
         try:
             mx = float(dpg.get_mouse_pos()[0])
         except Exception:
-            mx = lx
+            mx = lx_r
         APP._split = (mx, APP.side_w)
         return True
-    APP._split_hover = bool(hover and 0 <= lx <= 6)
+    APP._split_hover = on_bar
     return False
 
 
@@ -4502,7 +4505,7 @@ def frame():
             PS.debug_log("GEO2", " ".join(str(p) for p in _parts))
         split_busy = False
         try:
-            split_busy = handle_splitter(lx, hover)
+            split_busy = handle_splitter(lx_r, in_r)
         except Exception:
             PS.debug_log("IMG-SPLIT-EXC",
                          traceback.format_exc().replace("\n", " | ")[:500])
