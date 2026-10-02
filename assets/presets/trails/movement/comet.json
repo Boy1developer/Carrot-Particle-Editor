@@ -2,8 +2,10 @@
   "id": "comet",
   "name": "Comet",
   "category": "movement",
-  "description": "Bright head, fading tail.",
+  "description": "Bright head, long cooling tail.",
   "tags": [
+    "additive",
+    "ribbon",
     "space"
   ],
   "modes": [
@@ -12,11 +14,33 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 1.2,
-    "maxPoints": 40,
+    "source": "emitter",
+    "hideParticle": false,
+    "lifetime": 1.6,
+    "maxPoints": 90,
     "minDist": 3.0,
-    "widthStart": 10.0,
+    "smoothing": 6,
+    "widthStart": 18.0,
     "widthEnd": 1.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        0.1,
+        0.85
+      ],
+      [
+        0.5,
+        0.45
+      ],
+      [
+        1,
+        0
+      ]
+    ],
     "taperTail": true,
     "colorStops": [
       [
@@ -24,8 +48,20 @@
         "#ffffff"
       ],
       [
+        0.12,
+        "#fff1a8"
+      ],
+      [
+        0.35,
+        "#ffb347"
+      ],
+      [
+        0.7,
+        "#ff6a1f"
+      ],
+      [
         1,
-        "#ffffff"
+        "#5a1a00"
       ]
     ],
     "alphaStops": [
@@ -34,13 +70,26 @@
         255
       ],
       [
+        0.4,
+        200
+      ],
+      [
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Additive",
+    "intensity": 1.6,
+    "edgeSoftness": 0.7,
+    "edgeColor": "#ff6a1f",
+    "glowWidth": 2.0,
+    "glowAlpha": 0.3
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "dust_noise",
+  "version": 1,
+  "artNotes": "Bright round head and a long graceful tail cooling white to ember.",
+  "demoMotion": "ellipse_orbit"
 }

@@ -2,9 +2,10 @@
   "id": "lightning_arc",
   "name": "Lightning Arc",
   "category": "magic",
-  "description": "Jagged bolt.",
+  "description": "Jagged forked bolts, flickering.",
   "tags": [
     "additive",
+    "streaks",
     "energy"
   ],
   "modes": [
@@ -13,23 +14,40 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.22,
+    "source": "particles",
+    "trailMode": "per-particle",
+    "hideParticle": true,
+    "lifetime": 0.14,
     "maxPoints": 32,
-    "minDist": 1.5,
-    "widthStart": 5.0,
-    "widthEnd": 1.5,
-    "wNoiseAmt": 9.0,
-    "wNoiseScale": 0.35,
-    "cornerVerts": 6,
-    "simplifyTol": 1.5,
+    "minDist": 5.0,
+    "smoothing": 0,
+    "cornerVerts": 0,
+    "noise": 16.0,
+    "widthStart": 4.0,
+    "widthEnd": 2.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.4
+      ]
+    ],
     "colorStops": [
       [
         0,
         "#ffffff"
       ],
       [
+        0.5,
+        "#a6d4ff"
+      ],
+      [
         1,
-        "#3f7bff"
+        "#3b6bff"
       ]
     ],
     "alphaStops": [
@@ -42,10 +60,22 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 2.4,
+    "coreColor": "#ffffff",
+    "coreWidth": 0.4,
+    "edgeColor": "#4d7bff",
+    "edgeSoftness": 0.4,
+    "glowWidth": 6.0,
+    "glowAlpha": 0.5,
+    "flickerAmt": 0.5,
+    "flickerHz": 30.0
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Jagged forked bolts that flicker and re-strike.",
+  "demoMotion": "teleport_zigzag"
 }

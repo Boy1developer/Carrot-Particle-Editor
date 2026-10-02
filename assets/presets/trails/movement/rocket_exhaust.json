@@ -2,8 +2,10 @@
   "id": "rocket_exhaust",
   "name": "Rocket Exhaust",
   "category": "movement",
-  "description": "Growing exhaust plume.",
+  "description": "Expanding cooling plume.",
   "tags": [
+    "additive",
+    "streaks",
     "vehicle"
   ],
   "modes": [
@@ -12,43 +14,68 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 1.1,
-    "maxPoints": 40,
-    "minDist": 3.0,
-    "widthStart": 8.0,
-    "widthEnd": 22.0,
-    "gravity": -40.0,
-    "colorStops": [
+    "source": "particles",
+    "trailMode": "per-particle",
+    "space": "world",
+    "hideParticle": false,
+    "lifetime": 0.5,
+    "maxPoints": 28,
+    "minDist": 2.0,
+    "smoothing": 2,
+    "widthStart": 4.0,
+    "widthEnd": 12.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#fff6c8"
-      ],
-      [
-        0.4,
-        "#ff9a2a"
+        0.3
       ],
       [
         1,
-        "#5a5a5a"
+        1.0
+      ]
+    ],
+    "gravity": 25.0,
+    "colorStops": [
+      [
+        0,
+        "#fff7c2"
+      ],
+      [
+        0.25,
+        "#ffd23a"
+      ],
+      [
+        0.55,
+        "#ff7a1a"
+      ],
+      [
+        1,
+        "#3a3a3a"
       ]
     ],
     "alphaStops": [
       [
         0,
-        255
-      ],
-      [
-        0.7,
-        140
+        230
       ],
       [
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Additive",
+    "intensity": 1.5,
+    "flipCols": 4,
+    "flipRows": 4,
+    "flipFPS": 24.0,
+    "edgeSoftness": 0.7
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "flame_flipbook",
+  "version": 1,
+  "artNotes": "A plume that EXPANDS and cools from white-yellow to dark smoke.",
+  "demoMotion": "wobble_line"
 }

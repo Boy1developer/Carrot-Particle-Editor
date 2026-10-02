@@ -2,8 +2,10 @@
   "id": "ice_frost",
   "name": "Ice Frost Trail",
   "category": "nature",
-  "description": "Frosty crystal trail.",
+  "description": "Frosty crystal ribbon.",
   "tags": [
+    "additive",
+    "ribbon",
     "ice"
   ],
   "modes": [
@@ -12,11 +14,26 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 1.0,
     "maxPoints": 44,
     "minDist": 2.5,
+    "smoothing": 3,
     "widthStart": 8.0,
     "widthEnd": 2.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.2
+      ]
+    ],
+    "taperTail": true,
     "flipCols": 4,
     "flipRows": 2,
     "flipFPS": 6.0,
@@ -40,10 +57,18 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 1.3,
+    "edgeColor": "#6fb7ff",
+    "edgeSoftness": 0.6,
+    "glowWidth": 1.5,
+    "glowAlpha": 0.25
   },
   "overrides_2d": {},
   "overrides_3d": {},
-  "texture": "crystal",
-  "version": 1
+  "texture": null,
+  "textureHiFi": "crystal_facets",
+  "version": 1,
+  "artNotes": "Frosty light-blue crystal ribbon, crisp and cold.",
+  "demoMotion": "sweep_ease"
 }

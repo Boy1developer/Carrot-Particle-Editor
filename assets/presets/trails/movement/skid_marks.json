@@ -2,8 +2,9 @@
   "id": "skid_marks",
   "name": "Skid Marks",
   "category": "movement",
-  "description": "Ground tire marks.",
+  "description": "Dark flat tire stripes that persist.",
   "tags": [
+    "ribbon",
     "vehicle",
     "ground"
   ],
@@ -13,40 +14,67 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 4.0,
-    "maxPoints": 64,
-    "minDist": 4.0,
-    "widthStart": 7.0,
-    "widthEnd": 7.0,
-    "colorStops": [
+    "maxPoints": 160,
+    "minDist": 5.0,
+    "smoothing": 1,
+    "widthStart": 24.0,
+    "widthEnd": 24.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#111111"
+        1
       ],
       [
         1,
-        "#111111"
+        1
+      ]
+    ],
+    "wNoiseAmt": 0.08,
+    "wNoiseScale": 0.05,
+    "ribbon": "flat",
+    "colorStops": [
+      [
+        0,
+        "#0a0a0a"
+      ],
+      [
+        1,
+        "#0a0a0a"
       ]
     ],
     "alphaStops": [
       [
         0,
+        0
+      ],
+      [
+        0.04,
         150
       ],
       [
+        0.8,
+        130
+      ],
+      [
         1,
-        150
+        0
       ]
     ],
     "blend": "Normal",
-    "ribbon": "flat"
+    "uvMode": "tile",
+    "edgeSoftness": 0.3
   },
-  "overrides_2d": {
-    "ribbon": "flat"
-  },
+  "overrides_2d": {},
   "overrides_3d": {
     "ribbon": "fixed"
   },
   "texture": null,
-  "version": 1
+  "textureHiFi": "rough_rubber",
+  "version": 1,
+  "artNotes": "Dark flat double-stripe tire marks on the ground that persist.",
+  "demoMotion": "s_curve_ground"
 }

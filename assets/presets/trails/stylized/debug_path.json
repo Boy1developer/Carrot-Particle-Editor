@@ -2,8 +2,9 @@
   "id": "debug_path",
   "name": "Debug Path",
   "category": "stylized",
-  "description": "Raw movement path.",
+  "description": "Raw movement path, diagnostics.",
   "tags": [
+    "ribbon",
     "debug"
   ],
   "modes": [
@@ -12,11 +13,28 @@
   ],
   "settings": {
     "enabled": true,
-    "maxPoints": 256,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 10.0,
+    "maxPoints": 256,
     "minDist": 1.0,
+    "smoothing": 0,
     "widthStart": 1.0,
     "widthEnd": 1.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "minScreenWidth": 1.0,
+    "taperHead": false,
+    "taperTail": false,
     "colorStops": [
       [
         0,
@@ -37,10 +55,14 @@
         255
       ]
     ],
-    "blend": "Normal"
+    "blend": "Normal",
+    "edgeSoftness": 0.0
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Raw movement path for diagnostics: 1px solid red, no smoothing.",
+  "demoMotion": "static_center"
 }

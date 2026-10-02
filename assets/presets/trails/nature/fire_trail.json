@@ -2,9 +2,10 @@
   "id": "fire_trail",
   "name": "Fire Trail",
   "category": "nature",
-  "description": "Flame trail, animated sheet.",
+  "description": "Licking flame ribbon, flipbook.",
   "tags": [
     "additive",
+    "ribbon",
     "fire"
   ],
   "modes": [
@@ -13,14 +14,30 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": false,
     "lifetime": 0.8,
-    "maxPoints": 40,
+    "maxPoints": 48,
     "minDist": 2.5,
+    "smoothing": 3,
     "widthStart": 12.0,
     "widthEnd": 3.0,
-    "flipCols": 4,
-    "flipRows": 4,
-    "flipFPS": 12.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        0.7,
+        0.6
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "taperTail": true,
     "gravity": -60.0,
     "colorStops": [
       [
@@ -46,10 +63,21 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 1.6,
+    "flipCols": 4,
+    "flipRows": 4,
+    "flipFPS": 12.0,
+    "edgeColor": "#ff5a1e",
+    "edgeSoftness": 0.6,
+    "glowWidth": 1.5,
+    "glowAlpha": 0.3
   },
   "overrides_2d": {},
   "overrides_3d": {},
-  "texture": "flame",
-  "version": 1
+  "texture": null,
+  "textureHiFi": "flame_flipbook",
+  "version": 1,
+  "artNotes": "Licking flame ribbon, yellow to red to black, rising.",
+  "demoMotion": "torch_swing"
 }

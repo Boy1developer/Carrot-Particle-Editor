@@ -2,8 +2,9 @@
   "id": "smoke_ribbon",
   "name": "Smoke Ribbon",
   "category": "nature",
-  "description": "Spreading smoke.",
+  "description": "Spreading grey smoke band.",
   "tags": [
+    "ribbon",
     "smoke"
   ],
   "modes": [
@@ -12,13 +13,28 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 2.0,
-    "maxPoints": 48,
+    "maxPoints": 60,
     "minDist": 4.0,
+    "smoothing": 4,
     "widthStart": 10.0,
     "widthEnd": 30.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        0.4
+      ],
+      [
+        1,
+        1.0
+      ]
+    ],
     "wNoiseAmt": 4.0,
     "wNoiseScale": 0.08,
+    "lifetimeJitter": 0.3,
     "colorStops": [
       [
         0,
@@ -39,10 +55,15 @@
         0
       ]
     ],
-    "blend": "Normal"
+    "blend": "Normal",
+    "edgeSoftness": 0.9,
+    "edgeColor": "#555555"
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "smoke_noise",
+  "version": 1,
+  "artNotes": "Spreading smoke band, soft edges, drifting wider as it ages.",
+  "demoMotion": "lazy_sine"
 }

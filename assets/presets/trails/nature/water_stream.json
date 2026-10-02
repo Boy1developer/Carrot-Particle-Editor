@@ -2,10 +2,11 @@
   "id": "water_stream",
   "name": "Water Stream",
   "category": "nature",
-  "description": "Translucent scrolled stream.",
+  "description": "Translucent scrolling stream.",
   "tags": [
-    "textured",
-    "water"
+    "ribbon",
+    "water",
+    "textured"
   ],
   "modes": [
     "2d",
@@ -13,15 +14,29 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 1.0,
     "maxPoints": 48,
     "minDist": 2.5,
+    "smoothing": 4,
+    "cornerVerts": 8,
     "widthStart": 9.0,
     "widthEnd": 6.0,
-    "cornerVerts": 8,
-    "scrollU": 2.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.7
+      ]
+    ],
     "uvMode": "tile",
     "tileLength": 48.0,
+    "scrollU": 2.0,
     "colorStops": [
       [
         0,
@@ -41,10 +56,16 @@
         1,
         60
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.7,
+    "edgeColor": "#1e7bff"
   },
   "overrides_2d": {},
   "overrides_3d": {},
-  "texture": "stripes",
-  "version": 1
+  "texture": null,
+  "textureHiFi": "water_caustic",
+  "version": 1,
+  "artNotes": "Translucent stream with scrolling caustics, cyan with alpha.",
+  "demoMotion": "fountain_arc"
 }

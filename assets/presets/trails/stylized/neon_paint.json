@@ -5,6 +5,7 @@
   "description": "Light-painting ribbon.",
   "tags": [
     "additive",
+    "ribbon",
     "neon"
   ],
   "modes": [
@@ -13,15 +14,28 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 5.0,
     "maxPoints": 128,
     "minDist": 2.0,
+    "smoothing": 4,
+    "cornerVerts": 12,
+    "capVerts": 8,
+    "capStyle": "round",
     "widthStart": 5.0,
     "widthEnd": 5.0,
-    "intensity": 1.6,
-    "capStyle": "round",
-    "capVerts": 8,
-    "cornerVerts": 12,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ]
+    ],
     "colorStops": [
       [
         0,
@@ -46,10 +60,18 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 1.6,
+    "edgeSoftness": 0.5,
+    "edgeColor": "#7a5cff",
+    "glowWidth": 2.5,
+    "glowAlpha": 0.4
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Light-painting ribbon, round caps, neon gradient, long time.",
+  "demoMotion": "draw_and_hold"
 }

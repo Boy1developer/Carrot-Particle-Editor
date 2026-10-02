@@ -2,9 +2,11 @@
   "id": "heavy_axe",
   "name": "Heavy Axe Swing",
   "category": "combat",
-  "description": "Heavy thick Normal arc.",
+  "description": "Wide slow smoky arc, dark edges.",
   "tags": [
-    "weapon"
+    "ribbon",
+    "weapon",
+    "smoke"
   ],
   "modes": [
     "2d",
@@ -12,36 +14,76 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.4,
-    "maxPoints": 28,
+    "source": "emitter",
+    "hideParticle": false,
+    "lifetime": 0.5,
+    "maxPoints": 50,
     "minDist": 3.0,
-    "widthStart": 26.0,
-    "widthEnd": 6.0,
-    "widthMult": 1.6,
-    "colorStops": [
+    "smoothing": 3,
+    "widthStart": 56.0,
+    "widthEnd": 8.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#dddddd"
+        0.1
       ],
       [
-        1,
-        "#555555"
-      ]
-    ],
-    "alphaStops": [
+        0.2,
+        1
+      ],
       [
-        0,
-        220
+        0.7,
+        0.8
       ],
       [
         1,
         0
       ]
     ],
-    "blend": "Normal"
+    "wNoiseAmt": 0.25,
+    "wNoiseScale": 0.03,
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#efe6d6"
+      ],
+      [
+        0.3,
+        "#9097a3"
+      ],
+      [
+        1,
+        "#23262e"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        235
+      ],
+      [
+        0.5,
+        150
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Normal",
+    "scrollU": -0.6,
+    "edgeSoftness": 0.8,
+    "edgeColor": "#15171c",
+    "intensity": 1.0,
+    "gravity": -120.0
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "smoke_noise",
+  "version": 1,
+  "artNotes": "Very wide slow arc with dark smoky edges and a lighter core.",
+  "demoMotion": "overhead_swing"
 }

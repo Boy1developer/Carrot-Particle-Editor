@@ -2,8 +2,9 @@
   "id": "poison_drip",
   "name": "Poison Drip",
   "category": "nature",
-  "description": "Green dripping trail.",
+  "description": "Heavy green dripping streaks.",
   "tags": [
+    "streaks",
     "poison"
   ],
   "modes": [
@@ -12,13 +13,28 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "particles",
+    "trailMode": "per-particle",
+    "hideParticle": false,
     "lifetime": 1.5,
     "maxPoints": 40,
     "minDist": 2.5,
+    "smoothing": 2,
     "widthStart": 7.0,
     "widthEnd": 2.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.3
+      ]
+    ],
+    "taperTail": true,
     "gravity": 160.0,
-    "blend": "Normal",
     "colorStops": [
       [
         0,
@@ -38,10 +54,16 @@
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.5,
+    "edgeColor": "#0a5a12"
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Heavy green dripping streaks, sagging downward.",
+  "demoMotion": "fountain_arc"
 }

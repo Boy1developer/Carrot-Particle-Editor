@@ -2,9 +2,10 @@
   "id": "energy_beam",
   "name": "Energy Beam",
   "category": "magic",
-  "description": "Beam with flowing texture.",
+  "description": "Thick glowing bar, flowing stripes.",
   "tags": [
     "additive",
+    "ribbon",
     "textured"
   ],
   "modes": [
@@ -13,39 +14,75 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.8,
-    "maxPoints": 48,
+    "source": "emitter",
+    "hideParticle": true,
+    "lifetime": 0.6,
+    "maxPoints": 60,
     "minDist": 2.0,
-    "widthStart": 6.0,
-    "widthEnd": 6.0,
-    "uvMode": "tile",
-    "tileLength": 48.0,
-    "scrollU": 3.0,
-    "intensity": 1.5,
-    "colorStops": [
+    "smoothing": 2,
+    "widthStart": 24.0,
+    "widthEnd": 24.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#aefcff"
+        0
+      ],
+      [
+        0.06,
+        1
+      ],
+      [
+        0.94,
+        1
       ],
       [
         1,
-        "#0055ff"
+        0
       ]
     ],
+    "uvMode": "tile",
+    "tileLength": 48.0,
+    "scrollU": 3.5,
+    "wNoiseAmt": 0.05,
+    "coreColor": "#ffffff",
+    "coreWidth": 0.3,
+    "edgeColor": "#19d3ff",
     "alphaStops": [
       [
         0,
         255
       ],
       [
+        0.9,
+        255
+      ],
+      [
         1,
-        80
+        0
       ]
     ],
-    "blend": "Additive"
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        1,
+        "#19d3ff"
+      ]
+    ],
+    "blend": "Additive",
+    "intensity": 2.2,
+    "edgeSoftness": 0.5,
+    "glowWidth": 3.0,
+    "glowAlpha": 0.5
   },
   "overrides_2d": {},
   "overrides_3d": {},
-  "texture": "stripes",
-  "version": 1
+  "texture": null,
+  "textureHiFi": "energy_stripes",
+  "version": 1,
+  "artNotes": "Thick straight glowing bar with stripes flowing along it.",
+  "demoMotion": "sweep_ease"
 }

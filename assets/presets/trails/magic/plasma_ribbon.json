@@ -2,9 +2,10 @@
   "id": "plasma_ribbon",
   "name": "Plasma Ribbon",
   "category": "magic",
-  "description": "Wavy HDR plasma.",
+  "description": "Fat undulating neon band.",
   "tags": [
     "additive",
+    "ribbon",
     "energy"
   ],
   "modes": [
@@ -13,17 +14,41 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.7,
-    "maxPoints": 48,
+    "source": "emitter",
+    "hideParticle": true,
+    "lifetime": 1.0,
+    "maxPoints": 80,
     "minDist": 2.0,
-    "widthStart": 9.0,
-    "widthEnd": 3.0,
-    "noise": 26.0,
-    "intensity": 2.2,
+    "smoothing": 6,
+    "widthStart": 20.0,
+    "widthEnd": 8.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        0.2
+      ],
+      [
+        0.15,
+        1
+      ],
+      [
+        0.8,
+        0.9
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "wNoiseAmt": 0.35,
+    "wNoiseScale": 0.02,
+    "noise": 6.0,
+    "taperTail": true,
     "colorStops": [
       [
         0,
-        "#aefcff"
+        "#ff2bd6"
       ],
       [
         0.5,
@@ -31,7 +56,7 @@
       ],
       [
         1,
-        "#ff2f92"
+        "#00e5ff"
       ]
     ],
     "alphaStops": [
@@ -40,14 +65,27 @@
         255
       ],
       [
+        0.85,
+        200
+      ],
+      [
         1,
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 2.0,
+    "scrollU": 1.2,
+    "edgeSoftness": 0.5,
+    "edgeColor": "#7a2bff",
+    "glowWidth": 2.5,
+    "glowAlpha": 0.4
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "plasma_swirl",
+  "version": 1,
+  "artNotes": "Fat, undulating neon band that shifts color along its length.",
+  "demoMotion": "figure8"
 }

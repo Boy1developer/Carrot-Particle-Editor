@@ -2,10 +2,11 @@
   "id": "arrow_whoosh",
   "name": "Arrow Whoosh",
   "category": "combat",
-  "description": "Light air streak.",
+  "description": "Faint rippling air streak.",
   "tags": [
-    "weapon",
-    "air"
+    "ribbon",
+    "air",
+    "weapon"
   ],
   "modes": [
     "2d",
@@ -13,36 +14,72 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.3,
-    "maxPoints": 24,
+    "source": "emitter",
+    "hideParticle": true,
+    "lifetime": 0.35,
+    "maxPoints": 36,
     "minDist": 3.0,
-    "widthStart": 8.0,
-    "widthEnd": 2.0,
-    "wNoiseAmt": 2.0,
-    "wNoiseScale": 0.1,
-    "colorStops": [
+    "smoothing": 3,
+    "widthStart": 22.0,
+    "widthEnd": 4.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#ffffff"
+        0
       ],
       [
-        1,
-        "#bcd6ff"
-      ]
-    ],
-    "alphaStops": [
+        0.15,
+        1
+      ],
       [
-        0,
-        110
+        0.6,
+        0.7
       ],
       [
         1,
         0
       ]
-    ]
+    ],
+    "wNoiseAmt": 0.15,
+    "wNoiseScale": 0.05,
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#e6eef6"
+      ],
+      [
+        1,
+        "#aebfd0"
+      ]
+    ],
+    "alphaStops": [
+      [
+        0,
+        0
+      ],
+      [
+        0.1,
+        95
+      ],
+      [
+        0.6,
+        50
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.9
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "air_streaks",
+  "version": 1,
+  "artNotes": "Faint, wide, translucent air streak that ripples.",
+  "demoMotion": "parabolic_flight"
 }

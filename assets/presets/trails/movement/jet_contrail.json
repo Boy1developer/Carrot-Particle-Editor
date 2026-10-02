@@ -2,8 +2,9 @@
   "id": "jet_contrail",
   "name": "Jet Contrail",
   "category": "movement",
-  "description": "Long sky trail.",
+  "description": "Long soft widening cloud trail.",
   "tags": [
+    "ribbon",
     "vehicle",
     "sky"
   ],
@@ -13,11 +14,25 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 4.0,
-    "maxPoints": 80,
-    "minDist": 5.0,
-    "widthStart": 4.0,
-    "widthEnd": 18.0,
+    "source": "emitter",
+    "hideParticle": true,
+    "lifetime": 5.0,
+    "maxPoints": 200,
+    "minDist": 8.0,
+    "smoothing": 6,
+    "widthStart": 5.0,
+    "widthEnd": 28.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        0.15
+      ],
+      [
+        1,
+        1.0
+      ]
+    ],
     "softFade": 2.0,
     "colorStops": [
       [
@@ -32,16 +47,21 @@
     "alphaStops": [
       [
         0,
-        200
+        180
       ],
       [
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.9
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "cloud_noise",
+  "version": 1,
+  "artNotes": "Very long soft white cloud trail that widens and dissolves.",
+  "demoMotion": "long_sweep"
 }

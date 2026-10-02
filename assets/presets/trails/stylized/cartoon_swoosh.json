@@ -4,6 +4,7 @@
   "category": "stylized",
   "description": "Solid swoosh, arrow cap.",
   "tags": [
+    "ribbon",
     "cartoon"
   ],
   "modes": [
@@ -12,12 +13,15 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 0.5,
     "maxPoints": 32,
     "minDist": 2.5,
+    "smoothing": 2,
     "widthStart": 22.0,
     "widthEnd": 22.0,
-    "capStyle": "arrow",
+    "widthMult": 1.0,
     "widthCurve": [
       [
         0,
@@ -34,6 +38,9 @@
         "linear"
       ]
     ],
+    "capStyle": "arrow",
+    "taperHead": false,
+    "taperTail": false,
     "colorStops": [
       [
         0,
@@ -53,10 +60,15 @@
         1,
         255
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.1
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "swoosh_lines",
+  "version": 1,
+  "artNotes": "Width starts wide and ends sharp; solid color, no fade, arrow cap.",
+  "demoMotion": "sweep_ease"
 }

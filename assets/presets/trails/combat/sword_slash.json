@@ -2,9 +2,10 @@
   "id": "sword_slash",
   "name": "Sword Slash",
   "category": "combat",
-  "description": "Sharp thin Additive arc.",
+  "description": "Razor crescent, white-hot core.",
   "tags": [
     "additive",
+    "ribbon",
     "weapon"
   ],
   "modes": [
@@ -13,31 +14,55 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.25,
-    "maxPoints": 24,
+    "source": "emitter",
+    "hideParticle": false,
+    "lifetime": 0.22,
+    "maxPoints": 40,
     "minDist": 2.0,
-    "widthStart": 14.0,
+    "smoothing": 4,
+    "widthStart": 30.0,
     "widthEnd": 0.0,
-    "taperTail": true,
+    "widthMult": 1.0,
     "widthCurve": [
       [
         0,
-        1
+        0,
+        "smooth"
+      ],
+      [
+        0.12,
+        1,
+        "smooth"
+      ],
+      [
+        0.55,
+        0.55,
+        "smooth"
       ],
       [
         1,
-        0.02,
-        "linear"
+        0,
+        "smooth"
       ]
     ],
+    "taperHead": true,
+    "taperTail": true,
     "colorStops": [
       [
         0,
         "#ffffff"
       ],
       [
+        0.25,
+        "#c4ecff"
+      ],
+      [
+        0.65,
+        "#4aa8ff"
+      ],
+      [
         1,
-        "#7ab8ff"
+        "#1f3fff"
       ]
     ],
     "alphaStops": [
@@ -46,14 +71,28 @@
         255
       ],
       [
+        0.55,
+        190
+      ],
+      [
         1,
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 1.8,
+    "coreColor": "#ffffff",
+    "coreWidth": 0.35,
+    "edgeColor": "#55b8ff",
+    "edgeSoftness": 0.6,
+    "glowWidth": 2.2,
+    "glowAlpha": 0.35
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": "slash_streak",
+  "version": 1,
+  "artNotes": "Clean crescent, razor-thin at both ends, widest just behind the head.",
+  "demoMotion": "arc_swing"
 }

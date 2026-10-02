@@ -4,6 +4,7 @@
   "category": "stylized",
   "description": "Tiled dotted line.",
   "tags": [
+    "ribbon",
     "textured",
     "dots"
   ],
@@ -13,11 +14,25 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 1.0,
     "maxPoints": 48,
     "minDist": 3.0,
+    "smoothing": 1,
     "widthStart": 8.0,
     "widthEnd": 8.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ]
+    ],
     "uvMode": "tile",
     "tileLength": 16.0,
     "scrollU": 0.5,
@@ -40,10 +55,15 @@
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.4
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": "dots",
-  "version": 1
+  "textureHiFi": "dot",
+  "version": 1,
+  "artNotes": "Dotted line from a tiled circle texture with slow scroll.",
+  "demoMotion": "lazy_sine"
 }

@@ -219,4 +219,37 @@ assert scan_ms < 20.0, scan_ms
 assert apply_ms < 1.0, apply_ms
 assert filt_ms < 0.5, filt_ms
 
+# 12) art-direction recipes: full look per template, never uniform
+DEMOS = {"arc_swing", "overhead_swing", "straight_shot",
+         "parabolic_flight", "dash_stop_go", "figure8", "sweep_ease",
+         "teleport_zigzag", "sine", "ellipse_orbit", "wobble_line",
+         "s_curve_ground", "long_sweep", "lazy_sine", "torch_swing",
+         "fountain_arc", "swirl_loop", "straight_slide",
+         "draw_and_hold", "wave", "static_center"}
+docs = {}
+for p in files:
+    with open(p, encoding="utf-8") as f:
+        docs[os.path.splitext(os.path.basename(p))[0]] = json.load(f)
+assert len(docs) == 27
+for tid, d in docs.items():
+    assert str(d.get("artNotes") or "").strip(), tid
+    assert d.get("demoMotion") in DEMOS, (tid, d.get("demoMotion"))
+    st = d.get("settings", {})
+    assert st.get("enabled") is True, tid
+    nd, _ch = C.templates_apply(tid, "2d", d0, d0)
+    assert sorted(nd) == sorted(d0), (tid, "merged look must be complete")
+widths = {json.dumps(d["settings"]["widthStart"]) for d in docs.values()}
+assert len(widths) >= 8, widths  # silhouettes differ, not one streak
+glow = sum(1 for d in docs.values()
+           if d["settings"].get("glowWidth", 0) > 0)
+core = sum(1 for d in docs.values() if d["settings"].get("coreColor"))
+flick = sum(1 for d in docs.values()
+            if d["settings"].get("flickerAmt", 0) > 0)
+hybrid = sum(1 for d in docs.values()
+             if d["settings"].get("hideParticle") is False)
+assert glow >= 5 and core >= 3 and flick >= 1 and hybrid >= 3, (
+    glow, core, flick, hybrid)
+print("TRAILS-TEMPLATES-ART-OK glow=%d core=%d flick=%d hybrid=%d"
+      % (glow, core, flick, hybrid))
+
 print("TRAILS-TEMPLATES-OK")

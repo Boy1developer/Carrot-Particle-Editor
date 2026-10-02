@@ -2,9 +2,10 @@
   "id": "bullet_tracer",
   "name": "Bullet Tracer",
   "category": "combat",
-  "description": "Long thin line.",
+  "description": "Straight bright line, hot head.",
   "tags": [
     "additive",
+    "streaks",
     "weapon"
   ],
   "modes": [
@@ -13,29 +14,44 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.1,
+    "source": "particles",
+    "trailMode": "per-particle",
+    "hideParticle": false,
+    "lifetime": 0.12,
     "maxPoints": 16,
     "minDist": 4.0,
-    "widthStart": 3.0,
-    "widthEnd": 3.0,
+    "smoothing": 0,
+    "cornerVerts": 0,
+    "widthStart": 3.2,
+    "widthEnd": 1.5,
+    "widthMult": 1.0,
     "widthCurve": [
       [
         0,
         1
       ],
       [
-        1,
+        0.1,
         1
-      ]
-    ],
-    "colorStops": [
-      [
-        0,
-        "#ffe94a"
       ],
       [
         1,
-        "#ff8800"
+        0
+      ]
+    ],
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#fffbe0"
+      ],
+      [
+        0.3,
+        "#ffc23a"
+      ],
+      [
+        1,
+        "#ff5a00"
       ]
     ],
     "alphaStops": [
@@ -48,10 +64,20 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 2.0,
+    "coreColor": "#fffbe0",
+    "coreWidth": 0.5,
+    "edgeColor": "#ff5a00",
+    "edgeSoftness": 0.4,
+    "glowWidth": 2.5,
+    "glowAlpha": 0.25
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Perfectly straight thin bright line with a tiny bright head.",
+  "demoMotion": "straight_shot"
 }

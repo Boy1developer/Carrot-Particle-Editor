@@ -2,8 +2,10 @@
   "id": "rainbow_ribbon",
   "name": "Rainbow Ribbon",
   "category": "stylized",
-  "description": "7-color gradient.",
+  "description": "Seven-color gradient band.",
   "tags": [
+    "additive",
+    "ribbon",
     "rainbow"
   ],
   "modes": [
@@ -12,11 +14,25 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "emitter",
+    "hideParticle": true,
     "lifetime": 1.5,
     "maxPoints": 56,
     "minDist": 2.5,
+    "smoothing": 4,
     "widthStart": 9.0,
     "widthEnd": 2.0,
+    "widthMult": 1.0,
+    "widthCurve": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0.15
+      ]
+    ],
     "taperTail": true,
     "colorStops": [
       [
@@ -57,10 +73,18 @@
         1,
         0
       ]
-    ]
+    ],
+    "blend": "Additive",
+    "intensity": 1.3,
+    "edgeSoftness": 0.5,
+    "glowWidth": 1.5,
+    "glowAlpha": 0.3
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Seven-color gradient band with a tapered tail.",
+  "demoMotion": "wave"
 }

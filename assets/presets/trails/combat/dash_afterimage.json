@@ -2,8 +2,9 @@
   "id": "dash_afterimage",
   "name": "Dash Afterimage",
   "category": "combat",
-  "description": "Player dash trail.",
+  "description": "Ghost steps, flat ribbon.",
   "tags": [
+    "ribbon",
     "player"
   ],
   "modes": [
@@ -12,21 +13,34 @@
   ],
   "settings": {
     "enabled": true,
-    "lifetime": 0.35,
-    "maxPoints": 28,
+    "source": "emitter",
+    "hideParticle": true,
+    "lifetime": 0.4,
+    "maxPoints": 40,
     "minDist": 2.0,
-    "widthStart": 12.0,
-    "widthEnd": 4.0,
-    "fadeTail": true,
-    "tailLen": 0.5,
-    "colorStops": [
+    "smoothing": 2,
+    "widthStart": 34.0,
+    "widthEnd": 34.0,
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#8fd0ff"
+        1
       ],
       [
         1,
-        "#1e4fff"
+        1
+      ]
+    ],
+    "capStyle": "flat",
+    "colorStops": [
+      [
+        0,
+        "#7ff0ff"
+      ],
+      [
+        1,
+        "#2b6bff"
       ]
     ],
     "alphaStops": [
@@ -35,13 +49,34 @@
         200
       ],
       [
+        0.25,
+        140,
+        "constant"
+      ],
+      [
+        0.5,
+        90,
+        "constant"
+      ],
+      [
+        0.75,
+        45,
+        "constant"
+      ],
+      [
         1,
-        0
+        0,
+        "smooth"
       ]
-    ]
+    ],
+    "blend": "Normal",
+    "edgeSoftness": 0.2
   },
   "overrides_2d": {},
   "overrides_3d": {},
   "texture": null,
-  "version": 1
+  "textureHiFi": null,
+  "version": 1,
+  "artNotes": "Wide flat ribbon of distinct ghost steps like speed afterimages.",
+  "demoMotion": "dash_stop_go"
 }

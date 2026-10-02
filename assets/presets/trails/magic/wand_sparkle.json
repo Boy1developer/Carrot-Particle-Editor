@@ -2,10 +2,11 @@
   "id": "wand_sparkle",
   "name": "Magic Wand Sparkle",
   "category": "magic",
-  "description": "Sparkling purple trail.",
+  "description": "Slim glow wrapped in stars.",
   "tags": [
     "additive",
-    "sparkle"
+    "sparkle",
+    "streaks"
   ],
   "modes": [
     "2d",
@@ -13,21 +14,39 @@
   ],
   "settings": {
     "enabled": true,
+    "source": "particles",
+    "trailMode": "per-particle",
+    "hideParticle": false,
     "lifetime": 0.9,
     "maxPoints": 40,
     "minDist": 2.5,
-    "widthStart": 6.0,
+    "smoothing": 4,
+    "widthStart": 7.0,
     "widthEnd": 1.0,
-    "intensity": 1.8,
-    "scrollU": 1.0,
-    "colorStops": [
+    "widthMult": 1.0,
+    "widthCurve": [
       [
         0,
-        "#e6b3ff"
+        1
       ],
       [
         1,
-        "#ff4fd8"
+        0
+      ]
+    ],
+    "taperTail": true,
+    "colorStops": [
+      [
+        0,
+        "#ffffff"
+      ],
+      [
+        0.4,
+        "#e9a6ff"
+      ],
+      [
+        1,
+        "#8a3bff"
       ]
     ],
     "alphaStops": [
@@ -40,10 +59,18 @@
         0
       ]
     ],
-    "blend": "Additive"
+    "blend": "Additive",
+    "intensity": 1.7,
+    "glowWidth": 3.0,
+    "glowAlpha": 0.4,
+    "edgeColor": "#b88bff",
+    "scrollV": 0.8
   },
   "overrides_2d": {},
   "overrides_3d": {},
-  "texture": "glow",
-  "version": 1
+  "texture": null,
+  "textureHiFi": "sparkle_noise",
+  "version": 1,
+  "artNotes": "Slim glowing ribbon wrapped in twinkling stars.",
+  "demoMotion": "figure8"
 }
