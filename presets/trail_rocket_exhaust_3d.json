@@ -185,7 +185,18 @@
       "softFade": 0.0,
       "gravity": 0.0,
       "drag": 0.0,
-      "noise": 0.0
+      "noise": 0.0,
+      "hideParticle": true,
+      "lifetimeJitter": 0.0,
+      "minScreenWidth": 2.5,
+      "edgeSoftness": 0.6,
+      "coreColor": "",
+      "coreWidth": 0.35,
+      "edgeColor": "#ffffff",
+      "glowWidth": 0.0,
+      "glowAlpha": 0.0,
+      "flickerAmt": 0.0,
+      "flickerHz": 8.0
     }
   },
   "states": [

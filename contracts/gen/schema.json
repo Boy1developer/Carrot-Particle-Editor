@@ -246,6 +246,39 @@
             },
             "noise": {
               "type": "number"
+            },
+            "hideParticle": {
+              "type": "boolean"
+            },
+            "lifetimeJitter": {
+              "type": "number"
+            },
+            "minScreenWidth": {
+              "type": "number"
+            },
+            "edgeSoftness": {
+              "type": "number"
+            },
+            "coreColor": {
+              "type": "string"
+            },
+            "coreWidth": {
+              "type": "number"
+            },
+            "edgeColor": {
+              "type": "string"
+            },
+            "glowWidth": {
+              "type": "number"
+            },
+            "glowAlpha": {
+              "type": "number"
+            },
+            "flickerAmt": {
+              "type": "number"
+            },
+            "flickerHz": {
+              "type": "number"
             }
           }
         },
