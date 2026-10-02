@@ -155,7 +155,14 @@ class SimEngine:
         return t
 
     def _trail_push(self, key, x, y, z, now, cfg):
-        """Push a point when minDist/minTime is exceeded (else skip)."""
+        """Push a trail point: Godot-style distance mode or legacy time.
+
+        distance: fixed section count (maxPoints) spaced sectionLength
+        apart in world units — constant trail length at any speed, no
+        time expiry (the trail dies with its particle). sectionLength 0
+        pushes every update (Trail2D-tick style FIFO).
+        time: legacy lifetime/minTime gates (old files unchanged).
+        """
         try:
             maxp = max(2, int(cfg.get("maxPoints", 32) or 32))
             life = max(0.05, float(cfg.get("lifetime", 1.0) or 0))
@@ -163,6 +170,8 @@ class SimEngine:
             mt = max(0.0, float(cfg.get("minTime", 0.016) or 0))
             jit = max(0.0, min(1.0, float(cfg.get("lifetimeJitter",
                                                  0.0) or 0.0)))
+            dist = str(cfg.get("emitMode", "time")) == "distance"
+            seclen = max(0.0, float(cfg.get("sectionLength", 8.0) or 0.0))
         except (ValueError, TypeError):
             return
         if jit > 0.0 and key != "emitter":
@@ -172,21 +181,53 @@ class SimEngine:
         hist = self.trail_hist.get(key)
         if hist is None:
             hist = self.trail_hist[key] = []
+        if dist and seclen > 0.0:
+            # Godot sections: walk the anchor forward in exact seclen
+            # steps (interpolated), so spacing never depends on speed or
+            # frame rate. Bounded: at most 2*maxp pushes per update.
+            if not hist:
+                hist.append((x, y, z, now))
+                return
+            ax, ay, az, _lt = hist[-1]
+            dx, dy, dz = x - ax, y - ay, z - az
+            d2 = dx * dx + dy * dy + dz * dz
+            if d2 > self.TRAIL_JUMP * self.TRAIL_JUMP:
+                hist.clear()
+                hist.append((x, y, z, now))
+                return
+            d = math.sqrt(d2)
+            if d <= 0.0:
+                return
+            ux, uy, uz = dx / d, dy / d, dz / d
+            n = min(int(d // seclen), maxp * 2)
+            for _i in range(n):
+                ax += ux * seclen
+                ay += uy * seclen
+                az += uz * seclen
+                hist.append((ax, ay, az, now))
+                while len(hist) > maxp:
+                    hist.pop(0)
+            return
         if hist:
             lx, ly, lz, lt = hist[-1]
-            if mt > 0.0 and (now - lt) < mt:
-                return
             dx, dy, dz = x - lx, y - ly, z - lz
             d2 = dx * dx + dy * dy + dz * dz
             if d2 > self.TRAIL_JUMP * self.TRAIL_JUMP:
                 hist.clear()
-            elif md > 0.0 and d2 < md * md:
-                return
+            elif dist:
+                # sectionLength 0: every update (Trail2D-tick FIFO)
+                pass
+            else:
+                if mt > 0.0 and (now - lt) < mt:
+                    return
+                if md > 0.0 and d2 < md * md:
+                    return
         hist.append((x, y, z, now))
         while len(hist) > maxp:
             hist.pop(0)
-        while len(hist) > 1 and (now - hist[0][3]) > life:
-            hist.pop(0)
+        if not dist:
+            while len(hist) > 1 and (now - hist[0][3]) > life:
+                hist.pop(0)
 
     def update_trails(self, em, items, ex, ey, ez, dt):
         """Shared trail update for both sim paths.

@@ -67,6 +67,12 @@
             "minTime": {
               "type": "number"
             },
+            "emitMode": {
+              "type": "string"
+            },
+            "sectionLength": {
+              "type": "number"
+            },
             "autodestruct": {
               "type": "boolean"
             },

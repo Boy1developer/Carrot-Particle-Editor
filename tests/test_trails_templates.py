@@ -15,7 +15,7 @@ import particle_studio as PS
 schema = [{"key": f["key"], "type": f["type"],
            "min": f.get("min", 0), "max": f.get("max", 1),
            "items": list(f.get("items", []))} for f in PS.TRAIL_SCHEMA]
-assert C.templates_init(schema, tempfile.gettempdir()) == 77
+assert C.templates_init(schema, tempfile.gettempdir()) == 79
 
 # 1) all builtin templates load with zero warnings
 files = sorted(glob.glob(os.path.join(

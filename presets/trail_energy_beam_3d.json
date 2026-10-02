@@ -183,7 +183,9 @@
       "glowWidth": 0.0,
       "glowAlpha": 0.0,
       "flickerAmt": 0.0,
-      "flickerHz": 8.0
+      "flickerHz": 8.0,
+      "emitMode": "time",
+      "sectionLength": 8.0
     }
   },
   "states": [

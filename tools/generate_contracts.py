@@ -141,6 +141,8 @@ def schema_file(c):
                             "lifetime": {"type": "number"},
                             "minDist": {"type": "number"},
                             "minTime": {"type": "number"},
+                            "emitMode": {"type": "string"},
+                            "sectionLength": {"type": "number"},
                             "autodestruct": {"type": "boolean"},
                             "timeScale": {"type": "number"},
                             "space": {"type": "string"},
