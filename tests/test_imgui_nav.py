@@ -18,12 +18,12 @@ try:
     before = (500 - 400 - ox0) / z0
     after = (500 - 400 - app.cam["ox"]) / app.cam["zoom"]
     assert abs(before - after) < 1e-6, (before, after)
-    # focus emitter centers it
+    # focus emitter centers it (zoom-aware view transform)
     app.emitter2d = [50.0, -30.0]
     W, H, cx, cy = 800, 600, 400, 312.0
     S.focus_emitter(W, H, cx, cy)
-    ex = cx + app.cam["ox"] + app.emitter2d[0]
-    ey = cy + app.cam["oy"] + app.emitter2d[1]
+    ex, ey = S.view2d(app.emitter2d[0], app.emitter2d[1], cx, cy,
+                      app.cam["ox"], app.cam["oy"], app.cam["zoom"])
     assert abs(ex - cx) < 1e-6 and abs(ey - cy) < 1e-6, (ex, ey)
     # nav guarded while typing
     assert S._typing() is False

@@ -108,7 +108,8 @@ try:
     with dpg.window(tag="__trl_smoke__", show=False):
         with dpg.drawlist(tag="__trl_dl__", width=640, height=480):
             pass
-    S.paint_trails_2d(S.APP, "__trl_dl__", {"emitter": {"trails": tcfg}})
+    S.paint_trails_2d(S.APP, "__trl_dl__", {"emitter": {"trails": tcfg}},
+                      320, 240)
     assert S.APP._trail_draws > 4, S.APP._trail_draws  # strips, not 2 lines
     # hybrid gate: dots visible when hideParticle is False
     assert S._hide_trail_particles({"trails": tcfg}) is True

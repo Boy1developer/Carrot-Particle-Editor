@@ -137,16 +137,43 @@ def should_raster(app, n):
         return False
 
 
-def _scale_split(PS, out, k):
-    """_gl_split() buckets/glow with screen x/y/r scaled by k (world z kept)."""
+def _scale_split(PS, out, k, ox=0.0, oy=0.0, zoom=1.0, pivx=0.0, pivy=0.0):
+    """_gl_split() buckets/glow mapped to raster-screen coords.
+
+    out x/y are 2D WORLD coords: screen = pivot + offset + world * zoom,
+    then downscaled by k (world z and colors pass through).
+    """
     buckets, glow = PS.StudioApp._gl_split(out)
+    ax, ay = pivx + ox, pivy + oy
+
+    def _map(items):
+        return [((ax + x * zoom) * k, (ay + y * zoom) * k, z,
+                 max(1.0, r * zoom) * k, cr, cg, cb, a)
+                for (x, y, z, r, cr, cg, cb, a) in items]
+
     sb = {}
     for shape, items in buckets.items():
-        sb[shape] = [(x * k, y * k, z, r * k, cr, cg, cb, a)
-                     for (x, y, z, r, cr, cg, cb, a) in items]
-    sg = [(x * k, y * k, z, r * k, cr, cg, cb, a)
-          for (x, y, z, r, cr, cg, cb, a) in glow]
-    return sb, sg
+        sb[shape] = _map(items)
+    return sb, _map(glow)
+
+
+def _zoom_grid_2d(PS, W, H, gx, horizon, zoom):
+    """Vector grid (screen px) with the fan density following the zoom."""
+    grid = PS.StudioApp._gl_grid_2d(None, W, H, gx, horizon)
+    if not zoom or abs(zoom - 1.0) < 1e-9:
+        return grid
+    out = []
+    for segs, col in grid:
+        pts = list(segs)
+        if pts and abs(pts[0] - gx) < 1e-9:
+            # fan lines emanate from (gx, horizon): rescale the spread
+            res = []
+            for i in range(0, len(pts), 3):
+                x, y, zz = pts[i], pts[i + 1], pts[i + 2]
+                res += [gx + (x - gx) * zoom, y, zz]
+            pts = res
+        out.append((pts, col))
+    return out
 
 
 def frame_2d(app, out, W, H):
@@ -159,16 +186,23 @@ def frame_2d(app, out, W, H):
         from render.gl_view import mat_ortho as _ortho
         rw, rh = raster_size(W, H)
         k = rw / max(1.0, float(W))
-        buckets, glow = _scale_split(PS, out, k)
+        try:
+            ox, oy, zoom = (app.cam["ox"], app.cam["oy"],
+                            app.cam["zoom"])
+        except Exception:
+            ox, oy, zoom = 0.0, 0.0, 1.0
+        buckets, glow = _scale_split(PS, out, k, ox, oy, zoom,
+                                     W * 0.5, H * 0.52)
         try:
             glow_on = bool(app.glow)
         except Exception:
             glow_on = True
         if not (glow_on and len(out["x"]) <= 450):
             glow = []
-        gx = (W * 0.5 + app.cam["ox"]) * k
-        horizon = (H * 0.42 + app.cam["oy"]) * k
-        grid = PS.StudioApp._gl_grid_2d(None, rw, rh, gx, horizon)
+        gx = (W * 0.5 + ox) * k
+        horizon = (H * 0.42 + oy) * k
+        grid = _zoom_grid_2d(
+            PS, rw, rh, gx, horizon, zoom)
         bm = app.em.get("blendingMode") if isinstance(getattr(app, "em", None), dict) else None
         ppm = gl.render(buckets, glow, rw, rh, ortho=1,
                         clip=_ortho(0, rw, 0, rh, -1000, 1000),

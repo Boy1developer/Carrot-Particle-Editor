@@ -525,8 +525,10 @@ class SimEngine:
                 p[19] += p[11] * -friction
         if len(self.parts) > maxp or (self.parts and self.parts[0][4] >= self.parts[0][9]):
             self.parts = [p for p in self.parts if p[4] < p[9]][-maxp:]
+        # 2D callers pass the WORLD emitter as (cx, cy); 3D uses emitter_pos
+        eex, eey, eez = (cx, cy, 0.0) if flat else (ex, ey, ez)
         self.update_trails(em, [(id(p), p[0], p[1], p[10])
-                                for p in self.parts], ex, ey, ez, dt)
+                                for p in self.parts], eex, eey, eez, dt)
         return len(self.parts)
 
     def step_cpp(self, eff, em, ptype, tracks, is3d, dt, scx, scy,
@@ -1216,14 +1218,18 @@ def paint_bg_grid_2d(app, dl, W, H, cx, cy):
     """Viewport backdrop + perspective grid (no guides, no particles)."""
     dpg.draw_rectangle([0, 0], [W, H], color=[0, 0, 0, 0],
                        fill=[22, 23, 31, 255], parent=dl)
-    gx, gy = cx + app.cam["ox"], cy + app.cam["oy"]
-    ex, ey = gx + app.emitter2d[0], gy + app.emitter2d[1]
+    try:
+        ox, oy, z = app.cam["ox"], app.cam["oy"], app.cam["zoom"]
+    except Exception:
+        ox, oy, z = 0.0, 0.0, 1.0
+    gx, gy = view2d(0.0, 0.0, cx, cy, ox, oy, 1.0)
+    ex, ey = view2d(app.emitter2d[0], app.emitter2d[1], cx, cy, ox, oy, z)
     horizon = H * 0.42 + app.cam["oy"]
     dpg.draw_line([0, horizon], [W, horizon], color=[58, 61, 85, 255], parent=dl)
     for i in range(1, 9):
         y = horizon + (H - horizon) * (i / 9) ** 1.6
         dpg.draw_line([0, y], [W, y], color=[44, 46, 68, 255], parent=dl)
-    step = max(1, W / 14)
+    step = max(1, W / 14) * z
     for i in range(-10, 11):
         dpg.draw_line([gx, horizon], [gx + i * step, H],
                       color=[44, 46, 68, 255], parent=dl)
@@ -1231,7 +1237,11 @@ def paint_bg_grid_2d(app, dl, W, H, cx, cy):
 
 
 def paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey):
-    """Emission zone + propagation cone guides."""
+    """Emission zone + propagation cone guides (zoom-aware sizes)."""
+    try:
+        _zv = app.cam["zoom"]
+    except Exception:
+        _zv = 1.0
     if eff is not None:
         em = eff["emitter"]
         if bool(em.get("emissionZone", {}).get("showZone", True)):
@@ -1241,25 +1251,25 @@ def paint_guides_2d(app, dl, W, H, cx, cy, eff, gx, horizon, ex, ey):
             cr, sr = math.cos(rot), math.sin(rot)
             blue = [77, 159, 255, 255]
             if zs == "rectangle":
-                w = (z.get("width", 100) or 100) / 2
-                h = (z.get("height", 60) or 60) / 2
+                w = (z.get("width", 100) or 100) / 2 * _zv
+                h = (z.get("height", 60) or 60) / 2 * _zv
                 q = [(-w, -h), (w, -h), (w, h), (-w, h)]
                 q = [[ex + x * cr - y * sr, ey + x * sr + y * cr] for x, y in q]
                 dpg.draw_polygon(q, color=blue, parent=dl)
             elif zs == "line":
-                ln = (z.get("length", 100) or 100) / 2
+                ln = (z.get("length", 100) or 100) / 2 * _zv
                 a = [ex - ln * cr, ey - ln * sr]
                 b = [ex + ln * cr, ey + ln * sr]
                 dpg.draw_line(a, b, color=blue, parent=dl)
             elif zs != "point":
-                r = max(4.0, float(z.get("radius", 10) or 10))
+                r = max(2.0, float(z.get("radius", 10) or 10) * _zv)
                 dpg.draw_circle([ex, ey], r, color=blue, parent=dl, segments=40)
         cone = em.get("propagationCone", {})
         if bool(cone.get("showCone", True)):
             base = float(cone.get("direction", 0))
             spread = float(cone.get("spread", 90))
             if spread < 360:
-                L = 110
+                L = 110 * _zv
                 a1 = math.radians(base - spread / 2)
                 a2 = math.radians(base + spread / 2)
                 dpg.draw_line([ex, ey],
@@ -1282,8 +1292,18 @@ def paint_back_2d(app, dl, W, H, cx, cy, eff):
     return ex, ey
 
 
-def paint_dots_2d(app, dl, tracks):
-    """Particle dots only (vector path)."""
+def paint_dots_2d(app, dl, tracks, cx=None, cy=None):
+    """Particle dots only (vector path), projected through view2d."""
+    if cx is None or cy is None:
+        try:
+            _cw, _ch = dpg.get_item_rect_size("vp_draw")
+            cx, cy = _cw * 0.5, _ch * 0.52
+        except Exception:
+            cx, cy = 450.0, 320.0
+    try:
+        ox, oy, z = app.cam["ox"], app.cam["oy"], app.cam["zoom"]
+    except Exception:
+        ox, oy, z = 0.0, 0.0, 1.0
     out = app.sim._cpp_out
     if out is not None:
         xs, ys, rs, cs, ss = out["x"], out["y"], out["r"], out["color"], out["shape"]
@@ -1295,8 +1315,9 @@ def paint_dots_2d(app, dl, tracks):
         for i in range(n):
             col = _c("#%06x" % cs[i])
             if glow:
-                hr = rs[i] * 2.2
-                dpg.draw_circle([xs[i], ys[i]], hr,
+                hr = max(1.0, rs[i] * z * 2.2)
+                dpg.draw_circle([cx + ox + xs[i] * z, cy + oy + ys[i] * z],
+                                hr,
                                 color=[0, 0, 0, 0],
                                 fill=[col[0] * 35 // 100, col[1] * 35 // 100,
                                       col[2] * 35 // 100, 255], parent=dl,
@@ -1314,7 +1335,8 @@ def paint_dots_2d(app, dl, tracks):
                     shpA = tracks[bs]["shape"]
                     shpB = tracks[bs + 1]["shape"]
                     bt = t
-            _draw_morph_2d(dl, xs[i], ys[i], rs[i], col_i,
+            _draw_morph_2d(dl, cx + ox + xs[i] * z, cy + oy + ys[i] * z,
+                           max(1.0, rs[i] * z), col_i,
                            shpA, shpB, bt, None)
     else:
         dots = []
@@ -1339,11 +1361,12 @@ def paint_dots_2d(app, dl, tracks):
             if glow:
                 gc = [fill[0] * 35 // 100, fill[1] * 35 // 100,
                       fill[2] * 35 // 100, 255]
-            _draw_morph_2d(dl, x, y, r, fill, a, b, bt, gc)
+            _draw_morph_2d(dl, cx + ox + x * z, cy + oy + y * z,
+                           max(1.0, r * z), fill, a, b, bt, gc)
 
 
-def paint_front_2d(dl, W, H, ex, ey):
-    """Vignette + emitter gizmo overlay."""
+def paint_front_2d(dl, W, H, ex, ey, z=1.0):
+    """Vignette + emitter gizmo overlay (gizmo scales with zoom)."""
     # vignette strips + gizmo
     m = min(W, H)
     t = max(14, m * 0.07)
@@ -1352,13 +1375,30 @@ def paint_front_2d(dl, W, H, ex, ey):
     dpg.draw_rectangle([0, H - t], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
     dpg.draw_rectangle([0, 0], [t, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
     dpg.draw_rectangle([W - t, 0], [W, H], color=[0, 0, 0, 0], fill=vc, parent=dl)
-    dpg.draw_arrow([ex, ey], [ex + 95, ey], color=[255, 59, 59, 255],
+    _a = 95 * z
+    dpg.draw_arrow([ex, ey], [ex + _a, ey], color=[255, 59, 59, 255],
                    thickness=6, parent=dl)
-    dpg.draw_arrow([ex, ey], [ex, ey - 95], color=[47, 107, 255, 255],
+    dpg.draw_arrow([ex, ey], [ex, ey - _a], color=[47, 107, 255, 255],
                    thickness=6, parent=dl)
-    dpg.draw_circle([ex, ey], 10, color=[123, 97, 255, 255],
+    dpg.draw_circle([ex, ey], max(3.0, 10 * z), color=[123, 97, 255, 255],
                     fill=[255, 255, 255, 255], thickness=3, parent=dl,
                     segments=20)
+
+
+def view2d(x, y, cx, cy, ox, oy, z):
+    """2D world -> drawlist screen (the ONE 2D view transform).
+
+    screen = pivot + world * zoom with pivot (cx+ox, cy+oy). Every 2D
+    painter (dots, trails, grid, guides, gizmo) must go through here so
+    zoom/pan stay glued. At z=1/ox=oy=0 it is the legacy identity.
+    """
+    return (cx + ox + x * z, cy + oy + y * z)
+
+
+def view2d_inv(sx, sy, cx, cy, ox, oy, z):
+    """Drawlist screen -> 2D world (gizmo drags)."""
+    z = z if abs(z) > 1e-9 else 1.0
+    return ((sx - cx - ox) / z, (sy - cy - oy) / z)
 
 
 def trails_on(app, em):
@@ -1397,11 +1437,13 @@ def _trail_lut_for(tcfg):
 
 
 def _paint_ribbon_trail(app, dl, raw, key, style, wlut, grad, now, sub,
-                        max_segs=8, core_on=True):
+                        max_segs=8, core_on=True, z=1.0):
     """Glow pass + outer/edge strip + inner core strip. Returns draws.
 
     raw is pre-strided to MAX_INPUT_PTS, then smoothed, then strided
-    again to max_segs stations, so per-trail CPU stays flat.
+    again to max_segs stations, so per-trail CPU stays flat. Widths are
+    world units scaled by the view zoom z (2D); the minScreenWidth floor
+    stays in px. Pass z=1.0 when pts are already screen-space (3D).
     """
     if TR is None:
         return 0
@@ -1418,7 +1460,8 @@ def _paint_ribbon_trail(app, dl, raw, key, style, wlut, grad, now, sub,
     idx = TR.stride_indices(n, max_segs)
     spts = [pts[i] for i in idx]
     sts = [ts[i] for i in idx]
-    widths = [TR.floored_width(t, style, wlut) for t in sts]
+    minw = style["minScreenWidth"]
+    widths = [max(minw, TR.width_at(t, style, wlut) * z) for t in sts]
     phase = (sum(map(ord, str(key))) % 1000) / 1000.0
     fl = TR.flicker_factor(now, style["flickerHz"], style["flickerAmt"],
                            phase)
@@ -1506,9 +1549,10 @@ def _smooth_pts(pts, subdiv):
     return out
 
 
-def paint_trails_2d(app, dl, eff):
+def paint_trails_2d(app, dl, eff, cx, cy):
     """LUT-driven ribbon strips (glow + edge strip + core); see
-    editor/trail_render.py for the silhouette math."""
+    editor/trail_render.py for the silhouette math. Histories are 2D
+    world coords, projected through view2d (zoom-aware)."""
     try:
         tcfg = (eff.get("emitter") or {}).get("trails") if eff else None
     except Exception:
@@ -1517,6 +1561,10 @@ def paint_trails_2d(app, dl, eff):
         return
     if TR is None:
         return
+    try:
+        ox, oy, z = app.cam["ox"], app.cam["oy"], app.cam["zoom"]
+    except Exception:
+        ox, oy, z = 0.0, 0.0, 1.0
     try:
         style = TR.resolve_style(tcfg)
         wlut, grad = _trail_lut_for(tcfg)
@@ -1530,13 +1578,14 @@ def paint_trails_2d(app, dl, eff):
         for key, hist in hists:
             if len(hist) < 2:
                 continue
-            raw = [(x, y) for (x, y, _z, _t) in hist]
+            raw = [view2d(x, y, cx, cy, ox, oy, z)
+                   for (x, y, _z, _t) in hist]
             if flat:
                 _paint_legacy_trail(app, dl, _smooth_pts(raw, sub))
                 continue
             app._trail_draws += _paint_ribbon_trail(
                 app, dl, raw, key, style, wlut, grad, now, sub,
-                segs, core_on)
+                segs, core_on, z)
             if dbg.get("points") or dbg.get("bounds"):
                 pts = _smooth_pts(raw, sub)
             if dbg.get("points"):
@@ -1589,9 +1638,9 @@ def draw_view_2d(app, dl, W, H, cx, cy, eff, tracks=None):
     ex, ey = paint_back_2d(app, dl, W, H, cx, cy, eff)
     em = (eff.get("emitter") or {}) if eff else None
     if (not trails_on(app, em)) or (not _hide_trail_particles(em)):
-        paint_dots_2d(app, dl, tracks)
-    paint_trails_2d(app, dl, eff)
-    paint_front_2d(dl, W, H, ex, ey)
+        paint_dots_2d(app, dl, tracks, cx, cy)
+    paint_trails_2d(app, dl, eff, cx, cy)
+    paint_front_2d(dl, W, H, ex, ey, app.cam.get("zoom", 1.0))
 
 
 def paint_bg_grid_3d(app, dl, W, H, cx, cy):
@@ -3958,8 +4007,8 @@ def gizmo_hit(lx, ly, W, H, cx, cy):
             if 0 <= along <= n and perp <= 16:
                 return ("axis", i)
         return None
-    ex = cx + APP.cam["ox"] + APP.emitter2d[0]
-    ey = cy + APP.cam["oy"] + APP.emitter2d[1]
+    ex, ey = view2d(APP.emitter2d[0], APP.emitter2d[1], cx, cy,
+                    APP.cam["ox"], APP.cam["oy"], APP.cam["zoom"])
     if math.hypot(lx - ex, ly - ey) <= 24:
         return "move2d"
     return None
@@ -3987,8 +4036,8 @@ def focus_emitter(W, H, cx, cy):
     if APP.ptype == "3d":
         sx, sy = APP.proj(*APP.emitter_pos, cx, cy)[:2]
     else:
-        sx = cx + APP.cam["ox"] + APP.emitter2d[0]
-        sy = cy + APP.cam["oy"] + APP.emitter2d[1]
+        sx, sy = view2d(APP.emitter2d[0], APP.emitter2d[1], cx, cy,
+                        APP.cam["ox"], APP.cam["oy"], APP.cam["zoom"])
     APP.cam["ox"] += cx - sx
     APP.cam["oy"] += cy - sy
     APP.mark_dirty()
@@ -4088,9 +4137,15 @@ def handle_nav_keys(dt, W, H, cx, cy):
         zin = dpg.is_key_down(dpg.mvKey_E)
         zout = dpg.is_key_down(dpg.mvKey_Q)
         if zin or zout:
+            # anchored at the viewport center (same pivot math as the
+            # wheel: the world point under the center stays put)
             k = math.exp(0.9 * sens * dt)
-            APP.cam["zoom"] = max(0.3, min(4.0, APP.cam["zoom"] *
-                                           (k if zin else 1 / k)))
+            old = APP.cam["zoom"]
+            new = max(0.3, min(4.0, old * (k if zin else 1 / k)))
+            s = new / old if old > 1e-9 else 1.0
+            APP.cam["ox"] = (W / 2 - cx) - ((W / 2 - cx) - APP.cam["ox"]) * s
+            APP.cam["oy"] = (H / 2 - cy) - ((H / 2 - cy) - APP.cam["oy"]) * s
+            APP.cam["zoom"] = new
             APP.mark_dirty()
     f_down = dpg.is_key_down(dpg.mvKey_F)
     if f_down and not APP._f_was_down:
@@ -4223,8 +4278,10 @@ def handle_mouse(lx, ly, hover, W, H, cx, cy, zoom_ok=True):
         dx, dy = lx - g["x"], ly - g["y"]
         g["x"], g["y"] = lx, ly
         if g["kind"] == "move2d":
-            APP.emitter2d[0] += dx
-            APP.emitter2d[1] += dy
+            _dz = APP.cam.get("zoom", 1.0)
+            _dz = _dz if abs(_dz) > 1e-9 else 1.0
+            APP.emitter2d[0] += dx / _dz
+            APP.emitter2d[1] += dy / _dz
         elif APP.ptype == "3d":
             syaw, cyaw = math.sin(APP.cam["yaw"]), math.cos(APP.cam["yaw"])
             spit, cpit = math.sin(APP.cam["pitch"]), math.cos(APP.cam["pitch"])
@@ -4317,8 +4374,12 @@ def frame():
         if eff is not None and APP.ptype == "2d":
             scx = cx + APP.cam["ox"] + APP.emitter2d[0]
             scy = cy + APP.cam["oy"] + APP.emitter2d[1]
+            # 2D sim lives in WORLD coords (pan/zoom independent); the
+            # view transform is applied once at draw time (view2d).
+            wex, wey = float(APP.emitter2d[0]), float(APP.emitter2d[1])
         else:
             scx, scy = cx, cy
+            wex, wey = scx, scy
         cpp_n, cpp_active = 0, False
         tracks = None
         _sim_t0 = time.time()
@@ -4330,16 +4391,17 @@ def frame():
             gz = em.get("gravity", {}).get("z", 0) * dt * 0.4
             maxp = min(SimEngine.TK_MAX_DOTS,
                        int(em.get("maxParticles", 300) or 300))
+            is3d = APP.ptype == "3d"
             if HAS_CPP_CORE:
                 try:
-                    is3d = APP.ptype == "3d"
                     if is3d:
                         APP.cam["focal"] = ((max(100, H) * 0.5) /
                                             max(0.05, math.tan(math.radians(
                                                 APP.fov / 2))))
                     tracks = SimEngine._build_tracks(APP.states, APP.ptype)
                     cpp_n = APP.sim.step_cpp(
-                        eff, em, APP.ptype, tracks, is3d, dt, scx, scy,
+                        eff, em, APP.ptype, tracks, is3d, dt,
+                        scx if is3d else wex, scy if is3d else wey,
                         tuple(APP.emitter_pos), APP.cam,
                         APP.cam.get("focal", 620.0), cx, cy,
                         gx, gy, gz, maxp, (APP.ptype, APP._cache_t))
@@ -4351,7 +4413,9 @@ def frame():
             if not cpp_active:
                 APP.sim._cpp_out = None
                 tracks = SimEngine._build_tracks(APP.states, APP.ptype)
-                cpp_n = APP.sim.step_py(em, APP.ptype, scx, scy,
+                cpp_n = APP.sim.step_py(em, APP.ptype,
+                                        scx if is3d else wex,
+                                        scy if is3d else wey,
                                         tuple(APP.emitter_pos), APP.cam,
                                         tracks, dt, maxp)
         else:
@@ -4489,8 +4553,9 @@ def frame():
                 else:
                     paint_guides_2d(APP, "vp_draw", W, H, cx, cy, eff,
                                     _gx, _hz, _ex, _ey)
-                    paint_trails_2d(APP, "vp_draw", eff)
-                    paint_front_2d("vp_draw", W, H, _ex, _ey)
+                    paint_trails_2d(APP, "vp_draw", eff, cx, cy)
+                    paint_front_2d("vp_draw", W, H, _ex, _ey,
+                                     APP.cam.get("zoom", 1.0))
             elif is3d:
                 draw_view_3d(APP, "vp_draw", W, H, cx, cy, eff["emitter"],
                              tracks)
