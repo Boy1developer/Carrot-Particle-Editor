@@ -4650,7 +4650,7 @@ def main():
     except Exception:
         pass
     try:
-        ico = os.path.join(PS.app_base_dir(), "assets", "app_icon.ico")
+        ico = os.path.join(PS.app_base_dir(), "assets", "lempo.ico")
         if os.path.isfile(ico):
             dpg.set_viewport_small_icon(ico)
             dpg.set_viewport_large_icon(ico)

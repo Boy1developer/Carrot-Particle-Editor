@@ -13,7 +13,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "dist", "LempoParticleEditor.exe")
 LNK = os.path.join(ROOT, "Lempo Particle Editor.lnk")
-ICO = os.path.join(ROOT, "assets", "app_icon.ico")
+ICO = os.path.join(ROOT, "assets", "lempo.ico")
 SPEC = os.path.join(ROOT, "packaging", "LempoParticleEditor.spec")
 
 

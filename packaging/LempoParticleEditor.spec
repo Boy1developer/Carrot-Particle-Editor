@@ -60,5 +60,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=[_os.path.join(_ROOT, 'assets', 'app_icon.ico')],
+    icon=[_os.path.join(_ROOT, 'assets', 'lempo.ico')],
 )

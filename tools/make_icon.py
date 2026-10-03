@@ -44,7 +44,7 @@ def main():
     print("src:", src.size, src.mode)
     mark = rounded_mark(src)
     png_path = os.path.join(ROOT, "assets", "app_icon.png")
-    ico_path = os.path.join(ROOT, "assets", "app_icon.ico")
+    ico_path = os.path.join(ROOT, "assets", "lempo.ico")
     mark.save(png_path)
     mark.save(ico_path, sizes=ICO_SIZES)
     print("wrote", png_path, mark.size)
