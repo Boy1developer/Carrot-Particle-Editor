@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 // 3D (real three.js) and 2D (stub PIXI/gdjs) integration.
 const here = dirname(fileURLToPath(import.meta.url));
 const doc = JSON.parse(readFileSync(join(here, "..", "AdvancedParticleEmitter.json"), "utf8"));
-if (doc.version !== "0.1.3") {
+if (doc.version !== "0.2.0") {
   console.error("FAIL: extension version", doc.version);
   process.exit(1);
 }

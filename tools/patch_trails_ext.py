@@ -1,5 +1,5 @@
 # Patches AdvancedParticleEmitter.json (2D + 3D runtimes) for trail ribbons
-# (format 1.1, extension 0.1.3). Run once; re-runs are a no-op per object.
+# (format 1.1, extension 0.2.0). Run once; re-runs are a no-op per object.
 #
 #  1. F.trail* pure helpers (norm/bake/store/width/color/stride + 2D quads
 #     + 3D strips), wrapped in // <carrot-trails-helpers> markers so the
@@ -10,7 +10,7 @@
 #  4. Per-particle history push + dot hiding in both main loops.
 #  5. 2D ribbon Graphics overlay + 3D pooled ribbon strips after the loops.
 #  6. Ribbon-pool disposal in 3D onDestroy.
-#  7. Extension version 0.1.2 -> 0.1.3.
+#  7. Extension version 0.1.2 -> 0.2.0.
 #
 # Anchors assert occurrence counts; modified chunks pass node --check
 # (wrapped in a function since chunks contain bare `return`).
@@ -690,7 +690,7 @@ def main():
 
     # 7) version bump
     assert doc.get("version") == "0.1.2", doc.get("version")
-    doc["version"] = "0.1.3"
+    doc["version"] = "0.2.0"
 
     with io.open(EXT, "w", encoding="utf-8", newline="") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
@@ -704,7 +704,7 @@ def main():
                            capture_output=True, text=True)
         os.unlink(tmp)
         assert r.returncode == 0, label + ": " + r.stderr[-2000:]
-    print("PATCHED-OK ext=0.1.3")
+    print("PATCHED-OK ext=0.2.0")
 
 
 if __name__ == "__main__":

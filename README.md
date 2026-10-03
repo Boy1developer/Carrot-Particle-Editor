@@ -109,7 +109,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 ### 🔍 Previews
 - **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built on raw `ctypes` (no PyOpenGL or numpy needed).
 - **Browser fast preview** — a self-contained `live_effect.html` (≈1.1 MB, zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync. Trail mode renders ribbons in the preview too (glow + edge + core strips, gradient colors, `time`/`distance` emission) and hides the particle dots, exactly like the editor viewport.
-- **In-game trails (extension v0.1.3)** — exported trail effects render as ribbons inside GDevelop as well (2D quad strips, 3D billboard strips, pooled and blend-aware), with `hideParticle` honored. No new objects: the existing emitters grow trail support, and trail-less effects render bit-identical to before.
+- **In-game trails (extension v0.2.0)** — exported trail effects render as ribbons inside GDevelop as well (2D quad strips, 3D billboard strips, pooled and blend-aware), with `hideParticle` honored. No new objects: the existing emitters grow trail support, and trail-less effects render bit-identical to before.
 - **OS-native file dialogs** — Save / Export / Open use the OS picker (Dear PyGui dialogs deliver empty payloads on this setup).
 
 ### 🎨 Trail templates (adding a new one)
@@ -122,7 +122,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 ### 1. Get the editor
 
-Download `LempoParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.2.0`; it pairs with extension `v0.1.3` and export format `v1.1` (v1.0 files migrate automatically).
+Download `LempoParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.2.0`; it pairs with extension `v0.2.0` and export format `v1.1` (v1.0 files migrate automatically).
 
 **Requirements:** Windows 10/11 (64-bit) · GPU with OpenGL 3.3 support
 
