@@ -81,7 +81,7 @@ Carrot-Particle-Editor/
 | `tools/rebuild_app.py` | `python tools/rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` |
 | `tools/make_icon.py` | توليد الأيقونات من `icon.jpg` (قص مربع + مقاس 1024) |
 | `packaging/LempoParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/lempo.ico` — `console=False` |
-| `AdvancedParticleEmitter.json` | إكستنشن GDevelop كما هو — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) |
+| `AdvancedParticleEmitter.json` | إكستنشن GDevelop (v0.1.3) — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) + تريل ribbons ثنائي/ثلاثي مع hideParticle (يُرقَّع عبر `tools/patch_trails_ext.py`) |
 | `sample_effect.json` | مثال export متوافق v1.0 |
 | `sample_trail_effect.json` | مثال trails (width curve + color gradient + texture scroll، 3D additive) |
 | `presets/trail_*.json` | بريسيتات الـ trails (Comet/Sword/Smoke/Beam/Neon/Rocket/Wand — ملفات effect عادية تُشحن مع الـ exe) |
