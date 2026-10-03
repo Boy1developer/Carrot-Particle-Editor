@@ -145,3 +145,5 @@ Rebuild after 2D zoom fix: REBUILD_OK 26.4 MB smoke True.
 - Build with Lempo topbar (2026-10-03, main): rebuild after the topbar rebrand commit. Rebuild REBUILD_OK 27.1 MB smoke True.
 
 - Lempo topbar color (2026-10-03, main): DPG + Tk topbar Lempo label orange -> #E15DFF (225,93,255). UI build green. Rebuild REBUILD_OK 27.1 MB smoke True.
+
+- README trail screenshots (2026-10-03, main): incoming dropbox shots copied to docs/screenshots/trails-2d.jpg + trails-3d.jpg (incoming*/ stay gitignored) and added as a new Trails row in the main screenshots table, same cell style. Rebuild REBUILD_OK 27.1 MB smoke True.
