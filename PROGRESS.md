@@ -147,3 +147,5 @@ Rebuild after 2D zoom fix: REBUILD_OK 26.4 MB smoke True.
 - Lempo topbar color (2026-10-03, main): DPG + Tk topbar Lempo label orange -> #E15DFF (225,93,255). UI build green. Rebuild REBUILD_OK 27.1 MB smoke True.
 
 - README trail screenshots (2026-10-03, main): incoming dropbox shots copied to docs/screenshots/trails-2d.jpg + trails-3d.jpg (incoming*/ stay gitignored) and added as a new Trails row in the main screenshots table, same cell style. Rebuild REBUILD_OK 27.1 MB smoke True.
+
+- Fast preview rebrand (2026-10-03, main): preview.html title + header logo Carrot Studio -> Lempo Particle Editor (logo color #e15dff to match the new brand); live_effect.html snapshot regenerated (0 Carrot refs); rebuilt into the exe. Rebuild REBUILD_OK 27.1 MB smoke True.
