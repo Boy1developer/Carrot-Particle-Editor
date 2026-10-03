@@ -71,7 +71,14 @@ def main():
           f"$sc.IconLocation = '{ICO}'; "
           f"$sc.Description = 'Lempo Particle Editor'; $sc.Save()")
     run(["powershell", "-NoProfile", "-Command", ps])
-    # 6) cleanup
+    # 6) nudge Explorer to drop its cached bitmaps so the shortcut (and
+    #    the exe) show the fresh icon immediately (best-effort only)
+    try:
+        subprocess.run(["ie4uinit.exe", "-show"], cwd=ROOT,
+                       capture_output=True, timeout=30)
+    except Exception:
+        pass
+    # 7) cleanup
     for d in ("build", "__pycache__", "editor/__pycache__",
               "tools/__pycache__", "tests/__pycache__",
               "core/__pycache__", "render/__pycache__"):
