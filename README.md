@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/app_icon.png" alt="Lempo Particle Editor icon" width="160">
+
 # Lempo Particle Editor
 
 **Design stunning 2D & 3D particle effects visually — and play them in GDevelop.**
@@ -89,7 +91,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 - **Force fields** *(v1.1)* — age-phased turbulence, Y-axis vortex, linear-falloff attractor, and a bounce/friction collision plane. All off by default (legacy motion stays bit-identical). Editable in the Dear PyGui sidebar; Tk preserves the block on round-trip.
 - **Deterministic seed** — a nonzero `seed` replays the identical effect everywhere: editor (Python + C++), browser preview, and GDevelop runtime. `0` keeps legacy unseeded behavior. Editable in the Dear PyGui sidebar; Tk preserves it.
 - **Blend modes** — Normal, Additive, Subtractive, Multiply, Screen, Lighten, Overlay, selectable per emitter in the Dear PyGui sidebar (Tk preserves the loaded value).
-- **Trails & Ribbons modes** — `2D | Trails & Ribbons` (key `4`) and `3D | Trails & Ribbons` (key `5`) in the startup dialog; trail mode renders ribbons only. Unity-style inspector (foldouts Trail / Shape / Color / Texture / Per-Particle / Lighting & Sorting / Tools & Motion) generated from one schema (`TRAIL_SCHEMA`, 79 keys): width/gradient curve editors, tooltips, min/max clamps, drag-labels, steppers, per-section reset + copy/paste, presets (Comet, Sword, Smoke, Beam, Neon, Rocket, Wand). Curves bake to 64-sample and gradients to 256-entry LUTs on change only; C++ core parses the same tables (parity-tested). **Emit mode**: `time` (legacy — lifetime gates, particle lives then fades) or `distance` (Godot-style — fixed sections × sectionLength, speed-independent, trail dies with the particle; `sectionLength=0` gives every-frame FIFO tick, like Trail2D-addon). Trail mode shows ribbons only (`trails_on()` gate skips dots + raster); particle mode keeps dots + overlay.
+- **Trails & Ribbons modes** — `2D | Trails & Ribbons` (key `4`) and `3D | Trails & Ribbons` (key `5`) in the startup dialog; trail mode renders ribbons only. Unity-style inspector (foldouts Trail / Shape / Color / Texture / Per-Particle / Lighting & Sorting / Tools & Motion) generated from one schema (`TRAIL_SCHEMA`, 79 keys): width/gradient curve editors, tooltips, min/max clamps, drag-labels, steppers, per-section reset + copy/paste, and a template browser (27 ready-made templates across combat / magic / movement / nature / stylized, with search, favorites, and your own saved presets). Curves bake to 64-sample and gradients to 256-entry LUTs on change only; C++ core parses the same tables (parity-tested). **Emit mode**: `time` (legacy — lifetime gates, particle lives then fades) or `distance` (Godot-style — fixed sections × sectionLength, speed-independent, trail dies with the particle; `sectionLength=0` gives every-frame FIFO tick, like Trail2D-addon). Trail mode shows ribbons only (`trails_on()` gate skips dots + raster); particle mode keeps dots + overlay.
 
 ### ⚡ Performance
 - **InstancedMesh batching (3D primitives)** — ~580 draw calls collapse into ~12 buckets (`INST_CAP 2048`), verified **pixel-identical** per particle (matrix, color, alpha), including morph flips and all blend modes. Models/images keep the pooled-mesh path.
@@ -137,6 +139,8 @@ Rebuild the packaged app (compile check → C++ core build if stale → PyInstal
 ```bash
 python tools/rebuild_app.py
 ```
+
+This produces `dist/LempoParticleEditor.exe` plus the `Lempo Particle Editor` desktop shortcut (both carry the Lempo icon).
 
 > Binaries (`dist/`, `*.exe`, `*.pyd`, `node_modules/`) are never committed. They are rebuilt locally and shipped through GitHub Releases.
 
@@ -208,7 +212,7 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 | `core/test_behavior.py` | Simulation behavior, morph-window keys, performance (~2–3 ms @ 2,000 particles) |
 | `tests/test_imgui_build.py` | UI builds without errors (blend dropdown, seed box, force-field widgets) |
 | `tests/test_imgui_logic.py` | Headless simulation logic (C++ path) |
-| `tests/test_imgui_nav.py` | Viewport navigation (WASD/arrows, Q/E, F, Shift×3) |
+| `tests/test_imgui_nav.py` | Viewport navigation (WASD/arrows, Q/E, F, Shift×3) + sidebar splitter hover/drag |
 | `tests/test_imgui_color.py` | Per-state color persistence across birth/death switches |
 | `tests/test_imgui_mesh.py` | Uploaded models render as meshes, tint, culling, LOD |
 | `tests/test_imgui_morph.py` | Shape cross-fade window (edges, split alpha, legacy fallback) |
@@ -228,6 +232,14 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 | `preview/test_models.mjs` | Model-blob caching and live-push behavior |
 | `preview/test_morph.mjs` | Preview-side `morphAt()` cross-fade sampling |
 | `preview/test_bake.mjs` / `test_ext_bake.mjs` | Skinned-mesh rest-pose baking (preview + shipped extension) |
+| `tests/test_trails_schema.py` | `TRAIL_SCHEMA` ↔ defaults sync, clamps, LUT sizes |
+| `tests/test_trails_roundtrip.py` | Trail files byte-stable round-trip + old-file heal |
+| `tests/test_trails_parity.py` | Python ↔ C++ trail width/gradient/scalars |
+| `tests/test_trails_perf.py` | Trail update/bake perf budgets |
+| `tests/test_trails_flow.py` | Time/distance emission, exact spacing, tick FIFO, trail death |
+| `tests/test_trails_render.py` | Ribbon-strip math + viewport smoke |
+| `tests/test_trails_templates.py` | 27 templates load/search/apply, thumbnails, user-preset round-trip |
+| `tests/test_view2d_zoom.py` | World-space 2D zoom math, anchors, raster agreement |
 | `tools/check_perf.py` | CI perf gate: C++ throughput floor |
 | `render/test_gl.py`, `test_clip.py`, `test_cost.py` | GL context init, projection parity, render-cost profiling |
 
@@ -245,6 +257,7 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 - [x] Screen / Lighten / Overlay blend modes *(v0.1.2)*
 - [x] Deterministic seed + force fields *(v0.1.2)*
 - [x] Trails & Ribbons renderer (79-key TRAIL_SCHEMA, 27 templates, Godot-style distance emission, C++ registry + DPG browser)
+- [x] Template browser with search, favorites, and user presets + world-space 2D zoom (cursor-anchored wheel, Q/E, drag-label aware)
 - [x] Over-life Bézier curves and gradient editor *(part of TRAIL_SCHEMA curve/gradient tables)*
 - [x] Instanced rendering parity 99/99, behavior, trails schema/roundtrip/parity/perf/render, imgui build, contracts
 
