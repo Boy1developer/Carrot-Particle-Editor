@@ -104,7 +104,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 ### 🔍 Previews
 - **In-editor GPU preview** — a minimal offscreen OpenGL 3.3 renderer built on raw `ctypes` (no PyOpenGL or numpy needed).
-- **Browser fast preview** — a self-contained `live_effect.html` (≈1.1 MB, zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync.
+- **Browser fast preview** — a self-contained `live_effect.html` (≈1.1 MB, zero network fetches) rendering the same effect live in Three.js (3D) / PixiJS (2D), with 500 ms live-sync. Trail mode renders ribbons in the preview too (glow + edge + core strips, gradient colors, `time`/`distance` emission) and hides the particle dots, exactly like the editor viewport.
 - **OS-native file dialogs** — Save / Export / Open use the OS picker (Dear PyGui dialogs deliver empty payloads on this setup).
 
 ### 🎨 Trail templates (adding a new one)
@@ -228,6 +228,7 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 | `preview/test_blend.mjs` | Extension blend mappings + resolution (stubbed runtimes) |
 | `preview/test_seed.mjs` | Preview replay identical + extension RNG extraction |
 | `preview/test_fields.mjs` | Extension helpers == Python + preview field behavior |
+| `preview/test_trails.mjs` | Preview trails: bake parity vs Python (exact), store semantics, engine wiring 2D/3D, style helpers |
 | `preview/test_ext_runtime.mjs` | Shipped 3D runtime headless (stub gdjs + real three.js) |
 | `preview/test_engine.mjs`, `test_engine3d.mjs`, `test_guides.mjs`, `test_server.py` | Browser preview engine, 2D/3D scene layers, guides |
 | `preview/test_models.mjs` | Model-blob caching and live-push behavior |

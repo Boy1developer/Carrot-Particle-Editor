@@ -7,5 +7,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "files": ["preview.ts", "three_scene.ts", "pixi_scene.ts", "main.ts"]
+  "files": ["preview.ts", "trails.ts", "three_scene.ts", "pixi_scene.ts", "main.ts"]
 }

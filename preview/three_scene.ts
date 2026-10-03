@@ -9,10 +9,18 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { ParticleEngine } from "./preview.js";
+import {
+  TrailCfg, TrailPt, TrailKey, flooredWidth, lutColor, outerColor,
+  coreColor, flickerFactor, strideIndices,
+} from "./trails.js";
 
 const CAP = 4000; // per-shape instance cap (matches engine MAX_POOL)
 const MODEL_POOL_CAP = 150; // pooled model clones (overflow falls back to squares)
 const BASE_DIST = 560;
+// ribbon pool: one 5-wide cross-section strip per trail
+// ([glow, edge, core, edge, glow] -> glow + outer + core in a single draw)
+const TRAIL_POOL = 384;
+const TRAIL_ST = 17; // stations per ribbon (16 segments)
 
 /** Collapse SkinnedMeshes under root to static Meshes baked in rest pose.
  *
@@ -155,6 +163,10 @@ export class ThreeScene {
   private modelRev = -1;
   private blendMode = "";
   private blendRev = -1;
+  // ribbon strips (trails): pooled 5-wide cross-section meshes sharing one
+  // vertex-colored material; hidden when the effect has no trails block
+  private ribbons: THREE.Mesh[] = [];
+  private ribbonMat!: THREE.MeshBasicMaterial;
 
   // flat shapes billboard toward the camera; solids tumble slowly with age
   private flat: Set<string> = new Set(
@@ -251,6 +263,38 @@ export class ThreeScene {
       this.solid.push(isSolid);
       this.byShape[key] = idx;
     });
+    // ribbon pool (preallocated 7-across strips, zero per-frame allocation:
+    // [glow, edge, core, core, core, edge, glow] -> under-pass + outer +
+    // core bands in a single draw)
+    this.ribbonMat = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const ridx: number[] = [];
+    for (let s = 0; s < TRAIL_ST - 1; s++) {
+      const b: number = s * 7;
+      for (let q = 0; q < 6; q++) {
+        const a: number = b + q, c: number = b + q + 7;
+        ridx.push(a, c, a + 1, a + 1, c, c + 1);
+      }
+    }
+    for (let r = 0; r < TRAIL_POOL; r++) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position",
+        new THREE.BufferAttribute(new Float32Array(TRAIL_ST * 7 * 3), 3)
+          .setUsage(THREE.DynamicDrawUsage));
+      g.setAttribute("color",
+        new THREE.BufferAttribute(new Float32Array(TRAIL_ST * 7 * 3), 3)
+          .setUsage(THREE.DynamicDrawUsage));
+      g.setIndex(ridx);
+      const mesh = new THREE.Mesh(g, this.ribbonMat);
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      mesh.renderOrder = 5;
+      this.scene.add(mesh);
+      this.ribbons.push(mesh);
+    }
   }
 
   private normShape(shape: string): string {
@@ -401,6 +445,7 @@ export class ThreeScene {
     };
     for (const im of this.meshes) apply(im.material as THREE.Material);
     for (const p of this.modelPool) for (const e of p.mats) apply(e.m);
+    apply(this.ribbonMat);
   }
 
   /** Rebuild zone + cone wireframes when a new effect is loaded. */
@@ -478,6 +523,80 @@ export class ThreeScene {
     }
   }
 
+  /** One trail as a camera-facing 7-across strip
+   * ([glow, edge, core, core, core, edge, glow] -> under-pass + outer +
+   * core bands in a single draw). t = 0 at the head (newest point). */
+  private drawRibbon(mesh: THREE.Mesh, pts: TrailPt[],
+    cfg: TrailCfg, wlut: number[],
+    grad: Array<[number, number, number, number]>, now: number,
+    key: TrailKey): void {
+    const n: number = pts.length;
+    const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const col = mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const pa: Float32Array = pos.array as Float32Array;
+    const ca: Float32Array = col.array as Float32Array;
+    const idx: number[] = strideIndices(n, TRAIL_ST - 1);
+    const S: number = idx.length;
+    let acc = 0;
+    const ks: string = String(key);
+    for (let i = 0; i < ks.length; i++) acc += ks.charCodeAt(i);
+    const fl: number = flickerFactor(now, cfg.flickerHz, cfg.flickerAmt,
+      (acc % 1000) / 1000);
+    const cam = this.camera.position;
+    let sx = 1, sy = 0, sz = 0; // last valid side vector
+    for (let s = 0; s < TRAIL_ST; s++) {
+      const si: number = s < S ? s : S - 1;
+      const src: TrailPt = pts[idx[si]];
+      const t: number = S < 2 ? 0 : 1 - idx[si] / (n - 1);
+      const w: number = flooredWidth(t, cfg, wlut);
+      const [r, g, b, a] = lutColor(grad, t);
+      const ao: number = Math.max(0, Math.min(1, (a / 255) * fl));
+      const [er, eg, eb] = outerColor([r, g, b], cfg.edgeColor, cfg.intensity);
+      const [cr, cg, cb] = coreColor([r, g, b], cfg.coreColor, cfg.intensity);
+      // tangent from neighbours (central difference on strided stations)
+      const p0: TrailPt = pts[idx[Math.max(0, si - 1)]];
+      const p1: TrailPt = pts[idx[Math.min(S - 1, si + 1)]];
+      let dx: number = p1.x - p0.x, dy: number = p1.y - p0.y, dz: number = p1.z - p0.z;
+      const dl: number = Math.hypot(dx, dy, dz);
+      if (dl > 1e-6) {
+        dx /= dl; dy /= dl; dz /= dl;
+        let vx: number = cam.x - src.x, vy: number = cam.y - src.y, vz: number = cam.z - src.z;
+        const vl: number = Math.hypot(vx, vy, vz) || 1;
+        vx /= vl; vy /= vl; vz /= vl;
+        const qx: number = dy * vz - dz * vy;
+        const qy: number = dz * vx - dx * vz;
+        const qz: number = dx * vy - dy * vx;
+        const ql: number = Math.hypot(qx, qy, qz);
+        if (ql > 1e-6) { sx = qx / ql; sy = qy / ql; sz = qz / ql; }
+      }
+      const hw: number = w / 2;
+      const gw: number = hw + Math.max(0, cfg.glowWidth);
+      const ga: number = ao * Math.max(0, Math.min(1, cfg.glowAlpha));
+      const cw: number = hw * Math.max(0, Math.min(1, cfg.coreWidth));
+      const offs: number[] = [-gw, -hw, -cw, 0, cw, hw, gw];
+      const cols: Array<[number, number, number]> = [
+        [er * ga, eg * ga, eb * ga],
+        [er * ao, eg * ao, eb * ao],
+        [cr * ao, cg * ao, cb * ao],
+        [cr * ao, cg * ao, cb * ao],
+        [cr * ao, cg * ao, cb * ao],
+        [er * ao, eg * ao, eb * ao],
+        [er * ga, eg * ga, eb * ga],
+      ];
+      for (let v = 0; v < 7; v++) {
+        const o: number = offs[v];
+        const vi: number = (s * 7 + v) * 3;
+        pa[vi] = src.x + sx * o; pa[vi + 1] = src.y + sy * o; pa[vi + 2] = src.z + sz * o;
+        // premultiplied into 0..1 like the particle buckets
+        ca[vi] = cols[v][0] / 255; ca[vi + 1] = cols[v][1] / 255; ca[vi + 2] = cols[v][2] / 255;
+      }
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    mesh.geometry.setDrawRange(0, Math.max(0, S - 1) * 36);
+    mesh.visible = S >= 2;
+  }
+
   /** One morph side (or a whole particle): model pool first, else bucket. */
   private placeParticle(st: { x: number; y: number; z: number; age: number },
     sm: { size: number; r: number; g: number; b: number; shape: string },
@@ -537,19 +656,23 @@ export class ThreeScene {
     const counts: number[] = this.counts.length === this.meshes.length
       ? (this.counts.fill(0), this.counts)
       : (this.counts = new Array<number>(this.meshes.length).fill(0));
-    const n: number = this.engine.activeCount;
-    for (let i = 0; i < n; i++) {
-      const st = this.engine.particleState(i);
-      const sm = this.engine.sampleAt(st.age, i);
-      const mp = this.engine.morphAt(st.age);
-      if (mp && (mp.aShape !== mp.bShape ||
-          (mp.aShape === "custom" && mp.aRef !== mp.bRef))) {
-        this.placeParticle(st, sm, mp.aShape, mp.aRef, sm.a * (1 - mp.t),
-          counts);
-        this.placeParticle(st, sm, mp.bShape, mp.bRef, sm.a * mp.t, counts);
-      } else {
-        this.placeParticle(st, sm, sm.shape,
-          this.engine.modelRefAt(st.age), sm.a, counts);
+    const tf = this.engine.trailFrame();
+    const hideDots: boolean = this.engine.trailsHideDots();
+    if (!hideDots) {
+      const n: number = this.engine.activeCount;
+      for (let i = 0; i < n; i++) {
+        const st = this.engine.particleState(i);
+        const sm = this.engine.sampleAt(st.age, i);
+        const mp = this.engine.morphAt(st.age);
+        if (mp && (mp.aShape !== mp.bShape ||
+            (mp.aShape === "custom" && mp.aRef !== mp.bRef))) {
+          this.placeParticle(st, sm, mp.aShape, mp.aRef, sm.a * (1 - mp.t),
+            counts);
+          this.placeParticle(st, sm, mp.bShape, mp.bRef, sm.a * mp.t, counts);
+        } else {
+          this.placeParticle(st, sm, sm.shape,
+            this.engine.modelRefAt(st.age), sm.a, counts);
+        }
       }
     }
     for (let m = 0; m < this.meshes.length; m++) {
@@ -566,6 +689,19 @@ export class ThreeScene {
         p.obj.scale.set(0.0001, 0.0001, 0.0001);
         p.obj.updateMatrix();
       }
+    }
+    // ribbons: pooled strips, hidden when the effect has no trails block
+    if (tf) {
+      const list = tf.trails;
+      const use: number = Math.min(list.length, TRAIL_POOL);
+      for (let r = 0; r < use; r++) {
+        const tr = list[r];
+        this.drawRibbon(this.ribbons[r], tr.pts, tf.cfg, tf.wlut,
+          tf.grad, tf.now, tr.key);
+      }
+      for (let r = use; r < TRAIL_POOL; r++) this.ribbons[r].visible = false;
+    } else {
+      for (let r = 0; r < TRAIL_POOL; r++) this.ribbons[r].visible = false;
     }
     this.renderer.render(this.scene, this.camera);
   }

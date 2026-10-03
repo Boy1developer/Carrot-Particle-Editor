@@ -6,9 +6,12 @@
  *   preview, GPU-batched
  */
 import * as PIXI from "pixi.js";
+import { flooredWidth, lutColor, outerColor, coreColor, flickerFactor, strideIndices, } from "./trails.js";
 const POOL = 4000;
 const TEX = 128; // texture atlas cell (px)
 const TEX_R = TEX * 0.26; // shape radius inside the cell (room for glow)
+const TRAIL_CAP = 384; // max ribbons drawn per frame
+const TRAIL_ST = 17; // stations per ribbon
 function bake(draw) {
     const c = document.createElement("canvas");
     c.width = TEX;
@@ -125,6 +128,8 @@ export class PixiScene {
             this.layer.addChild(sp);
             this.pool.push(sp);
         }
+        this.trails = new PIXI.Graphics();
+        this.layer.addChild(this.trails);
         this.gizmo = new PIXI.Graphics();
         this.app.stage.addChild(this.gizmo);
         this.ready = true;
@@ -165,6 +170,78 @@ export class PixiScene {
         }
         g.stroke();
     }
+    /** One ribbon as flat quads (glow + outer + core per segment). */
+    drawRibbon(g, pts, cfg, wlut, grad, now, key) {
+        const n = pts.length;
+        const idx = strideIndices(n, TRAIL_ST - 1);
+        const S = idx.length;
+        if (S < 2)
+            return;
+        let acc = 0;
+        const ks = String(key);
+        for (let i = 0; i < ks.length; i++)
+            acc += ks.charCodeAt(i);
+        const fl = flickerFactor(now, cfg.flickerHz, cfg.flickerAmt, (acc % 1000) / 1000);
+        // station frames (2D normals, head = newest = last point)
+        const fx = [], fy = [];
+        const nx = [], ny = [];
+        const tw = [];
+        const te = [];
+        const tc = [];
+        const ta = [];
+        let lx = 1, ly = 0;
+        for (let s = 0; s < S; s++) {
+            const p = pts[idx[s]];
+            const t = 1 - idx[s] / (n - 1);
+            const p0 = pts[idx[Math.max(0, s - 1)]];
+            const p1 = pts[idx[Math.min(S - 1, s + 1)]];
+            let dx = p1.x - p0.x, dy = p1.y - p0.y;
+            const dl = Math.hypot(dx, dy);
+            if (dl > 1e-6) {
+                lx = -dy / dl;
+                ly = dx / dl;
+            }
+            const w = flooredWidth(t, cfg, wlut);
+            const [r, gg, b, a] = lutColor(grad, t);
+            fx.push(p.x);
+            fy.push(p.y);
+            nx.push(lx);
+            ny.push(ly);
+            tw.push(w);
+            te.push(outerColor([r, gg, b], cfg.edgeColor, cfg.intensity));
+            tc.push(coreColor([r, gg, b], cfg.coreColor, cfg.intensity));
+            ta.push(Math.max(0, Math.min(1, (a / 255) * fl)));
+        }
+        const quad = (half, col, alpha) => {
+            for (let s = 0; s < S - 1; s++) {
+                const h0 = half(s), h1 = half(s + 1);
+                const c0 = col(s), c1 = col(s + 1);
+                const a0 = alpha(s), a1 = alpha(s + 1);
+                if (Math.max(a0, a1) <= 0)
+                    continue;
+                const am = (a0 + a1) / 2;
+                const rm = Math.round((c0[0] + c1[0]) / 2);
+                const gm = Math.round((c0[1] + c1[1]) / 2);
+                const bm = Math.round((c0[2] + c1[2]) / 2);
+                g.poly([
+                    fx[s] + nx[s] * h0, fy[s] + ny[s] * h0,
+                    fx[s] - nx[s] * h0, fy[s] - ny[s] * h0,
+                    fx[s + 1] - nx[s + 1] * h1, fy[s + 1] - ny[s + 1] * h1,
+                    fx[s + 1] + nx[s + 1] * h1, fy[s + 1] + ny[s + 1] * h1,
+                ]).fill({ color: (rm << 16) | (gm << 8) | bm, alpha: am });
+            }
+        };
+        const gw = Math.max(0, cfg.glowWidth);
+        const ga = Math.max(0, Math.min(1, cfg.glowAlpha));
+        if (gw > 0 && ga > 0) {
+            quad((s) => tw[s] / 2 + gw, (s) => te[s], (s) => ta[s] * ga);
+        }
+        quad((s) => tw[s] / 2, (s) => te[s], (s) => ta[s]);
+        const cw = Math.max(0, Math.min(1, cfg.coreWidth));
+        if (cw > 0) {
+            quad((s) => (tw[s] / 2) * cw, (s) => tc[s], (s) => ta[s]);
+        }
+    }
     /** Sync sprites from the engine state. Engine.update() is driven by the
      *  shared rAF loop in preview.html; Pixi auto-renders on its own ticker. */
     sync(ex, ey) {
@@ -186,11 +263,16 @@ export class PixiScene {
             this.blend = wantBlend;
             this.layer.blendMode = wantBlend;
         }
+        const hideDots = this.engine.trailsHideDots();
         // margin cull: fully off-screen sprites stay invisible (no fill cost)
         const M = 96;
         for (let i = 0; i < n; i++) {
-            const st = this.engine.particleState(i);
             const sp = this.pool[i];
+            if (hideDots) {
+                sp.visible = false;
+                continue;
+            }
+            const st = this.engine.particleState(i);
             if (st.x < -M || st.y < -M || st.x > W + M || st.y > H + M) {
                 sp.visible = false;
                 continue;
@@ -207,6 +289,18 @@ export class PixiScene {
         for (let i = n; i < this.prevN; i++)
             this.pool[i].visible = false;
         this.prevN = n;
+        // ribbons (cleared + redrawn every frame; hidden without a block)
+        const gz0 = this.trails;
+        gz0.clear();
+        const tf = this.engine.trailFrame();
+        if (tf) {
+            const list = tf.trails;
+            const use = Math.min(list.length, TRAIL_CAP);
+            for (let r = 0; r < use; r++) {
+                const tr = list[r];
+                this.drawRibbon(gz0, tr.pts, tf.cfg, tf.wlut, tf.grad, tf.now, tr.key);
+            }
+        }
         // emitter gizmo (X red / Y blue)
         const gz = this.gizmo;
         gz.clear();

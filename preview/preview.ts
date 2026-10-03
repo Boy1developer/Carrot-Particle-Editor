@@ -6,6 +6,8 @@
  * - Consumes GDParticleFX studio export format v1.0 (type "2d" / "3d")
  */
 
+import { TrailCfg, TrailPt, TrailStore, TrailKey, bakeCurve, bakeGradient, flooredWidth, lutColor, outerColor, coreColor, flickerFactor, strideIndices, normTrailCfg } from "./trails.js";
+
 export interface Vec2 { x: number; y: number }
 
 interface RGB { r: number; g: number; b: number }
@@ -166,8 +168,35 @@ export class ParticleEngine {
   private bursted = false;
   private remaining = 0;
   private emitter!: EmitterCfg;
+  // trails/ribbons (optional block; null = legacy dots-only look)
+  private trail: {
+    cfg: TrailCfg; wlut: number[];
+    grad: Array<[number, number, number, number]>;
+    store: TrailStore;
+  } | null = null;
 
   get activeCount(): number { return this.count; }
+
+  /** Ribbons render when the block is enabled (both 2D and 3D). */
+  trailsActive(): boolean { return this.trail !== null; }
+
+  /** Dots hidden in trail mode when the block says so (default true). */
+  trailsHideDots(): boolean {
+    return this.trail !== null && this.trail.cfg.hideParticle;
+  }
+
+  /** Live ribbon frame for the render layers (null when inactive). */
+  trailFrame(): {
+    cfg: TrailCfg; wlut: number[];
+    grad: Array<[number, number, number, number]>;
+    now: number; trails: Array<{ key: TrailKey; pts: TrailPt[] }>;
+  } | null {
+    if (!this.trail) return null;
+    return {
+      cfg: this.trail.cfg, wlut: this.trail.wlut, grad: this.trail.grad,
+      now: this.trail.store.time, trails: this.trail.store.histories(),
+    };
+  }
 
   /** Read-only particle state for external renderers (e.g. the Three.js layer). */
   particleState(i: number): { x: number; y: number; z: number; age: number } {
@@ -243,6 +272,18 @@ export class ParticleEngine {
     this.kfLife = Math.max(0.1, this.kf.slice(0, -1).reduce((a, k) => a + k.dur, 0));
     this.count = 0; this.accum = 0; this.bursted = false;
     this.remaining = this.emitter.reservoir;
+    // trails block: parse + bake once per effect (curves never change live)
+    const tc: TrailCfg | null = normTrailCfg(raw.trails);
+    if (tc) {
+      this.trail = {
+        cfg: tc,
+        wlut: bakeCurve(tc.widthCurve, 64),
+        grad: bakeGradient(tc.colorStops, tc.alphaStops, 256),
+        store: new TrailStore(),
+      };
+    } else {
+      this.trail = null;
+    }
     this.effectRev++;
   }
 
@@ -433,6 +474,15 @@ export class ParticleEngine {
         this.vz[i] *= (1 - fl.planeFriction);
       }
     }
+    // trail histories: slot-index keys (swap-remove reuse is absorbed by
+    // the teleport cut, like the desktop C++ path)
+    if (this.trail) {
+      const items: Array<{ key: TrailKey; x: number; y: number; z: number }> = [];
+      for (let i = 0; i < this.count; i++)
+        items.push({ key: i, x: this.px[i], y: this.py[i], z: this.pz[i] });
+      if (this.is3D) this.trail.store.update(items, 0, 0, 0, dt, this.trail.cfg);
+      else this.trail.store.update(items, cx, cy, 0, dt, this.trail.cfg);
+    }
   }
 
   /** Force-field acceleration (mirrors particle_studio.field_accel). */
@@ -541,13 +591,58 @@ export class ParticleEngine {
   render(ctx: CanvasRenderingContext2D): void {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    for (let i = 0; i < this.count; i++) {
-      const s = this.sampleAt(this.age[i], i);
-      this.traceShape(ctx, s.shape, this.px[i], this.py[i], s.size,
-        `rgba(${s.r},${s.g},${s.b},${s.a.toFixed(3)})`,
-        `rgba(${s.r},${s.g},${s.b},${(s.a * 0.35).toFixed(3)})`);
+    if (!this.trailsHideDots()) {
+      for (let i = 0; i < this.count; i++) {
+        const s = this.sampleAt(this.age[i], i);
+        this.traceShape(ctx, s.shape, this.px[i], this.py[i], s.size,
+          `rgba(${s.r},${s.g},${s.b},${s.a.toFixed(3)})`,
+          `rgba(${s.r},${s.g},${s.b},${(s.a * 0.35).toFixed(3)})`);
+      }
+    }
+    const tf = this.trailFrame();
+    if (tf) {
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const tr of tf.trails)
+        this.traceTrail(ctx, tr.pts.map((p) => [p.x, p.y] as [number, number]),
+          String(tr.key), tf);
     }
     ctx.restore();
+  }
+
+  /** One ribbon on a 2D canvas: outer strip + brighter core, head -> tail. */
+  private traceTrail(ctx: CanvasRenderingContext2D, pts: Array<[number, number]>,
+    key: string, tf: {
+      cfg: TrailCfg; wlut: number[];
+      grad: Array<[number, number, number, number]>;
+      now: number; trails: Array<{ key: TrailKey; pts: TrailPt[] }>;
+    }): void {
+    const n: number = pts.length;
+    if (n < 2) return;
+    const idx: number[] = strideIndices(n, 24);
+    let acc = 0;
+    for (let i = 0; i < key.length; i++) acc += key.charCodeAt(i);
+    const fl: number = flickerFactor(tf.now, tf.cfg.flickerHz,
+      tf.cfg.flickerAmt, (acc % 1000) / 1000);
+    for (let s = 0; s < idx.length - 1; s++) {
+      const a: [number, number] = pts[idx[s]];
+      const b: [number, number] = pts[idx[s + 1]];
+      const t: number = 1 - (idx[s] + idx[s + 1]) / 2 / (n - 1);
+      const w: number = flooredWidth(t, tf.cfg, tf.wlut);
+      const [r, g, bl, al] = lutColor(tf.grad, t);
+      const [or, og, ob] = outerColor([r, g, bl], tf.cfg.edgeColor,
+        tf.cfg.intensity);
+      const [cr, cg, cb] = coreColor([r, g, bl], tf.cfg.coreColor,
+        tf.cfg.intensity);
+      const ao: number = Math.max(0, Math.min(1, (al / 255) * fl));
+      if (ao <= 0 || w <= 0) continue;
+      ctx.strokeStyle = `rgba(${or | 0},${og | 0},${ob | 0},${ao.toFixed(3)})`;
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      const cw: number = Math.max(1, w * tf.cfg.coreWidth);
+      ctx.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${ao.toFixed(3)})`;
+      ctx.lineWidth = cw;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
   }
 
   /** Full 3D scene: bg + floor grid + axes + projected particles. */
@@ -584,12 +679,25 @@ export class ParticleEngine {
     ctx.beginPath(); ctx.arc(o[0], o[1], 6, 0, 6.2832); ctx.fill();
     ctx.save();
     ctx.globalCompositeOperation = "lighter"; // order-free blending, no sort needed
-    for (let i = 0; i < this.count; i++) {
-      const pr = this.project(this.px[i], this.py[i], this.pz[i], cx, cy, focal);
-      const sm = this.sampleAt(this.age[i], i);
-      this.traceShape(ctx, sm.shape, pr[0], pr[1], Math.max(1, sm.size * pr[2]),
-        `rgba(${sm.r},${sm.g},${sm.b},${sm.a.toFixed(3)})`,
-        `rgba(${sm.r},${sm.g},${sm.b},${(sm.a * 0.35).toFixed(3)})`);
+    if (!this.trailsHideDots()) {
+      for (let i = 0; i < this.count; i++) {
+        const pr = this.project(this.px[i], this.py[i], this.pz[i], cx, cy, focal);
+        const sm = this.sampleAt(this.age[i], i);
+        this.traceShape(ctx, sm.shape, pr[0], pr[1], Math.max(1, sm.size * pr[2]),
+          `rgba(${sm.r},${sm.g},${sm.b},${sm.a.toFixed(3)})`,
+          `rgba(${sm.r},${sm.g},${sm.b},${(sm.a * 0.35).toFixed(3)})`);
+      }
+    }
+    const tf = this.trailFrame();
+    if (tf) {
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const tr of tf.trails) {
+        const sp: Array<[number, number]> = tr.pts.map((p) => {
+          const q = this.project(p.x, p.y, p.z, cx, cy, focal);
+          return [q[0], q[1]] as [number, number];
+        });
+        this.traceTrail(ctx, sp, String(tr.key), tf);
+      }
     }
     ctx.restore();
   }
