@@ -4166,7 +4166,10 @@ def sidebar_hovered():
     """True when the mouse is over anything in the left panel (rect math,
     independent of the stale drawing-space mouse position)."""
     try:
-        mp = dpg.get_mouse_pos()
+        # NOTE: get_item_rect_* are GLOBAL (screen) coords, so the mouse
+        # must be read global too (local=False). Mixing local mouse with
+        # global rects shifted everything by the viewport screen offset.
+        mp = dpg.get_mouse_pos(local=False)
         smin = dpg.get_item_rect_min("side_child")
         smax = dpg.get_item_rect_max("side_child")
         return (smin[0] <= mp[0] < smax[0] and
@@ -4177,15 +4180,18 @@ def sidebar_hovered():
 
 def handle_splitter(lx_r, in_r):
     # Gated ONLY by fresh rect-based coords: the bar lives at vp_draw
-    # x in [0, 6]. The old gate used drawing-space lx, which FREEZES the
+    # x in [0, 10]. The old gate used drawing-space lx, which FREEZES the
     # moment the cursor leaves the drawlist — so crossing from the bar
     # into the settings panel left lx stuck at 0-6 and the bar stayed
     # armed (highlight + click-to-drag) from anywhere inside the panel.
-    on_bar = bool(in_r) and 0 <= lx_r <= 6
+    # NOTE: callers must compute lx_r/in_r from GLOBAL mouse
+    # (get_mouse_pos(local=False)) minus get_item_rect_min (global).
+    # Mixing local mouse with global rects broke the hit test entirely.
+    on_bar = bool(in_r) and 0 <= lx_r <= 10
     if APP._split is not None:
         if dpg.is_mouse_button_down(dpg.mvMouseButton_Left):
             try:
-                mx = float(dpg.get_mouse_pos()[0])
+                mx = float(dpg.get_mouse_pos(local=False)[0])
             except Exception:
                 return True
             ax, aw = APP._split
@@ -4200,9 +4206,9 @@ def handle_splitter(lx_r, in_r):
     if on_bar and \
             dpg.is_mouse_button_clicked(dpg.mvMouseButton_Left):
         try:
-            mx = float(dpg.get_mouse_pos()[0])
+            mx = float(dpg.get_mouse_pos(local=False)[0])
         except Exception:
-            mx = lx_r
+            return False
         APP._split = (mx, APP.side_w)
         return True
     APP._split_hover = on_bar
@@ -4436,7 +4442,7 @@ def frame():
             lx, ly = (0, 0)
         in_d = 0 <= lx < W and 0 <= ly < H
         try:
-            mx2, my2 = dpg.get_mouse_pos()
+            mx2, my2 = dpg.get_mouse_pos(local=False)
             rmin2 = dpg.get_item_rect_min("vp_draw")
             lx_r, ly_r = mx2 - rmin2[0], my2 - rmin2[1]
         except Exception:
