@@ -143,3 +143,5 @@ Rebuild after 2D zoom fix: REBUILD_OK 26.4 MB smoke True.
 - Topbar rebrand (2026-10-03, main): Carrot Studio label -> Lempo in the DPG topbar and the Tk fallback topbar (short program brand, fits the bar). Rebuild blocked: exe running - rebuild deferred until app close.
 
 - Build with Lempo topbar (2026-10-03, main): rebuild after the topbar rebrand commit. Rebuild REBUILD_OK 27.1 MB smoke True.
+
+- Lempo topbar color (2026-10-03, main): DPG + Tk topbar Lempo label orange -> #E15DFF (225,93,255). UI build green. Rebuild REBUILD_OK 27.1 MB smoke True.

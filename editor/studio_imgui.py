@@ -3243,7 +3243,7 @@ def build_sidebar():
 
 def build_topbar():
     with dpg.group(horizontal=True):
-        dpg.add_text("Lempo", color=[255, 122, 0, 255])
+        dpg.add_text("Lempo", color=[225, 93, 255, 255])
         dpg.add_input_text(tag="filename_input", default_value="Default",
                            width=130,
                            callback=lambda s, a, *r: setattr(APP, "filename",
