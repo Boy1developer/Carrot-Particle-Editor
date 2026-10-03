@@ -8,7 +8,7 @@
 
 A standalone desktop editor with real-time GPU preview, paired with the **Advanced Particle Emitter** extension for GDevelop.
 
-[![Version](https://img.shields.io/badge/version-0.1.2-orange?style=for-the-badge)](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange?style=for-the-badge)](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows)](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)
 [![GDevelop](https://img.shields.io/badge/GDevelop-extension-6c5ce7?style=for-the-badge)](https://gdevelop.io)
@@ -117,7 +117,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 ### 1. Get the editor
 
-Download `LempoParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.1.2`; it pairs with extension `v0.1.2` and export format `v1.1` (v1.0 files migrate automatically).
+Download `LempoParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Lempo-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.2.0`; it pairs with extension `v0.1.2` and export format `v1.1` (v1.0 files migrate automatically).
 
 **Requirements:** Windows 10/11 (64-bit) · GPU with OpenGL 3.3 support
 

@@ -60,8 +60,8 @@ except Exception:
     HAS_GL_VIEW = False
 
 VERSION = _GEN_VERSION if _HAVE_CONTRACTS else "1.0"  # effect JSON format (extension contract — do NOT bump with the app)
-APP_VERSION = "0.1.2"  # Lempo Particle Editor release version (title bar)
-BUILD_ID = "b20260930-extcompat"  # bump on every shipped change; shown in title
+APP_VERSION = "0.2.0"  # Lempo Particle Editor release version (title bar)
+BUILD_ID = "b20261003-v020"  # bump on every shipped change; shown in title
 
 
 def debug_log(*parts):
