@@ -1463,7 +1463,7 @@ class StudioApp(tk.Tk):
                 self._draw_carrot(_logo, 13, 12, 6.5)
             except Exception:
                 pass
-        tk.Label(bar, text="Carrot Studio", fg="#ff7a00", bg="#23242f", font=FONT_LOGO).pack(side="left", padx=(4, 0))
+        tk.Label(bar, text="Lempo", fg="#ff7a00", bg="#23242f", font=FONT_LOGO).pack(side="left", padx=(4, 0))
         self.e_filename = tk.Entry(bar, relief="flat", bg=INPUT, fg=TEXT, insertbackground="white",
                                    highlightthickness=1, highlightbackground=BORDER, width=16,
                                    font=FONT)
