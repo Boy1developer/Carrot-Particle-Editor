@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Carrot Particle Editor — Dear ImGui edition (via Dear PyGui).
+Lempo Particle Editor — Dear ImGui edition (via Dear PyGui).
 Same v1.0 effect format as particle_studio.py (Tk edition): 2D/3D editors,
 sim core (pure-Python + optional C++ particle_core), undo/redo, JSON export,
 live browser preview server.
@@ -3324,7 +3324,7 @@ CHOOSER_BTN_W, CHOOSER_BTN_H = 220, 84
 
 
 def build_chooser():
-    with dpg.window(tag="chooser_win", label="Carrot Particle Editor",
+    with dpg.window(tag="chooser_win", label="Lempo Particle Editor",
                     modal=True, show=True, no_resize=True, no_move=True,
                     width=480, height=600, pos=[400, 100]):
         try:
@@ -3337,7 +3337,7 @@ def build_chooser():
             dpg.add_spacer(height=206)
         except Exception:
             pass
-        dpg.add_text("CARROT", color=[255, 122, 0, 255])
+        dpg.add_text("LEMPO", color=[255, 122, 0, 255])
         dpg.add_text("PARTICLE EDITOR", color=[0, 200, 83, 255])
         dpg.add_text("ParticleFX — Choose your editor mode",
                      color=list(MUTED) + [255])
@@ -4641,7 +4641,7 @@ def frame():
 def main():
     PS.debug_log("boot-imgui", BUILD_ID)
     dpg.create_context()
-    dpg.create_viewport(title=f"Carrot Particle Editor v{APP_VERSION} [{BUILD_ID}]",
+    dpg.create_viewport(title=f"Lempo Particle Editor v{APP_VERSION} [{BUILD_ID}]",
                         width=1280, height=800)
     _pos = os.environ.get("CARROT_WINPOS", "")
     try:

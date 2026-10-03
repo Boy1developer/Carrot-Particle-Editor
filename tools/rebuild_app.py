@@ -11,10 +11,10 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(ROOT, "dist", "CarrotParticleEditor.exe")
-LNK = os.path.join(ROOT, "Carrot Particle Editor.lnk")
+EXE = os.path.join(ROOT, "dist", "LempoParticleEditor.exe")
+LNK = os.path.join(ROOT, "Lempo Particle Editor.lnk")
 ICO = os.path.join(ROOT, "assets", "app_icon.ico")
-SPEC = os.path.join(ROOT, "packaging", "CarrotParticleEditor.spec")
+SPEC = os.path.join(ROOT, "packaging", "LempoParticleEditor.spec")
 
 
 def run(cmd, **kw):
@@ -25,9 +25,9 @@ def run(cmd, **kw):
 def exe_running():
     try:
         out = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq CarrotParticleEditor.exe", "/FO", "CSV"],
+            ["tasklist", "/FI", "IMAGENAME eq LempoParticleEditor.exe", "/FO", "CSV"],
             capture_output=True, text=True, cwd=ROOT).stdout
-        return "CarrotParticleEditor.exe" in out and out.count("\n") > 1
+        return "LempoParticleEditor.exe" in out and out.count("\n") > 1
     except Exception:
         return False
 
@@ -47,7 +47,7 @@ def main():
         run([sys.executable, "core/build_core.py"])
     # 2) refuse to build over a running app (Windows locks the file)
     if exe_running():
-        sys.exit("ABORT: CarrotParticleEditor.exe is running - close it and rerun.")
+        sys.exit("ABORT: LempoParticleEditor.exe is running - close it and rerun.")
     # 3) build from spec (icon + datas + hiddenimports baked in)
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", SPEC])
     if not os.path.isfile(EXE):
@@ -69,7 +69,7 @@ def main():
           f"$sc = $ws.CreateShortcut('{LNK}'); "
           f"$sc.TargetPath = '{EXE}'; $sc.WorkingDirectory = '{ROOT}'; "
           f"$sc.IconLocation = '{ICO}'; "
-          f"$sc.Description = 'Carrot Particle Editor'; $sc.Save()")
+          f"$sc.Description = 'Lempo Particle Editor'; $sc.Save()")
     run(["powershell", "-NoProfile", "-Command", ps])
     # 6) cleanup
     for d in ("build", "__pycache__", "editor/__pycache__",

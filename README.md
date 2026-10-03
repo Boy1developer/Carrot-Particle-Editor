@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🥕 Carrot Particle Editor
+# Lempo Particle Editor
 
 **Design stunning 2D & 3D particle effects visually — and play them in GDevelop.**
 
@@ -19,7 +19,7 @@ A standalone desktop editor with real-time GPU preview, paired with the **Advanc
 
 <br>
 
-<img src="docs/screenshots/viewport-3d.png" alt="Carrot Particle Editor — 3D viewport" width="860">
+<img src="docs/screenshots/viewport-3d.png" alt="Lempo Particle Editor — 3D viewport" width="860">
 
 </div>
 
@@ -27,16 +27,16 @@ A standalone desktop editor with real-time GPU preview, paired with the **Advanc
 
 ## 📖 Overview
 
-Carrot Particle Editor is a two-part toolkit:
+Lempo Particle Editor is a two-part toolkit:
 
 | Part | What it is |
 | --- | --- |
-| **Carrot Particle Editor** | A Dear PyGui desktop app (`CarrotParticleEditor.exe`, entry `editor/studio_imgui.py`) for designing effects with a live viewport, then exporting them as JSON. `editor/particle_studio.py` is the Tk fallback and the shared logic layer (defaults, sim math, validation, migration). |
+| **Lempo Particle Editor** | A Dear PyGui desktop app (`LempoParticleEditor.exe`, entry `editor/studio_imgui.py`) for designing effects with a live viewport, then exporting them as JSON. `editor/particle_studio.py` is the Tk fallback and the shared logic layer (defaults, sim math, validation, migration). |
 | **Advanced Particle Emitter** | A GDevelop extension (`AdvancedParticleEmitter.json`) that renders those effects in-game: **2D** via [PixiJS](https://pixijs.com) and **3D** via [Three.js](https://threejs.org). |
 
 Both parts share a single source of truth for particle behavior, shapes, and the export format (see [Shared contracts](#-shared-contracts)), so an effect looks the same in the editor, the browser preview, and your game.
 
-> Part of the **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** ecosystem — the "Advanced particle editor for stunning VFX" in the engine's feature list is this project. It works in any GDevelop-based project.
+> Works in any GDevelop project — design the effect in the editor, play it in-game with the Advanced Particle Emitter extension.
 
 ---
 
@@ -114,7 +114,7 @@ Both parts share a single source of truth for particle behavior, shapes, and the
 
 ### 1. Get the editor
 
-Download `CarrotParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.1.2`; it pairs with extension `v0.1.2` and export format `v1.1` (v1.0 files migrate automatically).
+Download `LempoParticleEditor.exe` from the **[Releases](https://github.com/Boy1developer/Carrot-Particle-Editor/releases)** page and run it. No Python installation required. The window title shows `v0.1.2`; it pairs with extension `v0.1.2` and export format `v1.1` (v1.0 files migrate automatically).
 
 **Requirements:** Windows 10/11 (64-bit) · GPU with OpenGL 3.3 support
 
@@ -144,7 +144,7 @@ python tools/rebuild_app.py
 
 ### 2. Use effects in GDevelop
 
-1. **Design** your effect in Carrot Particle Editor and export it as a `.json` file.
+1. **Design** your effect in Lempo Particle Editor and export it as a `.json` file.
 2. **Import** `AdvancedParticleEmitter.json` into your GDevelop project as an extension.
 3. **Add** the emitter object to your scene and set its **ParticleJSON** resource to the exported file. If the effect uses a custom model, also set the **Models GLB** resource to your `.glb`.
 4. **Run** the preview and enjoy your effect in-game.
@@ -256,13 +256,9 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 
 ---
 
-## 🔗 Related Projects
-
-- **[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine)** — the 2D/3D engine this extension is built for. It extends GDevelop Core with Blueprint scripting, PBR materials, advanced animation, and this particle system among its VFX tools.
-
 ## 👤 Author
 
-**Carrot Studio** — Mostafa Fathy Thabet ([@Boy1developer](https://github.com/Boy1developer)) — contributor to Carrots Engine.
+**Carrot Studio** — Mostafa Fathy Thabet ([@Boy1developer](https://github.com/Boy1developer)).
 
 ## 📦 Third-Party
 
@@ -275,8 +271,6 @@ CI runs the parity, behavior, and contract checks on every push (`.github/workfl
 ## 📄 License
 
 Released under the [MIT License](LICENSE).
-
-[Carrots Engine](https://github.com/Carrotstudio0/Carrots-Game-Engine) is distributed under [its own separate license](https://github.com/Carrotstudio0/Carrots-Game-Engine/blob/main/LICENSE.md), which does not affect the license of this repository.
 
 <div align="center">
 

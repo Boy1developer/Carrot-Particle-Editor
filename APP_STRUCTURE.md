@@ -1,4 +1,4 @@
-# بنية تطبيق Carrot Particle Editor — كاملة
+# بنية تطبيق Lempo Particle Editor — كاملة
 
 > محدّثة بعد التنظيم الاحترافي (مجلدات `editor/` `tests/` `tools/` `packaging/`).
 
@@ -19,12 +19,12 @@ Carrot-Particle-Editor/
 │   ├── rebuild_app.py              # أمر البناء الواحد: compile → C++ → PyInstaller → smoke → shortcut
 │   └── make_icon.py                # توليد الأيقونات الشفافة من assets/download.png
 ├── packaging/
-│   └── CarrotParticleEditor.spec   # وصفة الـ exe (مسارات مطلقة من جذر الريبو)
+│   └── LempoParticleEditor.spec   # وصفة الـ exe (مسارات مطلقة من جذر الريبو)
 ├── AdvancedParticleEmitter.json    # إكستنشن GDevelop (v1.0, type 2d/3d)
 ├── sample_effect.json              # مثال export جاهز
 ├── package.json / package-lock.json# اعتماديات المعاينة (three + pixi + typescript + esbuild)
 ├── particle_core.pyd/.lib/.pdb     # نواة C++ المبنية (غير ملتزمة — تُبنى عبر core/build_core.py)
-├── Carrot Particle Editor.lnk      # شورتكت الويندوز (غير ملتزم — يُعاد توليده كل rebuild)
+├── Lempo Particle Editor.lnk      # شورتكت الويندوز (غير ملتزم — يُعاد توليده كل rebuild)
 │
 ├── core/
 │   ├── particle_core.cpp           # نواة المحاكاة C++ (مطابقة Python حرفيًا — 516 سطر)
@@ -53,11 +53,11 @@ Carrot-Particle-Editor/
 │   └── test_server.py
 │
 ├── assets/
-│   ├── app_icon.png                # أيقونة PNG (براند Carrot)
+│   ├── app_icon.png                # أيقونة PNG (شعار Lempo من icon.jpg)
 │   └── app_icon.ico                # أيقونة الـ exe والشورتكت
 │
 ├── dist/
-│   └── CarrotParticleEditor.exe    # المخرج المتجمد (windowed، بدون كونسول)
+│   └── LempoParticleEditor.exe    # المخرج المتجمد (windowed، بدون كونسول)
 │
 └── node_modules/                   # three + pixi.js + typescript + esbuild (للبناء فقط)
     ├── three/build/three.module.js  # ← يُضمَّن في الـ exe عبر spec datas
@@ -79,17 +79,17 @@ Carrot-Particle-Editor/
 | `tests/test_trails_*.py` | اختبارات الـ trails: schema sync + roundtrip/heal + parity Python↔C++ (LUTs) + perf (300×32) + templates registry (27 تحميل/بحث/دمج/تحقق/thumbnails/حفظ-حذف) |
 | `assets/presets/trails/*/*.json` | 27 قالب trails جاهز (combat 5 / magic 6 / movement 5 / nature 6 / stylized 5) — تُشحن مع الـ exe عبر `assets` datas |
 | `tools/rebuild_app.py` | `python tools/rebuild_app.py` بعد أي تعديل: py_compile gate ← بناء C++ لو stale ← PyInstaller بالـ spec ← smoke boot 9 ثوانٍ ← توليد `.lnk` ← تنظيف `__pycache__` |
-| `tools/make_icon.py` | توليد الأيقونات الشفافة من `assets/download.png` |
-| `packaging/CarrotParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` |
+| `tools/make_icon.py` | توليد الأيقونات من `icon.jpg` (قص مربع + مقاس 1024) |
+| `packaging/LempoParticleEditor.spec` | datas: `preview` + `assets` + `render` + `three.module.js` + `pixi.mjs` + `glfw3.dll` — hiddenimports: `particle_core, render.gl_view, glfw` — أيقونة `assets/app_icon.ico` — `console=False` |
 | `AdvancedParticleEmitter.json` | إكستنشن GDevelop كما هو — يدعم pyramid/torus + morph + تعبير Flow (مُصلَّح) |
 | `sample_effect.json` | مثال export متوافق v1.0 |
 | `sample_trail_effect.json` | مثال trails (width curve + color gradient + texture scroll، 3D additive) |
 | `presets/trail_*.json` | بريسيتات الـ trails (Comet/Sword/Smoke/Beam/Neon/Rocket/Wand — ملفات effect عادية تُشحن مع الـ exe) |
-| `assets/download.png` | الأرت الأصلي — مصدر `assets/app_icon.*` |
+| `assets/download.png` | أرت قديم (شعار Carrot) — لم يعد مصدر الأيقونات (المصدر الآن `icon.jpg`) |
 | `package.json` | `three@0.186 + pixi.js@8.21 + typescript@7 + esbuild@0.28` |
 | `particle_core.pyd` | نواة C++ المبنية فعليًا (غير ملتزمة) |
 | `particle_core.lib/.pdb` | مخلفات بناء MSVC (غير مطلوبة للتشغيل) |
-| `Carrot Particle Editor.lnk` | شورتكت: Target=`dist\CarrotParticleEditor.exe` + Icon=`assets\app_icon.ico` (غير ملتزم) |
+| `Lempo Particle Editor.lnk` | شورتكت: Target=`dist\LempoParticleEditor.exe` + Icon=`assets\app_icon.ico` (غير ملتزم) |
 
 ### `core/` — نواة المحاكاة
 
@@ -124,8 +124,8 @@ Carrot-Particle-Editor/
 
 | المسار | الدور |
 |---|---|
-| `assets/app_icon.png/.ico` | براند Carrot — أيقونة النافذة + الـ exe + الشورتكت |
-| `dist/CarrotParticleEditor.exe` | التطبيق المتجمد (windowed) — يحمل كل تغيير بعد كل `tools/rebuild_app.py` |
+| `assets/app_icon.png/.ico` | شعار Lempo — أيقونة النافذة + الـ exe + الشورتكت |
+| `dist/LempoParticleEditor.exe` | التطبيق المتجمد (windowed) — يحمل كل تغيير بعد كل `tools/rebuild_app.py` |
 
 ## 3) ثوابت مشتركة (عقود بين المكونات)
 
@@ -145,7 +145,7 @@ core/particle_core.cpp --build_core.py--> particle_core.pyd --step()--> editor/p
                                                                               ├─ render/gl_view.py (GPU subrect → PPM → PhotoImage)
                                                                               ├─ preview/last_effect.json → live_effect.html (poll)
                                                                               └─ AdvancedParticleEmitter.json (export v1.0)
-editor/ + preview/ + assets/ + render/ --tools/rebuild_app.py + packaging/.spec--> dist/CarrotParticleEditor.exe + .lnk
+editor/ + preview/ + assets/ + render/ --tools/rebuild_app.py + packaging/.spec--> dist/LempoParticleEditor.exe + .lnk
 ```
 
 ## 5) سير العمل المعتمد

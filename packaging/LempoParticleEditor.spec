@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Carrot Particle Editor (Dear PyGui edition).
+# PyInstaller spec for Lempo Particle Editor (Dear PyGui edition).
 # Layout: this file lives in packaging/; every path below is anchored at
 # the repo root so the build works no matter the invoking CWD.
 # (PyInstaller execs the spec without __file__; it provides SPECPATH.)
@@ -47,7 +47,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='CarrotParticleEditor',
+    name='LempoParticleEditor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
