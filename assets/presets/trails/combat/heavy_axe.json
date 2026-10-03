@@ -15,7 +15,7 @@
   "settings": {
     "enabled": true,
     "source": "emitter",
-    "hideParticle": false,
+    "hideParticle": true,
     "lifetime": 0.5,
     "maxPoints": 50,
     "minDist": 3.0,

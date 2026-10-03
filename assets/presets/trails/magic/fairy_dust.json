@@ -16,7 +16,7 @@
     "enabled": true,
     "source": "particles",
     "trailMode": "per-particle",
-    "hideParticle": false,
+    "hideParticle": true,
     "inheritColor": true,
     "lifetime": 0.6,
     "maxPoints": 24,

@@ -15,7 +15,7 @@
     "enabled": true,
     "source": "particles",
     "trailMode": "per-particle",
-    "hideParticle": false,
+    "hideParticle": true,
     "lifetime": 1.5,
     "maxPoints": 40,
     "minDist": 2.5,

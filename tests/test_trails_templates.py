@@ -247,8 +247,8 @@ flick = sum(1 for d in docs.values()
             if d["settings"].get("flickerAmt", 0) > 0)
 hybrid = sum(1 for d in docs.values()
              if d["settings"].get("hideParticle") is False)
-assert glow >= 5 and core >= 3 and flick >= 1 and hybrid >= 3, (
-    glow, core, flick, hybrid)
+assert glow >= 5 and core >= 3 and flick >= 1 and hybrid == 0, (
+    glow, core, flick, hybrid)  # ribbons-only: no template may show dots
 print("TRAILS-TEMPLATES-ART-OK glow=%d core=%d flick=%d hybrid=%d"
       % (glow, core, flick, hybrid))
 

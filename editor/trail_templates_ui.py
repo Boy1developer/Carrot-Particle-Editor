@@ -476,6 +476,24 @@ def _reset_defaults():
         pass
 
 
+def _force_ribbons_only(new, changed):
+    """Applying a template always lands ribbons-only in trail mode.
+
+    Template files must never re-enable particle dots on apply (every
+    shipped file carries hideParticle=true, but a future/user file with
+    false must not resurrect dots either). The user can still toggle
+    Hide Particle off manually afterwards for a hybrid look.
+    """
+    try:
+        if not new.get("hideParticle"):
+            new["hideParticle"] = True
+            if "hideParticle" not in changed:
+                changed = list(changed) + ["hideParticle"]
+    except Exception:
+        pass
+    return new, changed
+
+
 def apply_template(tid, close_after):
     """ONE core call -> changed widgets -> dirty once -> one undo step."""
     global _APPLIED
@@ -489,6 +507,7 @@ def apply_template(tid, close_after):
         else:
             new, changed = _fb_apply(
                 tid, mode, PS.default_trails(), cur)
+        new, changed = _force_ribbons_only(new, changed)
         C["set_trails"](new)
         C["sync_changed"](changed)
         C["rebake"]()
